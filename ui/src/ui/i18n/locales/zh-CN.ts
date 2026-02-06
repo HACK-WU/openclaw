@@ -143,6 +143,16 @@ export const zhCN: Record<string, string> = {
   "chat.sidebar.loading": "加载会话中...",
   "chat.sidebar.offline": "离线",
   "chat.sidebar.moreCount": "还有 {count} 个",
+  "chat.sidebar.deleteSession": "删除会话",
+  "chat.sidebar.deleteConfirm": '删除会话 "{name}"?',
+  "chat.sidebar.deleteConfirmDetail": "这将永久删除该会话及其聊天记录。",
+  "chat.sidebar.sessionActions": "会话操作",
+  "chat.sidebar.deleteWarningTitle": "此操作无法撤销",
+
+  // 通用
+  "common.cancel": "取消",
+  "common.deleting": "删除中...",
+  "common.delete": "删除",
 
   // Language Selector
   "language.select": "语言",

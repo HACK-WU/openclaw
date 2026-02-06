@@ -4,6 +4,7 @@ import type { AppViewState } from "./app-view-state.ts";
 import type { ThemeTransitionContext } from "./theme-transition.ts";
 import type { ThemeMode } from "./theme.ts";
 import type { SessionsListResult, GatewaySessionRow } from "./types.ts";
+import type { DeleteSessionDialogState } from "./views/delete-session-dialog.ts";
 import { refreshChat, switchSession } from "./app-chat.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
 import { OpenClawApp } from "./app.ts";
@@ -457,28 +458,64 @@ function renderNavSessionItem(
   return html`
     <li
       class="nav-sessions__item ${isActive ? "nav-sessions__item--active" : ""} ${isSwitching ? "nav-sessions__item--switching" : ""}"
-      @click=${() => {
-        // Prevent switching if already switching or disconnected
-        if (isSwitching || !state.connected) {
-          return;
-        }
-        if (session.key !== state.sessionKey) {
-          void switchSession(state as unknown as Parameters<typeof switchSession>[0], session.key);
-        }
-        // Navigate to chat tab if not already there
-        if (state.tab !== "chat") {
-          state.setTab("chat");
-        }
-      }}
       title="${session.key}"
     >
-      <div class="nav-sessions__item-icon">
-        ${isActive ? icons.messageCircle : icons.messageSquare}
+      <div
+        class="nav-sessions__item-main"
+        @click=${() => {
+          // Prevent switching if already switching or disconnected
+          if (isSwitching || !state.connected) {
+            return;
+          }
+          if (session.key !== state.sessionKey) {
+            void switchSession(
+              state as unknown as Parameters<typeof switchSession>[0],
+              session.key,
+            );
+          }
+          // Navigate to chat tab if not already there
+          if (state.tab !== "chat") {
+            state.setTab("chat");
+          }
+        }}
+      >
+        <div class="nav-sessions__item-icon">
+          ${isActive ? icons.messageCircle : icons.messageSquare}
+        </div>
+        <div class="nav-sessions__item-info">
+          <div class="nav-sessions__item-name">${displayName}</div>
+          ${updatedAgo ? html`<div class="nav-sessions__item-time">${updatedAgo}</div>` : nothing}
+        </div>
       </div>
-      <div class="nav-sessions__item-info">
-        <div class="nav-sessions__item-name">${displayName}</div>
-        ${updatedAgo ? html`<div class="nav-sessions__item-time">${updatedAgo}</div>` : nothing}
-      </div>
+      ${
+        session.key === "main"
+          ? nothing
+          : html`
+            <button
+              class="nav-sessions__item-delete"
+              @click=${(e: Event) => {
+                e.stopPropagation();
+                if (!state.connected) {
+                  return;
+                }
+                // Open delete confirmation dialog
+                const app = state as unknown as {
+                  deleteSessionDialog: DeleteSessionDialogState | null;
+                };
+                app.deleteSessionDialog = {
+                  sessionKey: session.key,
+                  sessionName: displayName,
+                  isDeleting: false,
+                  error: null,
+                };
+              }}
+              title="${t("chat.sidebar.deleteSession")}"
+              aria-label="${t("chat.sidebar.deleteSession")}"
+            >
+              ${icons.trash}
+            </button>
+          `
+      }
     </li>
   `;
 }
