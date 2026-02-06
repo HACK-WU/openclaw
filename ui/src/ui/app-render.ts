@@ -2,13 +2,15 @@ import { html, nothing } from "lit";
 import type { AppViewState } from "./app-view-state.ts";
 import type { UsageState } from "./controllers/usage.ts";
 import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
-import { refreshChatAvatar } from "./app-chat.ts";
+import { refreshChatAvatar, switchSession } from "./app-chat.ts";
 import {
   renderChatControls,
   renderLocaleToggle,
   renderTab,
   renderThemeToggle,
+  renderNavSessionsList,
 } from "./app-render.helpers.ts";
+import { syncUrlWithSessionKey } from "./app-settings.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
@@ -166,6 +168,36 @@ export function renderApp(state: AppViewState) {
         ${getTabGroups().map((group) => {
           const isGroupCollapsed = state.settings.navGroupsCollapsed[group.label] ?? false;
           const hasActiveTab = group.tabs.some((tab) => tab === state.tab);
+          const isChatGroup = group.tabs.includes("chat") && group.tabs.length === 1;
+
+          // Special handling for chat group - add sessions list
+          if (isChatGroup) {
+            return html`
+              <div class="nav-group nav-group--chat ${isGroupCollapsed && !hasActiveTab ? "nav-group--collapsed" : ""}">
+                <div class="nav-label nav-label--chat">
+                  <button
+                    class="nav-label__btn"
+                    @click=${() => {
+                      const next = { ...state.settings.navGroupsCollapsed };
+                      next[group.label] = !isGroupCollapsed;
+                      state.applySettings({
+                        ...state.settings,
+                        navGroupsCollapsed: next,
+                      });
+                    }}
+                    aria-expanded=${!isGroupCollapsed}
+                  >
+                    <span class="nav-label__text">${group.label}</span>
+                    <span class="nav-label__chevron">${isGroupCollapsed ? "+" : "−"}</span>
+                  </button>
+                </div>
+                <div class="nav-group__items">
+                  ${renderNavSessionsList(state)}
+                </div>
+              </div>
+            `;
+          }
+
           return html`
             <div class="nav-group ${isGroupCollapsed && !hasActiveTab ? "nav-group--collapsed" : ""}">
               <button
@@ -210,8 +242,8 @@ export function renderApp(state: AppViewState) {
       <main class="content ${isChat ? "content--chat" : ""}">
         <section class="content-header">
           <div>
-            ${state.tab === "usage" ? nothing : html`<div class="page-title">${titleForTab(state.tab)}</div>`}
-            ${state.tab === "usage" ? nothing : html`<div class="page-sub">${subtitleForTab(state.tab)}</div>`}
+            ${state.tab === "usage" || state.tab === "chat" ? nothing : html`<div class="page-title">${titleForTab(state.tab)}</div>`}
+            ${state.tab === "usage" || state.tab === "chat" ? nothing : html`<div class="page-sub">${subtitleForTab(state.tab)}</div>`}
           </div>
           <div class="page-meta">
             ${state.lastError ? html`<div class="pill danger">${state.lastError}</div>` : nothing}
@@ -237,13 +269,20 @@ export function renderApp(state: AppViewState) {
                 onSessionKeyChange: (next) => {
                   state.sessionKey = next;
                   state.chatMessage = "";
+                  state.chatAttachments = [];
+                  state.chatStream = null;
+                  state.chatStreamStartedAt = null;
+                  state.chatRunId = null;
+                  state.chatQueue = [];
                   state.resetToolStream();
+                  state.resetChatScroll();
                   state.applySettings({
                     ...state.settings,
-                    sessionKey: next,
                     lastActiveSessionKey: next,
                   });
                   void state.loadAssistantIdentity();
+                  void loadChatHistory(state);
+                  void refreshChatAvatar(state);
                 },
                 onConnect: () => state.connect(),
                 onRefresh: () => state.loadOverview(),
@@ -1078,23 +1117,8 @@ export function renderApp(state: AppViewState) {
             ? renderChat({
                 sessionKey: state.sessionKey,
                 onSessionKeyChange: (next) => {
-                  state.sessionKey = next;
-                  state.chatMessage = "";
-                  state.chatAttachments = [];
-                  state.chatStream = null;
-                  state.chatStreamStartedAt = null;
-                  state.chatRunId = null;
-                  state.chatQueue = [];
-                  state.resetToolStream();
-                  state.resetChatScroll();
-                  state.applySettings({
-                    ...state.settings,
-                    sessionKey: next,
-                    lastActiveSessionKey: next,
-                  });
-                  void state.loadAssistantIdentity();
-                  void loadChatHistory(state);
-                  void refreshChatAvatar(state);
+                  // Use switchSession to properly handle session switching with state cleanup
+                  void switchSession(state as unknown as Parameters<typeof switchSession>[0], next);
                 },
                 thinkingLevel: state.chatThinkingLevel,
                 showThinking,
@@ -1135,7 +1159,73 @@ export function renderApp(state: AppViewState) {
                 canAbort: Boolean(state.chatRunId),
                 onAbort: () => void state.handleAbortChat(),
                 onQueueRemove: (id) => state.removeQueuedMessage(id),
-                onNewSession: () => state.handleSendChat("/new", { restoreDraft: true }),
+                onNewSession: async () => {
+                  // Generate a new unique session key
+                  const currentParsed = state.sessionKey.split(":");
+                  const agentId =
+                    currentParsed[0] === "agent" && currentParsed.length >= 2
+                      ? currentParsed[1]
+                      : "main";
+                  const timestamp = Date.now();
+                  const randomSuffix = Math.random().toString(36).substring(2, 8);
+                  const newSessionKey = `agent:${agentId}:${timestamp}-${randomSuffix}`;
+
+                  // Add the new session to local sessions list immediately for UI display
+                  // The session will be persisted on backend when user sends first message
+                  const existingSessions = state.sessionsResult?.sessions ?? [];
+                  const newSession = {
+                    key: newSessionKey,
+                    kind: "direct" as const,
+                    label: "",
+                    updatedAt: timestamp,
+                  };
+                  if (state.sessionsResult) {
+                    state.sessionsResult = {
+                      ...state.sessionsResult,
+                      sessions: [newSession, ...existingSessions],
+                    };
+                  } else {
+                    // Create a minimal sessionsResult if none exists
+                    state.sessionsResult = {
+                      ts: timestamp,
+                      path: "",
+                      count: 1,
+                      defaults: { model: null, contextTokens: null },
+                      sessions: [newSession],
+                    };
+                  }
+
+                  // Switch to the new session
+                  // Clear current state and update session key
+                  state.chatStream = null;
+                  state.chatStreamStartedAt = null;
+                  state.chatRunId = null;
+                  state.chatQueue = [];
+                  state.chatSending = false;
+                  state.chatMessage = "";
+                  state.chatAttachments = [];
+                  state.lastError = null;
+                  state.chatMessages = [];
+                  state.chatToolMessages = [];
+                  state.sessionKey = newSessionKey;
+
+                  // Sync URL with new session key
+                  syncUrlWithSessionKey(
+                    state as unknown as Parameters<typeof syncUrlWithSessionKey>[0],
+                    newSessionKey,
+                    false,
+                  );
+
+                  // Update last active session key
+                  state.applySettings({
+                    ...state.settings,
+                    lastActiveSessionKey: newSessionKey,
+                  });
+
+                  // Reset tool stream and scroll
+                  state.resetToolStream();
+                  state.resetChatScroll();
+                },
                 showNewMessages: state.chatNewMessagesBelow && !state.chatManualRefreshInFlight,
                 onScrollToBottom: () => state.scrollToBottom(),
                 // Sidebar props for tool output viewing
@@ -1148,6 +1238,17 @@ export function renderApp(state: AppViewState) {
                 onSplitRatioChange: (ratio: number) => state.handleSplitRatioChange(ratio),
                 assistantName: state.assistantName,
                 assistantAvatar: state.assistantAvatar,
+                // Sessions sidebar props
+                sessionsSidebarOpen: state.settings.chatSessionsSidebarOpen,
+                onToggleSessionsSidebar: () => {
+                  state.applySettings({
+                    ...state.settings,
+                    chatSessionsSidebarOpen: !state.settings.chatSessionsSidebarOpen,
+                  });
+                },
+                onSelectSession: (key) => {
+                  void switchSession(state as unknown as Parameters<typeof switchSession>[0], key);
+                },
               })
             : nothing
         }

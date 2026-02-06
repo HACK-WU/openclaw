@@ -44,7 +44,7 @@ export type ChatProps = {
   sessions: SessionsListResult | null;
   // Focus mode
   focusMode: boolean;
-  // Sidebar state
+  // Markdown sidebar state (for tool output)
   sidebarOpen?: boolean;
   sidebarContent?: string | null;
   sidebarError?: string | null;
@@ -69,6 +69,10 @@ export type ChatProps = {
   onCloseSidebar?: () => void;
   onSplitRatioChange?: (ratio: number) => void;
   onChatScroll?: (event: Event) => void;
+  // Sessions sidebar
+  sessionsSidebarOpen?: boolean;
+  onToggleSessionsSidebar?: () => void;
+  onSelectSession?: (sessionKey: string) => void;
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
@@ -207,6 +211,7 @@ export function renderChat(props: ChatProps) {
 
   const splitRatio = props.splitRatio ?? 0.6;
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
+
   const thread = html`
     <div
       class="chat-thread"
@@ -269,39 +274,41 @@ export function renderChat(props: ChatProps) {
 
       ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
 
-      ${
-        props.focusMode
-          ? html`
-            <button
-              class="chat-focus-exit"
-              type="button"
-              @click=${props.onToggleFocusMode}
-              aria-label="Exit focus mode"
-              title="Exit focus mode"
-            >
-              ${icons.x}
-            </button>
-          `
-          : nothing
-      }
+      ${renderCompactionIndicator(props.compactionStatus)}
 
+    ${
+      props.focusMode
+        ? html`
+          <button
+            class="chat-focus-exit"
+            type="button"
+            @click=${props.onToggleFocusMode}
+            aria-label="Exit focus mode"
+            title="Exit focus mode"
+          >
+            ${icons.x}
+          </button>
+        `
+        : nothing
+    }
+
+    <div
+      class="chat-split-container ${sidebarOpen ? "chat-split-container--open" : ""}"
+    >
       <div
-        class="chat-split-container ${sidebarOpen ? "chat-split-container--open" : ""}"
+        class="chat-main"
+        style="flex: ${sidebarOpen ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}"
       >
-        <div
-          class="chat-main"
-          style="flex: ${sidebarOpen ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}"
-        >
-          ${thread}
-        </div>
+        ${thread}
+      </div>
 
-        ${
-          sidebarOpen
-            ? html`
-              <resizable-divider
-                .splitRatio=${splitRatio}
-                @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
-              ></resizable-divider>
+      ${
+        sidebarOpen
+          ? html`
+            <resizable-divider
+              .splitRatio=${splitRatio}
+              @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
+            ></resizable-divider>
               <div class="chat-sidebar">
                 ${renderMarkdownSidebar({
                   content: props.sidebarContent ?? null,
@@ -316,8 +323,8 @@ export function renderChat(props: ChatProps) {
                 })}
               </div>
             `
-            : nothing
-        }
+          : nothing
+      }
       </div>
 
       ${

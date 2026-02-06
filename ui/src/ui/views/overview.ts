@@ -162,7 +162,7 @@ export function renderOverview(props: OverviewProps) {
           <label class="field">
             <span>Default Session Key</span>
             <input
-              .value=${props.settings.sessionKey}
+              .value=${props.settings.lastActiveSessionKey}
               @input=${(e: Event) => {
                 const v = (e.target as HTMLInputElement).value;
                 props.onSessionKeyChange(v);

@@ -154,6 +154,22 @@ export const icons = {
       <path d="m4.9 4.9 2.9 2.9" />
     </svg>
   `,
+  chevronLeft: html`
+    <svg viewBox="0 0 24 24">
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  `,
+  messageCircle: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+    </svg>
+  `,
+  plus: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </svg>
+  `,
 
   // Tool icons
   wrench: html`
