@@ -67,13 +67,14 @@
 
 /* Session item in nav */
 .nav-sessions__item {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  padding: 8px 12px;
+  padding: 8px 8px 8px 12px;
   border-radius: var(--radius-sm);
-  cursor: pointer;
   transition: background-color var(--duration-fast) ease;
-  gap: 10px;
+  gap: 8px;
+  position: relative;
 }
 
 .nav-sessions__item:hover {
@@ -95,6 +96,16 @@
   opacity: 0.6;
   pointer-events: none;
   cursor: wait;
+}
+
+/* Main clickable area */
+.nav-sessions__item-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  cursor: pointer;
+  overflow: hidden;
 }
 
 .nav-sessions__item-icon {
@@ -139,6 +150,53 @@
   font-size: 11px;
   color: var(--muted);
   margin-top: 1px;
+}
+
+/* Delete button */
+.nav-sessions__item-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  opacity: 0.8;
+  transition:
+    opacity var(--duration-fast) ease,
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+  flex-shrink: 0;
+}
+
+.nav-sessions__item:hover .nav-sessions__item-delete {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+
+.nav-sessions__item-delete:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+  color: var(--text-danger, var(--accent-primary));
+}
+
+.nav-sessions__item-delete:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.nav-sessions__item-delete svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* Hide nav sessions when sidebar is collapsed */

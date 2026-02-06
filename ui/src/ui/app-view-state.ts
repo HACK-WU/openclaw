@@ -43,6 +43,7 @@ import type {
 } from "./types.ts";
 import type { ChatAttachment, ChatQueueItem, CronFormState } from "./ui-types.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
+import type { DeleteSessionDialogState } from "./views/delete-session-dialog.ts";
 import type { SessionLogEntry } from "./views/usage.ts";
 
 export type AppViewState = {
@@ -269,6 +270,9 @@ export type AppViewState = {
   updateAvailable: import("./types.js").UpdateAvailable | null;
   client: GatewayBrowserClient | null;
   refreshSessionsAfterChat: Set<string>;
+  deleteSessionDialog: DeleteSessionDialogState | null;
+  handleDeleteSessionConfirm: () => Promise<void>;
+  handleDeleteSessionCancel: () => void;
   connect: () => void;
   setTab: (tab: Tab) => void;
   setTheme: (theme: ThemeMode, context?: ThemeTransitionContext) => void;

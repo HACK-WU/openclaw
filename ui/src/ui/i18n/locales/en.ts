@@ -143,6 +143,17 @@ export const en: Record<string, string> = {
   "chat.sidebar.loading": "Loading sessions...",
   "chat.sidebar.offline": "Offline",
   "chat.sidebar.moreCount": "+{count} more",
+  "chat.sidebar.deleteSession": "Delete session",
+  "chat.sidebar.deleteConfirm": 'Delete session "{name}"?',
+  "chat.sidebar.deleteConfirmDetail":
+    "This will permanently delete the session and its chat history.",
+  "chat.sidebar.sessionActions": "Session actions",
+  "chat.sidebar.deleteWarningTitle": "This action cannot be undone",
+
+  // Common
+  "common.cancel": "Cancel",
+  "common.deleting": "Deleting...",
+  "common.delete": "Delete",
 
   // Language Selector
   "language.select": "Language",
