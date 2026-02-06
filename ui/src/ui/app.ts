@@ -94,6 +94,9 @@ declare global {
 
 const bootAssistantIdentity = normalizeAssistantIdentity({});
 
+// Initialize i18n with browser locale or stored preference
+const initialLocale = initLocale();
+
 function resolveOnboardingMode(): boolean {
   if (!window.location.search) {
     return false;
@@ -124,6 +127,7 @@ export class OpenClawApp extends LitElement {
   @state() connected = false;
   @state() theme: ThemeMode = this.settings.theme ?? "system";
   @state() themeResolved: ResolvedTheme = "dark";
+  @state() locale: LocaleCode = initialLocale;
   @state() hello: GatewayHelloOk | null = null;
   @state() lastError: string | null = null;
   @state() lastErrorCode: string | null = null;
@@ -464,6 +468,11 @@ export class OpenClawApp extends LitElement {
 
   setTheme(next: ThemeMode, context?: Parameters<typeof setThemeInternal>[2]) {
     setThemeInternal(this as unknown as Parameters<typeof setThemeInternal>[0], next, context);
+  }
+
+  setLocale(next: LocaleCode) {
+    setLocaleInternal(next);
+    this.locale = next;
   }
 
   async loadOverview() {

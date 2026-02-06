@@ -1,5 +1,6 @@
 import { t } from "../i18n/index.ts";
 import type { IconName } from "./icons.js";
+import { t } from "./i18n/index.ts";
 
 export const TAB_GROUPS = [
   { label: "chat", tabs: ["chat"] },
@@ -10,6 +11,13 @@ export const TAB_GROUPS = [
   { label: "agent", tabs: ["agents", "skills", "nodes"] },
   { label: "settings", tabs: ["config", "debug", "logs"] },
 ] as const;
+
+export function getTabGroups() {
+  return TAB_GROUPS.map((group) => ({
+    label: t(group.labelKey),
+    tabs: group.tabs,
+  }));
+}
 
 export type Tab =
   | "agents"

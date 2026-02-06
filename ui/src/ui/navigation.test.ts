@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   TAB_GROUPS,
+  getTabGroups,
   iconForTab,
   inferBasePathFromPathname,
   normalizeBasePath,
@@ -174,16 +175,25 @@ describe("inferBasePathFromPathname", () => {
 
 describe("TAB_GROUPS", () => {
   it("contains all expected groups", () => {
-    const labels = TAB_GROUPS.map((g) => g.label);
-    expect(labels).toContain("Chat");
-    expect(labels).toContain("Control");
-    expect(labels).toContain("Agent");
-    expect(labels).toContain("Settings");
+    const labelKeys = TAB_GROUPS.map((g) => g.labelKey);
+    expect(labelKeys).toContain("nav.group.chat");
+    expect(labelKeys).toContain("nav.group.control");
+    expect(labelKeys).toContain("nav.group.agent");
+    expect(labelKeys).toContain("nav.group.settings");
   });
 
   it("all tabs are unique", () => {
     const allTabs = TAB_GROUPS.flatMap((g) => g.tabs);
     const uniqueTabs = new Set(allTabs);
     expect(uniqueTabs.size).toBe(allTabs.length);
+  });
+
+  it("getTabGroups returns translated labels", () => {
+    const groups = getTabGroups();
+    expect(groups.length).toBe(TAB_GROUPS.length);
+    for (const group of groups) {
+      expect(typeof group.label).toBe("string");
+      expect(group.label.length).toBeGreaterThan(0);
+    }
   });
 });
