@@ -162,8 +162,9 @@ export function renderSkills(props: SkillsProps) {
               .value=${props.filter}
               @input=${(e: Event) => props.onFilterChange((e.target as HTMLInputElement).value)}
               placeholder="${t("skills.filter")}"
-              autocomplete="off"
-              name="skills-filter-${Date.now()}"
+              autocomplete="new-password"
+              data-lpignore="true"
+              data-form-type="other"
             />
             <button class="btn secondary small" @click=${() => props.onFilterChange("")}>${t("action.clear")}</button>
           </div>
