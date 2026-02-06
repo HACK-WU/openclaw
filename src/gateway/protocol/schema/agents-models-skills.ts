@@ -207,3 +207,37 @@ export const SkillsUpdateParamsSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+export const SkillsFileGetParamsSchema = Type.Object(
+  {
+    skillKey: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
+
+export const SkillsFileGetResultSchema = Type.Object(
+  {
+    skillKey: NonEmptyString,
+    filePath: NonEmptyString,
+    content: Type.String(),
+    editable: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+
+export const SkillsFileSetParamsSchema = Type.Object(
+  {
+    skillKey: NonEmptyString,
+    content: Type.String(),
+  },
+  { additionalProperties: false },
+);
+
+export const SkillsFileSetResultSchema = Type.Object(
+  {
+    ok: Type.Literal(true),
+    skillKey: NonEmptyString,
+    filePath: NonEmptyString,
+  },
+  { additionalProperties: false },
+);

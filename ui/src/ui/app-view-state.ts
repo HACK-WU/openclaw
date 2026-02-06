@@ -199,6 +199,12 @@ export type AppViewState = {
   skillEdits: Record<string, string>;
   skillMessages: Record<string, SkillMessage>;
   skillsBusyKey: string | null;
+  skillFileEditing: string | null;
+  skillFileContent: string;
+  skillFileOriginal: string;
+  skillFileEditable: boolean;
+  skillFilePath: string;
+  skillFileSaving: boolean;
   debugLoading: boolean;
   debugStatus: StatusSummary | null;
   debugHealth: HealthSnapshot | null;

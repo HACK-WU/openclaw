@@ -1,3 +1,5 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { GatewayRequestHandlers } from "./types.js";
 import {
@@ -17,6 +19,8 @@ import {
   errorShape,
   formatValidationErrors,
   validateSkillsBinsParams,
+  validateSkillsFileGetParams,
+  validateSkillsFileSetParams,
   validateSkillsInstallParams,
   validateSkillsStatusParams,
   validateSkillsUpdateParams,
@@ -213,5 +217,124 @@ export const skillsHandlers: GatewayRequestHandlers = {
     };
     await writeConfigFile(nextConfig);
     respond(true, { ok: true, skillKey: p.skillKey, config: current }, undefined);
+  },
+  "skills.file.get": ({ params, respond }) => {
+    if (!validateSkillsFileGetParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid skills.file.get params: ${formatValidationErrors(validateSkillsFileGetParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const p = params as { skillKey: string };
+    const cfg = loadConfig();
+    const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
+    const report = buildWorkspaceSkillStatus(workspaceDir, {
+      config: cfg,
+      eligibility: { remote: getRemoteSkillEligibility() },
+    });
+    const skill = report.skills.find((s) => s.skillKey === p.skillKey);
+    if (!skill) {
+      respond(false, undefined, errorShape(ErrorCodes.NOT_FOUND, `skill not found: ${p.skillKey}`));
+      return;
+    }
+    const filePath = skill.filePath;
+    if (!filePath || !fs.existsSync(filePath)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.NOT_FOUND, `skill file not found: ${filePath}`),
+      );
+      return;
+    }
+    // Only allow editing workspace and managed skills (not bundled)
+    const editable = skill.source === "openclaw-workspace" || skill.source === "openclaw-managed";
+    try {
+      const content = fs.readFileSync(filePath, "utf-8");
+      respond(true, { skillKey: p.skillKey, filePath, content, editable }, undefined);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.UNAVAILABLE, `failed to read file: ${message}`),
+      );
+    }
+  },
+  "skills.file.set": ({ params, respond }) => {
+    if (!validateSkillsFileSetParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid skills.file.set params: ${formatValidationErrors(validateSkillsFileSetParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const p = params as { skillKey: string; content: string };
+    const cfg = loadConfig();
+    const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
+    const report = buildWorkspaceSkillStatus(workspaceDir, {
+      config: cfg,
+      eligibility: { remote: getRemoteSkillEligibility() },
+    });
+    const skill = report.skills.find((s) => s.skillKey === p.skillKey);
+    if (!skill) {
+      respond(false, undefined, errorShape(ErrorCodes.NOT_FOUND, `skill not found: ${p.skillKey}`));
+      return;
+    }
+    // Only allow editing workspace and managed skills (not bundled)
+    if (skill.source !== "openclaw-workspace" && skill.source !== "openclaw-managed") {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.PERMISSION_DENIED,
+          `cannot edit bundled skills, only workspace or managed skills can be edited`,
+        ),
+      );
+      return;
+    }
+    const filePath = skill.filePath;
+    if (!filePath) {
+      respond(false, undefined, errorShape(ErrorCodes.NOT_FOUND, `skill file path not found`));
+      return;
+    }
+    // Ensure the file is within allowed directories
+    const normalizedPath = path.resolve(filePath);
+    const managedDir = path.resolve(path.join(process.env.HOME || "~", ".openclaw", "skills"));
+    const wsSkillsDir = path.resolve(path.join(workspaceDir, "skills"));
+    const isInManagedDir = normalizedPath.startsWith(managedDir + path.sep);
+    const isInWorkspaceDir = normalizedPath.startsWith(wsSkillsDir + path.sep);
+    if (!isInManagedDir && !isInWorkspaceDir) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.PERMISSION_DENIED, `file path is outside allowed directories`),
+      );
+      return;
+    }
+    try {
+      // Ensure parent directory exists
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(filePath, p.content, "utf-8");
+      respond(true, { ok: true, skillKey: p.skillKey, filePath }, undefined);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.UNAVAILABLE, `failed to write file: ${message}`),
+      );
+    }
   },
 };
