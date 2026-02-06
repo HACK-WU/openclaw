@@ -1834,8 +1834,9 @@ function renderAgentSkills(params: {
               .value=${params.filter}
               @input=${(e: Event) => params.onFilterChange((e.target as HTMLInputElement).value)}
               placeholder="Search skills"
-              autocomplete="off"
-              name="agent-skills-filter-${Date.now()}"
+              autocomplete="new-password"
+              data-lpignore="true"
+              data-form-type="other"
             />
             <button class="btn secondary small" @click=${() => params.onFilterChange("")}>${t("action.clear")}</button>
           </div>
