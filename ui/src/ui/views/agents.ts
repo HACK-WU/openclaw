@@ -1829,6 +1829,7 @@ function renderAgentSkills(params: {
             .value=${params.filter}
             @input=${(e: Event) => params.onFilterChange((e.target as HTMLInputElement).value)}
             placeholder="Search skills"
+            autocomplete="off"
           />
         </label>
         <div class="muted">${filtered.length} shown</div>
