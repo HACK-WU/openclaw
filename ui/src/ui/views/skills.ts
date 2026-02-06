@@ -102,7 +102,9 @@ export function renderSkills(props: SkillsProps) {
       ${
         filtered.length === 0
           ? html`
-              <div class="muted" style="margin-top: 16px">${t("skills.noSkills")}</div>
+              <div class="muted" style="margin-top: 16px">
+                ${filter ? t("skills.noMatch") : t("skills.noSkills")}
+              </div>
             `
           : html`
             <div class="agent-skills-groups" style="margin-top: 16px;">

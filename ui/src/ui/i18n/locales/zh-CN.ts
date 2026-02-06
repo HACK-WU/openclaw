@@ -49,6 +49,7 @@ export const zhCN: Record<string, string> = {
   "skills.description": "内置、托管和工作空间技能。",
   "skills.filter": "筛选",
   "skills.noSkills": "未找到技能。",
+  "skills.noMatch": "没有匹配的技能，请尝试清空筛选条件。",
   "skills.workspace": "工作空间技能",
   "skills.builtIn": "内置技能",
   "skills.installed": "已安装技能",
