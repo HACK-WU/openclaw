@@ -156,12 +156,16 @@ export function renderSkills(props: SkillsProps) {
       <div class="filters" style="margin-top: 14px;">
         <label class="field" style="flex: 1;">
           <span>${t("skills.filter")}</span>
-          <input
-            .value=${props.filter}
-            @input=${(e: Event) => props.onFilterChange((e.target as HTMLInputElement).value)}
-            placeholder="${t("skills.filter")}"
-            autocomplete="off"
-          />
+          <div style="display: flex; gap: 8px;">
+            <input
+              style="flex: 1;"
+              .value=${props.filter}
+              @input=${(e: Event) => props.onFilterChange((e.target as HTMLInputElement).value)}
+              placeholder="${t("skills.filter")}"
+              autocomplete="off"
+            />
+            ${props.filter ? html`<button class="btn secondary small" @click=${() => props.onFilterChange("")}>${t("action.clear")}</button>` : nothing}
+          </div>
         </label>
         <div class="muted">${filtered.length} shown</div>
       </div>

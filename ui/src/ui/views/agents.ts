@@ -17,6 +17,7 @@ import {
   resolveToolProfilePolicy,
 } from "../../../../src/agents/tool-policy.js";
 import { formatAgo } from "../format.ts";
+import { t } from "../i18n/index.ts";
 import {
   formatCronPayload,
   formatCronSchedule,
@@ -1825,12 +1826,16 @@ function renderAgentSkills(params: {
       <div class="filters" style="margin-top: 14px;">
         <label class="field" style="flex: 1;">
           <span>Filter</span>
-          <input
-            .value=${params.filter}
-            @input=${(e: Event) => params.onFilterChange((e.target as HTMLInputElement).value)}
-            placeholder="Search skills"
-            autocomplete="off"
-          />
+          <div style="display: flex; gap: 8px;">
+            <input
+              style="flex: 1;"
+              .value=${params.filter}
+              @input=${(e: Event) => params.onFilterChange((e.target as HTMLInputElement).value)}
+              placeholder="Search skills"
+              autocomplete="off"
+            />
+            ${params.filter ? html`<button class="btn secondary small" @click=${() => params.onFilterChange("")}>${t("action.clear")}</button>` : nothing}
+          </div>
         </label>
         <div class="muted">${filtered.length} shown</div>
       </div>
