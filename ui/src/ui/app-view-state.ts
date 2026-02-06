@@ -5,6 +5,7 @@ import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
+import type { LocaleCode } from "./i18n/index.ts";
 import type { Tab } from "./navigation.ts";
 import type { UiSettings } from "./storage.ts";
 import type { ThemeTransitionContext } from "./theme-transition.ts";
@@ -44,6 +45,7 @@ export type AppViewState = {
   connected: boolean;
   theme: ThemeMode;
   themeResolved: "light" | "dark";
+  locale: LocaleCode;
   hello: GatewayHelloOk | null;
   lastError: string | null;
   eventLog: EventLogEntry[];
@@ -224,6 +226,7 @@ export type AppViewState = {
   connect: () => void;
   setTab: (tab: Tab) => void;
   setTheme: (theme: ThemeMode, context?: ThemeTransitionContext) => void;
+  setLocale: (locale: LocaleCode) => void;
   applySettings: (next: UiSettings) => void;
   loadOverview: () => Promise<void>;
   loadAssistantIdentity: () => Promise<void>;
