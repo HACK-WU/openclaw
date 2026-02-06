@@ -49,11 +49,15 @@ import { loadNodes } from "./controllers/nodes.ts";
 import { loadPresence } from "./controllers/presence.ts";
 import { deleteSession, loadSessions, patchSession } from "./controllers/sessions.ts";
 import {
+  closeSkillFileEditor,
   installSkill,
+  loadSkillFile,
   loadSkills,
   saveSkillApiKey,
+  saveSkillFile,
   updateSkillEdit,
   updateSkillEnabled,
+  updateSkillFileContent,
 } from "./controllers/skills.ts";
 import { loadUsage, loadSessionTimeSeries, loadSessionLogs } from "./controllers/usage.ts";
 import { t } from "./i18n/index.ts";
@@ -968,6 +972,12 @@ export function renderApp(state: AppViewState) {
                 edits: state.skillEdits,
                 messages: state.skillMessages,
                 busyKey: state.skillsBusyKey,
+                fileEditing: state.skillFileEditing,
+                fileContent: state.skillFileContent,
+                fileOriginal: state.skillFileOriginal,
+                fileEditable: state.skillFileEditable,
+                filePath: state.skillFilePath,
+                fileSaving: state.skillFileSaving,
                 onFilterChange: (next) => (state.skillsFilter = next),
                 onRefresh: () => loadSkills(state, { clearMessages: true }),
                 onToggle: (key, enabled) => updateSkillEnabled(state, key, enabled),
@@ -975,6 +985,10 @@ export function renderApp(state: AppViewState) {
                 onSaveKey: (key) => saveSkillApiKey(state, key),
                 onInstall: (skillKey, name, installId) =>
                   installSkill(state, skillKey, name, installId),
+                onEditFile: (skillKey) => loadSkillFile(state, skillKey),
+                onFileContentChange: (content) => updateSkillFileContent(state, content),
+                onFileSave: () => saveSkillFile(state),
+                onFileClose: () => closeSkillFileEditor(state),
               })
             : nothing
         }

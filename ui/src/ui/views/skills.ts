@@ -51,12 +51,23 @@ export type SkillsProps = {
   edits: Record<string, string>;
   busyKey: string | null;
   messages: SkillMessageMap;
+  // File editing props
+  fileEditing: string | null;
+  fileContent: string;
+  fileOriginal: string;
+  fileEditable: boolean;
+  filePath: string;
+  fileSaving: boolean;
   onFilterChange: (next: string) => void;
   onRefresh: () => void;
   onToggle: (skillKey: string, enabled: boolean) => void;
   onEdit: (skillKey: string, value: string) => void;
   onSaveKey: (skillKey: string) => void;
   onInstall: (skillKey: string, name: string, installId: string) => void;
+  onEditFile: (skillKey: string) => void;
+  onFileContentChange: (content: string) => void;
+  onFileSave: () => void;
+  onFileClose: () => void;
 };
 
 export function renderSkills(props: SkillsProps) {
@@ -68,8 +79,69 @@ export function renderSkills(props: SkillsProps) {
       )
     : skills;
   const groups = groupSkills(filtered);
+  const editingSkill = props.fileEditing
+    ? skills.find((s) => s.skillKey === props.fileEditing)
+    : null;
+  const hasChanges = props.fileContent !== props.fileOriginal;
 
   return html`
+    ${
+      props.fileEditing
+        ? html`
+          <div class="modal-overlay" @click=${(e: Event) => {
+            if (e.target === e.currentTarget) {
+              props.onFileClose();
+            }
+          }}>
+            <div class="modal modal--large">
+              <div class="modal-header">
+                <div class="modal-title">
+                  ${editingSkill?.emoji ? `${editingSkill.emoji} ` : ""}${t("skills.editFile")}: ${editingSkill?.name ?? props.fileEditing}
+                </div>
+                <button class="btn btn--icon" @click=${props.onFileClose} title="${t("action.close")}">×</button>
+              </div>
+              <div class="modal-body">
+                <div class="muted" style="margin-bottom: 8px; font-size: 12px;">
+                  ${props.filePath}
+                </div>
+                ${
+                  !props.fileEditable
+                    ? html`<div class="callout warning" style="margin-bottom: 12px;">
+                        ${t("skills.readOnly")}
+                      </div>`
+                    : nothing
+                }
+                <textarea
+                  class="skill-file-editor"
+                  .value=${props.fileContent}
+                  @input=${(e: Event) => props.onFileContentChange((e.target as HTMLTextAreaElement).value)}
+                  ?disabled=${!props.fileEditable || props.fileSaving}
+                  spellcheck="false"
+                ></textarea>
+              </div>
+              <div class="modal-footer">
+                <button class="btn" @click=${props.onFileClose}>
+                  ${t("action.cancel")}
+                </button>
+                ${
+                  props.fileEditable
+                    ? html`
+                        <button
+                          class="btn primary"
+                          ?disabled=${props.fileSaving || !hasChanges}
+                          @click=${props.onFileSave}
+                        >
+                          ${props.fileSaving ? t("action.loading") : t("action.save")}
+                        </button>
+                      `
+                    : nothing
+                }
+              </div>
+            </div>
+          </div>
+        `
+        : nothing
+    }
     <section class="card">
       <div class="row" style="justify-content: space-between;">
         <div>
@@ -135,6 +207,9 @@ function renderSkill(skill: SkillStatusEntry, props: SkillsProps) {
   const message = props.messages[skill.skillKey] ?? null;
   const canInstall = skill.install.length > 0 && skill.missing.bins.length > 0;
   const showBundledBadge = Boolean(skill.bundled && skill.source !== "openclaw-bundled");
+  // Allow editing workspace and managed skills
+  const canEdit =
+    skill.source === "openclaw-workspace" || skill.source === "openclaw-managed" || !skill.bundled;
   const missing = [
     ...skill.missing.bins.map((b) => `bin:${b}`),
     ...skill.missing.env.map((e) => `env:${e}`),
@@ -195,7 +270,19 @@ function renderSkill(skill: SkillStatusEntry, props: SkillsProps) {
         }
       </div>
       <div class="list-meta">
-        <div class="row" style="justify-content: flex-end; flex-wrap: wrap;">
+        <div class="row" style="justify-content: flex-end; flex-wrap: wrap; gap: 6px;">
+          ${
+            canEdit
+              ? html`<button
+                  class="btn"
+                  ?disabled=${busy}
+                  @click=${() => props.onEditFile(skill.skillKey)}
+                  title="${t("skills.editFile")}"
+                >
+                  ${t("action.edit")}
+                </button>`
+              : nothing
+          }
           <button
             class="btn"
             ?disabled=${busy}

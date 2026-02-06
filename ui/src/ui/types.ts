@@ -756,6 +756,19 @@ export type SkillStatusReport = {
   skills: SkillStatusEntry[];
 };
 
+export type SkillFileGetResult = {
+  skillKey: string;
+  filePath: string;
+  content: string;
+  editable: boolean;
+};
+
+export type SkillFileSetResult = {
+  ok: true;
+  skillKey: string;
+  filePath: string;
+};
+
 export type StatusSummary = Record<string, unknown>;
 
 export type HealthSnapshot = Record<string, unknown>;

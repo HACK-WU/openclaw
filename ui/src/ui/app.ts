@@ -301,6 +301,12 @@ export class OpenClawApp extends LitElement {
   @state() skillEdits: Record<string, string> = {};
   @state() skillsBusyKey: string | null = null;
   @state() skillMessages: Record<string, SkillMessage> = {};
+  @state() skillFileEditing: string | null = null;
+  @state() skillFileContent = "";
+  @state() skillFileOriginal = "";
+  @state() skillFileEditable = false;
+  @state() skillFilePath = "";
+  @state() skillFileSaving = false;
 
   @state() debugLoading = false;
   @state() debugStatus: StatusSummary | null = null;

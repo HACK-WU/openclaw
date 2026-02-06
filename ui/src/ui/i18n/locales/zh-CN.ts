@@ -59,6 +59,8 @@ export const zhCN: Record<string, string> = {
   "skills.loadConfig": "加载网关配置以设置智能体技能。",
   "skills.allSkills": "全部技能",
   "skills.selected": "已选择 {count} 个",
+  "skills.editFile": "编辑文件",
+  "skills.readOnly": "此技能文件为只读，无法修改。",
 
   // Common Actions
   "action.refresh": "刷新",
