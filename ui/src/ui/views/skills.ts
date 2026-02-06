@@ -159,12 +159,13 @@ export function renderSkills(props: SkillsProps) {
           <div style="display: flex; gap: 8px;">
             <input
               style="flex: 1;"
+              type="search"
               .value=${props.filter}
               @input=${(e: Event) => props.onFilterChange((e.target as HTMLInputElement).value)}
               placeholder="${t("skills.filter")}"
-              autocomplete="new-password"
-              data-lpignore="true"
-              data-form-type="other"
+              autocomplete="off"
+              readonly
+              @focus=${(e: Event) => (e.target as HTMLInputElement).removeAttribute("readonly")}
             />
             <button class="btn secondary small" @click=${() => props.onFilterChange("")}>${t("action.clear")}</button>
           </div>
