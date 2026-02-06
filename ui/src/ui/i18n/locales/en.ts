@@ -49,6 +49,7 @@ export const en: Record<string, string> = {
   "skills.description": "Bundled, managed, and workspace skills.",
   "skills.filter": "Filter",
   "skills.noSkills": "No skills found.",
+  "skills.noMatch": "No matching skills. Try clearing the filter.",
   "skills.workspace": "Workspace Skills",
   "skills.builtIn": "Built-in Skills",
   "skills.installed": "Installed Skills",
