@@ -6,11 +6,12 @@ import type { ThemeMode } from "./theme.ts";
 export type UiSettings = {
   gatewayUrl: string;
   token: string;
-  sessionKey: string;
-  lastActiveSessionKey: string;
+  // sessionKey removed - now maintained only in memory per tab, URL is the source of truth
+  lastActiveSessionKey: string; // Used as default for new tabs
   theme: ThemeMode;
   chatFocusMode: boolean;
   chatShowThinking: boolean;
+  chatSessionsSidebarOpen: boolean; // Sessions sidebar in chat view
   splitRatio: number; // Sidebar split ratio (0.4 to 0.7, default 0.6)
   navCollapsed: boolean; // Collapsible sidebar state
   navGroupsCollapsed: Record<string, boolean>; // Which nav groups are collapsed
@@ -26,11 +27,11 @@ export function loadSettings(): UiSettings {
   const defaults: UiSettings = {
     gatewayUrl: defaultUrl,
     token: "",
-    sessionKey: "main",
     lastActiveSessionKey: "main",
     theme: "system",
     chatFocusMode: false,
     chatShowThinking: true,
+    chatSessionsSidebarOpen: true,
     splitRatio: 0.6,
     navCollapsed: false,
     navGroupsCollapsed: {},
@@ -48,15 +49,10 @@ export function loadSettings(): UiSettings {
           ? parsed.gatewayUrl.trim()
           : defaults.gatewayUrl,
       token: typeof parsed.token === "string" ? parsed.token : defaults.token,
-      sessionKey:
-        typeof parsed.sessionKey === "string" && parsed.sessionKey.trim()
-          ? parsed.sessionKey.trim()
-          : defaults.sessionKey,
       lastActiveSessionKey:
         typeof parsed.lastActiveSessionKey === "string" && parsed.lastActiveSessionKey.trim()
           ? parsed.lastActiveSessionKey.trim()
-          : (typeof parsed.sessionKey === "string" && parsed.sessionKey.trim()) ||
-            defaults.lastActiveSessionKey,
+          : defaults.lastActiveSessionKey,
       theme:
         parsed.theme === "light" || parsed.theme === "dark" || parsed.theme === "system"
           ? parsed.theme
@@ -67,6 +63,10 @@ export function loadSettings(): UiSettings {
         typeof parsed.chatShowThinking === "boolean"
           ? parsed.chatShowThinking
           : defaults.chatShowThinking,
+      chatSessionsSidebarOpen:
+        typeof parsed.chatSessionsSidebarOpen === "boolean"
+          ? parsed.chatSessionsSidebarOpen
+          : defaults.chatSessionsSidebarOpen,
       splitRatio:
         typeof parsed.splitRatio === "number" &&
         parsed.splitRatio >= 0.4 &&

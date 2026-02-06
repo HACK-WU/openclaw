@@ -135,6 +135,15 @@ export const en: Record<string, string> = {
   "nodes.title": "Nodes",
   "nodes.description": "Paired devices, capabilities, and command exposure.",
 
+  // Chat Sessions Sidebar
+  "chat.sidebar.title": "Sessions",
+  "chat.sidebar.collapse": "Collapse sidebar",
+  "chat.sidebar.expand": "Expand sidebar",
+  "chat.sidebar.noSessions": "No sessions found.",
+  "chat.sidebar.loading": "Loading sessions...",
+  "chat.sidebar.offline": "Offline",
+  "chat.sidebar.moreCount": "+{count} more",
+
   // Language Selector
   "language.select": "Language",
   "language.en": "English",

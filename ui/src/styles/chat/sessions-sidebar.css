@@ -1,0 +1,163 @@
+/* Nav sidebar sessions list styles */
+
+/* Chat group special styling */
+.nav-group--chat .nav-label--chat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
+}
+
+.nav-group--chat .nav-label__btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) ease,
+    background var(--duration-fast) ease;
+}
+
+.nav-group--chat .nav-label__btn .nav-label__text {
+  flex: 1;
+  text-align: left;
+}
+
+.nav-group--chat .nav-label__btn .nav-label__chevron {
+  margin-left: auto;
+}
+
+.nav-group--chat .nav-label__btn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+/* Nav sessions list container */
+.nav-sessions {
+  padding: 0 8px 8px 8px;
+}
+
+.nav-sessions__empty {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.nav-sessions__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Session item in nav */
+.nav-sessions__item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease;
+  gap: 10px;
+}
+
+.nav-sessions__item:hover {
+  background: var(--bg-hover);
+}
+
+.nav-sessions__item--active {
+  background: var(--bg-active);
+  border-left: 3px solid var(--accent-primary);
+  padding-left: 9px; /* Compensate for border */
+}
+
+.nav-sessions__item--active:hover {
+  background: var(--bg-active);
+}
+
+/* Switching state - show loading indicator */
+.nav-sessions__item--switching {
+  opacity: 0.6;
+  pointer-events: none;
+  cursor: wait;
+}
+
+.nav-sessions__item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.nav-sessions__item--active .nav-sessions__item-icon {
+  color: var(--accent-primary);
+}
+
+.nav-sessions__item-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.nav-sessions__item-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.nav-sessions__item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-sessions__item--active .nav-sessions__item-name {
+  color: var(--accent-primary);
+}
+
+.nav-sessions__item-time {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+/* Hide nav sessions when sidebar is collapsed */
+.nav--collapsed .nav-sessions {
+  display: none;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .nav-sessions {
+    padding: 0 4px 4px 4px;
+  }
+
+  .nav-sessions__item {
+    padding: 6px 8px;
+  }
+
+  .nav-new-session-btn {
+    padding: 2px 6px;
+    font-size: 11px;
+  }
+}

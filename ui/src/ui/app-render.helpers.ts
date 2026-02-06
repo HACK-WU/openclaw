@@ -1,4 +1,4 @@
-import { html } from "lit";
+import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { t } from "../i18n/index.ts";
 import { refreshChat } from "./app-chat.ts";
@@ -6,7 +6,9 @@ import { syncUrlWithSessionKey } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { OpenClawApp } from "./app.ts";
 import { ChatState, loadChatHistory } from "./controllers/chat.ts";
+import { formatAgo } from "./format.ts";
 import { getAvailableLocales, type LocaleCode } from "./i18n/index.ts";
+import { t } from "./i18n/index.ts";
 import { icons } from "./icons.ts";
 import { iconForTab, pathForTab, titleForTab, type Tab } from "./navigation.ts";
 import type { ThemeTransitionContext } from "./theme-transition.ts";
@@ -145,7 +147,6 @@ export function renderChatControls(state: AppViewState) {
             (state as unknown as OpenClawApp).resetChatScroll();
             state.applySettings({
               ...state.settings,
-              sessionKey: next,
               lastActiveSessionKey: next,
             });
             void state.loadAssistantIdentity();
@@ -518,3 +519,84 @@ function renderGlobeIcon() {
     </svg>
   `;
 }
+
+// Maximum number of sessions to display in nav sidebar for performance
+const NAV_SESSIONS_LIMIT = 50;
+
+// Sidebar sessions list for chat navigation group
+export function renderNavSessionsList(state: AppViewState) {
+  const sessions = state.sessionsResult?.sessions ?? [];
+  const currentSessionKey = state.sessionKey;
+  const isLoading = state.sessionsLoading;
+  const isConnected = state.connected;
+
+  // Limit displayed sessions for performance
+  const displaySessions = sessions.slice(0, NAV_SESSIONS_LIMIT);
+  const hasMore = sessions.length > NAV_SESSIONS_LIMIT;
+
+  return html`
+    <div class="nav-sessions">
+      ${
+        !isConnected
+          ? html`<div class="nav-sessions__empty nav-sessions__empty--offline">${t("chat.sidebar.offline")}</div>`
+          : isLoading && sessions.length === 0
+            ? html`<div class="nav-sessions__empty nav-sessions__empty--loading">${t("chat.sidebar.loading")}</div>`
+            : sessions.length === 0
+              ? html`<div class="nav-sessions__empty">${t("chat.sidebar.noSessions")}</div>`
+              : html`
+                <ul class="nav-sessions__list">
+                  ${repeat(
+                    displaySessions,
+                    (session) => session.key,
+                    (session) => renderNavSessionItem(session, currentSessionKey, state),
+                  )}
+                </ul>
+                ${hasMore ? html`<div class="nav-sessions__more">${t("chat.sidebar.moreCount", { count: sessions.length - NAV_SESSIONS_LIMIT })}</div>` : nothing}
+              `
+      }
+    </div>
+  `;
+}
+
+function renderNavSessionItem(
+  session: GatewaySessionRow,
+  currentSessionKey: string,
+  state: AppViewState,
+) {
+  const isActive = session.key === currentSessionKey;
+  const displayName = session.label || session.key;
+  const updatedAgo = session.updatedAt ? formatAgo(session.updatedAt) : "";
+  // Check if currently switching to prevent double-clicks
+  const isSwitching = (state as unknown as { sessionSwitching?: boolean }).sessionSwitching;
+
+  return html`
+    <li
+      class="nav-sessions__item ${isActive ? "nav-sessions__item--active" : ""} ${isSwitching ? "nav-sessions__item--switching" : ""}"
+      @click=${() => {
+        // Prevent switching if already switching or disconnected
+        if (isSwitching || !state.connected) {
+          return;
+        }
+        if (session.key !== state.sessionKey) {
+          void switchSession(state as unknown as Parameters<typeof switchSession>[0], session.key);
+        }
+        // Navigate to chat tab if not already there
+        if (state.tab !== "chat") {
+          state.setTab("chat");
+        }
+      }}
+      title="${session.key}"
+    >
+      <div class="nav-sessions__item-icon">
+        ${isActive ? icons.messageCircle : icons.messageSquare}
+      </div>
+      <div class="nav-sessions__item-info">
+        <div class="nav-sessions__item-name">${displayName}</div>
+        ${updatedAgo ? html`<div class="nav-sessions__item-time">${updatedAgo}</div>` : nothing}
+      </div>
+    </li>
+  `;
+}
+
+// Note: New session button removed from nav sidebar as it's redundant
+// The chat page already has a "New session" button in the compose area

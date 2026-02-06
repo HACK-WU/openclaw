@@ -11,11 +11,11 @@ const createHost = (tab: Tab): SettingsHost => ({
   settings: {
     gatewayUrl: "",
     token: "",
-    sessionKey: "main",
     lastActiveSessionKey: "main",
     theme: "system",
     chatFocusMode: false,
     chatShowThinking: true,
+    chatSessionsSidebarOpen: true,
     splitRatio: 0.6,
     navCollapsed: false,
     navGroupsCollapsed: {},

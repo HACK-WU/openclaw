@@ -9,6 +9,7 @@ import {
   loadCron,
   refreshActiveTab,
   setLastActiveSessionKey,
+  syncUrlWithSessionKey,
 } from "./app-settings.ts";
 import { handleAgentEvent, resetToolStream, type AgentEventPayload } from "./app-tool-stream.ts";
 import type { OpenClawApp } from "./app.ts";
@@ -111,28 +112,21 @@ function applySessionDefaults(host: GatewayHost, defaults?: SessionDefaultsSnaps
     return;
   }
   const resolvedSessionKey = normalizeSessionKeyForDefaults(host.sessionKey, defaults);
-  const resolvedSettingsSessionKey = normalizeSessionKeyForDefaults(
-    host.settings.sessionKey,
-    defaults,
-  );
   const resolvedLastActiveSessionKey = normalizeSessionKeyForDefaults(
     host.settings.lastActiveSessionKey,
     defaults,
   );
-  const nextSessionKey = resolvedSessionKey || resolvedSettingsSessionKey || host.sessionKey;
-  const nextSettings = {
-    ...host.settings,
-    sessionKey: resolvedSettingsSessionKey || nextSessionKey,
-    lastActiveSessionKey: resolvedLastActiveSessionKey || nextSessionKey,
-  };
-  const shouldUpdateSettings =
-    nextSettings.sessionKey !== host.settings.sessionKey ||
-    nextSettings.lastActiveSessionKey !== host.settings.lastActiveSessionKey;
+  const nextSessionKey = resolvedSessionKey || host.sessionKey;
+  const nextLastActiveSessionKey = resolvedLastActiveSessionKey || nextSessionKey;
+
   if (nextSessionKey !== host.sessionKey) {
     host.sessionKey = nextSessionKey;
   }
-  if (shouldUpdateSettings) {
-    applySettings(host as unknown as Parameters<typeof applySettings>[0], nextSettings);
+  if (nextLastActiveSessionKey !== host.settings.lastActiveSessionKey) {
+    applySettings(host as unknown as Parameters<typeof applySettings>[0], {
+      ...host.settings,
+      lastActiveSessionKey: nextLastActiveSessionKey,
+    });
   }
 }
 

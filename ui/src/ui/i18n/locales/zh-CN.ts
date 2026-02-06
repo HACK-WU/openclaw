@@ -135,6 +135,15 @@ export const zhCN: Record<string, string> = {
   "nodes.title": "节点",
   "nodes.description": "已配对设备、功能和命令暴露。",
 
+  // Chat Sessions Sidebar
+  "chat.sidebar.title": "会话",
+  "chat.sidebar.collapse": "收起侧边栏",
+  "chat.sidebar.expand": "展开侧边栏",
+  "chat.sidebar.noSessions": "未找到会话。",
+  "chat.sidebar.loading": "加载会话中...",
+  "chat.sidebar.offline": "离线",
+  "chat.sidebar.moreCount": "还有 {count} 个",
+
   // Language Selector
   "language.select": "语言",
   "language.en": "English",
