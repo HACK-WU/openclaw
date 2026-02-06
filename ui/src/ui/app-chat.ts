@@ -341,13 +341,33 @@ export async function switchSession(host: ChatHost, newSessionKey: string): Prom
   // Release the lock before async operations to allow UI to update
   host.sessionSwitching = false;
 
+  // Capture the target session key for race condition protection
+  const targetSessionKey = trimmedKey;
+
   // Load new session history in background (don't block UI)
   // Use Promise to handle errors without blocking
-  loadChatHistory(app).catch((err) => {
-    // Set error for user visibility, but don't prevent session switch
-    host.lastError = "Failed to load chat history. Refresh to retry.";
-    console.error("[switchSession] Failed to load chat history:", err);
-  });
+  loadChatHistory(app)
+    .then(() => {
+      // Race condition protection: if user switched to another session
+      // while loading, discard the loaded data to avoid showing wrong content
+      if (host.sessionKey !== targetSessionKey) {
+        console.warn("[switchSession] Session changed during load, discarding stale data", {
+          target: targetSessionKey,
+          current: host.sessionKey,
+        });
+        // Clear any stale messages that were loaded for the wrong session
+        if ("chatMessages" in app) {
+          app.chatMessages = [];
+        }
+      }
+    })
+    .catch((err) => {
+      // Only show error if still on the same session
+      if (host.sessionKey === targetSessionKey) {
+        host.lastError = "Failed to load chat history. Refresh to retry.";
+      }
+      console.error("[switchSession] Failed to load chat history:", err);
+    });
 
   // Refresh avatar in background
   refreshChatAvatar(host).catch((err) => {
