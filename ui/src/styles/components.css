@@ -1563,6 +1563,236 @@
 }
 
 /* ===========================================
+   Modal Dialog
+   =========================================== */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 200;
+  animation: fade-in 0.2s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-card {
+  width: min(420px, 100%);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  animation: scale-in 0.2s var(--ease-out);
+}
+
+.modal-card--danger {
+  border-color: var(--danger-border, var(--border));
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.modal-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  background: var(--secondary);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.modal-icon svg {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.modal-icon--danger {
+  background: var(--danger-bg, rgba(239, 68, 68, 0.1));
+  color: var(--danger, #ef4444);
+}
+
+.modal-title-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.modal-subtitle {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 4px;
+  word-break: break-all;
+}
+
+.modal-body {
+  margin-bottom: 24px;
+}
+
+.warning-box {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: var(--warning-bg, rgba(245, 158, 11, 0.1));
+  border: 1px solid var(--warning-border, rgba(245, 158, 11, 0.2));
+  border-radius: var(--radius-md);
+}
+
+.warning-box__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--warning, #f59e0b);
+  flex-shrink: 0;
+}
+
+.warning-box__icon svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.warning-box__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.warning-box__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--warning, #f59e0b);
+  margin-bottom: 4px;
+}
+
+.warning-box__text {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.modal-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--danger-bg, rgba(239, 68, 68, 0.1));
+  border: 1px solid var(--danger-border, rgba(239, 68, 68, 0.2));
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--danger, #ef4444);
+}
+
+.modal-error__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.modal-error__icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Button variants */
+.btn--secondary {
+  background: var(--bg-elevated, var(--bg)) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+}
+
+.btn--secondary:hover:not(:disabled) {
+  background: var(--bg-hover) !important;
+  border-color: var(--border-hover, var(--border)) !important;
+}
+
+.btn--danger {
+  background: var(--danger, #ef4444) !important;
+  color: white !important;
+  border: 1px solid var(--danger, #ef4444) !important;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(239, 68, 68, 0.2);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--danger-hover, #dc2626) !important;
+  border-color: var(--danger-hover, #dc2626) !important;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+}
+
+.btn--danger:disabled {
+  background: var(--danger, #ef4444) !important;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn__spinner {
+  display: inline-flex;
+  animation: spin 1s linear infinite;
+}
+
+.btn__spinner svg {
+  width: 16px;
+  height: 16px;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===========================================
    Agents
    =========================================== */
 

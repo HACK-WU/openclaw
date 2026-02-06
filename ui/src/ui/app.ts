@@ -29,6 +29,7 @@ import type {
   NostrProfile,
 } from "./types.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
+import type { DeleteSessionDialogState } from "./views/delete-session-dialog.ts";
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
   handleChannelConfigSave as handleChannelConfigSaveInternal,
@@ -78,6 +79,7 @@ import {
 } from "./app-tool-stream.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
+import { loadSessions } from "./controllers/sessions.ts";
 import { initLocale, setLocale as setLocaleInternal, type LocaleCode } from "./i18n/index.ts";
 import { loadSettings, type UiSettings } from "./storage.ts";
 import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types.ts";
@@ -164,6 +166,7 @@ export class OpenClawApp extends LitElement {
   @state() execApprovalBusy = false;
   @state() execApprovalError: string | null = null;
   @state() pendingGatewayUrl: string | null = null;
+  @state() deleteSessionDialog: DeleteSessionDialogState | null = null;
 
   @state() configLoading = false;
   @state() configRaw = "{\n}\n";
@@ -545,6 +548,41 @@ export class OpenClawApp extends LitElement {
 
   handleGatewayUrlCancel() {
     this.pendingGatewayUrl = null;
+  }
+
+  async handleDeleteSessionConfirm() {
+    if (!this.deleteSessionDialog || !this.client || !this.connected) {
+      return;
+    }
+    const sessionKeyToDelete = this.deleteSessionDialog.sessionKey;
+    this.deleteSessionDialog.isDeleting = true;
+    this.deleteSessionDialog.error = null;
+    try {
+      await this.client.request("sessions.delete", {
+        key: sessionKeyToDelete,
+        deleteTranscript: true,
+      });
+      // Close dialog
+      this.deleteSessionDialog = null;
+      // Refresh sessions list
+      await loadSessions(this);
+      // If deleted session was current session, switch to main
+      if (this.sessionKey === sessionKeyToDelete) {
+        const mainSession = this.sessionsResult?.sessions.find((s) => s.key === "main");
+        if (mainSession) {
+          this.sessionKey = "main";
+        }
+      }
+    } catch (err) {
+      if (this.deleteSessionDialog) {
+        this.deleteSessionDialog.isDeleting = false;
+        this.deleteSessionDialog.error = String(err);
+      }
+    }
+  }
+
+  handleDeleteSessionCancel() {
+    this.deleteSessionDialog = null;
   }
 
   // Sidebar handlers for tool output viewing
