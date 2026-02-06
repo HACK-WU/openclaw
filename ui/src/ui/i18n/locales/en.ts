@@ -59,6 +59,8 @@ export const en: Record<string, string> = {
   "skills.loadConfig": "Load the gateway config to set per-agent skills.",
   "skills.allSkills": "all skills",
   "skills.selected": "{count} selected",
+  "skills.editFile": "Edit File",
+  "skills.readOnly": "This skill file is read-only and cannot be modified.",
 
   // Common Actions
   "action.refresh": "Refresh",
