@@ -1,0 +1,102 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build",
+      "type": "shell",
+      "command": "pnpm build",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$tsc"]
+    },
+    {
+      "label": "Type Check (tsgo)",
+      "type": "shell",
+      "command": "pnpm tsgo",
+      "problemMatcher": ["$tsc"]
+    },
+    {
+      "label": "Lint",
+      "type": "shell",
+      "command": "pnpm lint",
+      "problemMatcher": {
+        "owner": "oxlint",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": {
+          "regexp": "^(.+):(\\d+):(\\d+):\\s+(error|warning)\\s+(.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
+      }
+    },
+    {
+      "label": "Format Check",
+      "type": "shell",
+      "command": "pnpm format"
+    },
+    {
+      "label": "Format Fix",
+      "type": "shell",
+      "command": "pnpm format:fix"
+    },
+    {
+      "label": "Lint Fix",
+      "type": "shell",
+      "command": "pnpm lint:fix"
+    },
+    {
+      "label": "Full Check",
+      "type": "shell",
+      "command": "pnpm check",
+      "group": "test"
+    },
+    {
+      "label": "Test",
+      "type": "shell",
+      "command": "pnpm test",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Test Watch",
+      "type": "shell",
+      "command": "pnpm test:watch",
+      "isBackground": true
+    },
+    {
+      "label": "Test Coverage",
+      "type": "shell",
+      "command": "pnpm test:coverage"
+    },
+    {
+      "label": "Install Dependencies",
+      "type": "shell",
+      "command": "pnpm install"
+    },
+    {
+      "label": "Dev Server",
+      "type": "shell",
+      "command": "pnpm dev",
+      "isBackground": true
+    },
+    {
+      "label": "Gateway Dev",
+      "type": "shell",
+      "command": "pnpm gateway:dev",
+      "isBackground": true
+    },
+    {
+      "label": "UI Dev",
+      "type": "shell",
+      "command": "pnpm ui:dev",
+      "isBackground": true
+    }
+  ]
+}

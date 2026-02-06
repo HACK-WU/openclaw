@@ -1,22 +1,86 @@
 {
+  // 编辑器基础设置
   "editor.formatOnSave": true,
+  "editor.tabSize": 2,
+  "editor.detectIndentation": false,
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit"
+  },
+
+  // 文件设置
   "files.insertFinalNewline": true,
   "files.trimFinalNewlines": true,
+  "files.trimTrailingWhitespace": true,
+  "files.eol": "\n",
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.git": true,
+    "**/apps/macos/.build": true,
+    "**/apps/ios/.build": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/.git/objects/**": true
+  },
+
+  // 搜索排除
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/pnpm-lock.yaml": true,
+    "**/apps/macos/.build": true,
+    "**/apps/ios/.build": true
+  },
+
+  // JavaScript/TypeScript 格式化 (使用 oxc)
   "[javascript]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"
   },
-  "[typescriptreact]": {
+  "[javascriptreact]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"
   },
   "[typescript]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"
   },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
   "[json]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"
   },
+  "[jsonc]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
+
+  // Markdown 设置
+  "[markdown]": {
+    "editor.wordWrap": "on",
+    "files.trimTrailingWhitespace": false
+  },
+
+  // TypeScript 设置
   "typescript.preferences.importModuleSpecifierEnding": "js",
   "typescript.reportStyleChecksAsWarnings": false,
   "typescript.updateImportsOnFileMove.enabled": "always",
   "typescript.tsdk": "node_modules/typescript/lib",
-  "typescript.experimental.useTsgo": true
+  "typescript.experimental.useTsgo": true,
+  "typescript.preferences.quoteStyle": "double",
+
+  // 禁用内置的 JS/TS 校验 (使用 oxlint)
+  "javascript.validate.enable": false,
+  "typescript.validate.enable": true,
+
+  // 终端设置
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "terminal.integrated.scrollback": 10000,
+
+  // Git 设置
+  "git.autofetch": true,
+  "git.confirmSync": false,
+
+  // 扩展设置 - oxc
+  "oxc.lint.enable": true,
+  "oxc.format.enable": true
 }
