@@ -14,7 +14,7 @@ export const TAB_GROUPS = [
 export function getTabGroups() {
   return TAB_GROUPS.map((group) => ({
     label: t(group.labelKey),
-    tabs: group.tabs,
+    tabs: group.tabs as readonly Tab[],
   }));
 }
 

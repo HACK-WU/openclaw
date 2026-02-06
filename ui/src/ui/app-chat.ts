@@ -3,13 +3,14 @@ import type { GatewayHelloOk } from "./gateway.ts";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
 import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js";
 import { scheduleChatScroll } from "./app-scroll.ts";
-import { setLastActiveSessionKey } from "./app-settings.ts";
+import { setLastActiveSessionKey, syncUrlWithSessionKey } from "./app-settings.ts";
 import { resetToolStream } from "./app-tool-stream.ts";
 import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import { normalizeBasePath } from "./navigation.ts";
 import { generateUUID } from "./uuid.ts";
 
+// Extended host type for session switching
 export type ChatHost = {
   connected: boolean;
   chatMessage: string;
@@ -17,11 +18,15 @@ export type ChatHost = {
   chatQueue: ChatQueueItem[];
   chatRunId: string | null;
   chatSending: boolean;
+  chatStream: string | null;
+  chatStreamStartedAt: number | null;
   sessionKey: string;
   basePath: string;
   hello: GatewayHelloOk | null;
   chatAvatarUrl: string | null;
   refreshSessionsAfterChat: Set<string>;
+  lastError: string | null;
+  sessionSwitching?: boolean;
 };
 
 export const CHAT_SESSIONS_ACTIVE_MINUTES = 120;
@@ -261,4 +266,92 @@ export async function refreshChatAvatar(host: ChatHost) {
   } catch {
     host.chatAvatarUrl = null;
   }
+}
+
+/**
+ * Switch to a different session.
+ * Clears current session state and loads the new session history.
+ * Note: Does not abort the backend AI response - it continues running in the background.
+ */
+export async function switchSession(host: ChatHost, newSessionKey: string): Promise<void> {
+  // Validate session key
+  if (!newSessionKey || typeof newSessionKey !== "string") {
+    return;
+  }
+  const trimmedKey = newSessionKey.trim();
+  if (!trimmedKey || trimmedKey === host.sessionKey) {
+    return;
+  }
+
+  // Prevent concurrent session switches
+  if (host.sessionSwitching) {
+    return;
+  }
+
+  // Check connection before switching
+  if (!host.connected) {
+    host.lastError = "Cannot switch session: not connected";
+    return;
+  }
+
+  host.sessionSwitching = true;
+
+  // IMMEDIATELY update session key for instant UI feedback
+  // This ensures the sidebar highlights the correct session right away
+  host.sessionKey = trimmedKey;
+
+  // Clear current session state synchronously for instant visual update
+  host.chatStream = null;
+  host.chatStreamStartedAt = null;
+  host.chatRunId = null;
+  host.chatQueue = [];
+  host.chatSending = false;
+  host.chatMessage = "";
+  host.chatAttachments = [];
+  host.lastError = null;
+
+  // Clear chat messages immediately so user sees empty chat for new session
+  const app = host as unknown as OpenClawApp;
+  if ("chatMessages" in app) {
+    app.chatMessages = [];
+  }
+  if ("chatToolMessages" in app) {
+    app.chatToolMessages = [];
+  }
+
+  // Sync to URL (this updates the browser history)
+  syncUrlWithSessionKey(
+    host as unknown as Parameters<typeof syncUrlWithSessionKey>[0],
+    trimmedKey,
+    false,
+  );
+
+  // Update lastActiveSessionKey in settings (syncs to localStorage)
+  setLastActiveSessionKey(
+    host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
+    trimmedKey,
+  );
+
+  // Reset tool stream state
+  resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+
+  // Reset scroll position
+  scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
+
+  // Release the lock before async operations to allow UI to update
+  host.sessionSwitching = false;
+
+  // Load new session history in background (don't block UI)
+  // Use Promise to handle errors without blocking
+  loadChatHistory(app).catch((err) => {
+    // Set error for user visibility, but don't prevent session switch
+    host.lastError = "Failed to load chat history. Refresh to retry.";
+    console.error("[switchSession] Failed to load chat history:", err);
+  });
+
+  // Refresh avatar in background
+  refreshChatAvatar(host).catch((err) => {
+    // Silently handle avatar load errors - not critical
+    console.warn("[switchSession] Failed to load avatar:", err);
+  });
 }

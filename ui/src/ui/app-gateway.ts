@@ -11,6 +11,7 @@ import {
   loadCron,
   refreshActiveTab,
   setLastActiveSessionKey,
+  syncUrlWithSessionKey,
 } from "./app-settings.ts";
 import { handleAgentEvent, resetToolStream, type AgentEventPayload } from "./app-tool-stream.ts";
 import { loadAgents } from "./controllers/agents.ts";
@@ -90,28 +91,21 @@ function applySessionDefaults(host: GatewayHost, defaults?: SessionDefaultsSnaps
     return;
   }
   const resolvedSessionKey = normalizeSessionKeyForDefaults(host.sessionKey, defaults);
-  const resolvedSettingsSessionKey = normalizeSessionKeyForDefaults(
-    host.settings.sessionKey,
-    defaults,
-  );
   const resolvedLastActiveSessionKey = normalizeSessionKeyForDefaults(
     host.settings.lastActiveSessionKey,
     defaults,
   );
-  const nextSessionKey = resolvedSessionKey || resolvedSettingsSessionKey || host.sessionKey;
-  const nextSettings = {
-    ...host.settings,
-    sessionKey: resolvedSettingsSessionKey || nextSessionKey,
-    lastActiveSessionKey: resolvedLastActiveSessionKey || nextSessionKey,
-  };
-  const shouldUpdateSettings =
-    nextSettings.sessionKey !== host.settings.sessionKey ||
-    nextSettings.lastActiveSessionKey !== host.settings.lastActiveSessionKey;
+  const nextSessionKey = resolvedSessionKey || host.sessionKey;
+  const nextLastActiveSessionKey = resolvedLastActiveSessionKey || nextSessionKey;
+
   if (nextSessionKey !== host.sessionKey) {
     host.sessionKey = nextSessionKey;
   }
-  if (shouldUpdateSettings) {
-    applySettings(host as unknown as Parameters<typeof applySettings>[0], nextSettings);
+  if (nextLastActiveSessionKey !== host.settings.lastActiveSessionKey) {
+    applySettings(host as unknown as Parameters<typeof applySettings>[0], {
+      ...host.settings,
+      lastActiveSessionKey: nextLastActiveSessionKey,
+    });
   }
 }
 
@@ -191,20 +185,47 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
 
   if (evt.event === "chat") {
     const payload = evt.payload as ChatEventPayload | undefined;
+    const runId = payload?.runId;
+    const isNewSessionCommand = runId && host.refreshSessionsAfterChat.has(runId);
+
+    // When /new or /reset command returns with a new sessionKey, switch to it
     if (payload?.sessionKey) {
+      const currentSessionKey = (host as unknown as OpenClawApp).sessionKey;
+      const newSessionKey = payload.sessionKey;
+
+      // Update last active session key in settings
       setLastActiveSessionKey(
         host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
-        payload.sessionKey,
+        newSessionKey,
       );
+
+      // If this is a new session command and sessionKey changed, update UI state
+      if (isNewSessionCommand && newSessionKey !== currentSessionKey) {
+        (host as unknown as OpenClawApp).sessionKey = newSessionKey;
+        // Sync URL with new session key
+        syncUrlWithSessionKey(
+          host as unknown as Parameters<typeof syncUrlWithSessionKey>[0],
+          newSessionKey,
+          false,
+        );
+      }
     }
     const state = handleChatEvent(host as unknown as OpenClawApp, payload);
+
     if (state === "final" || state === "error" || state === "aborted") {
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
       void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
-      const runId = payload?.runId;
-      if (runId && host.refreshSessionsAfterChat.has(runId)) {
+      if (isNewSessionCommand) {
         host.refreshSessionsAfterChat.delete(runId);
-        if (state === "final") {
+      }
+      // Refresh sessions list when:
+      // 1. Command triggered refresh (e.g., /new, /reset)
+      // 2. Current session is not in the sessions list (new session was created)
+      if (state === "final") {
+        const sessions = (host as unknown as OpenClawApp).sessionsResult?.sessions ?? [];
+        const currentSessionKey = (host as unknown as OpenClawApp).sessionKey;
+        const sessionExists = sessions.some((s) => s.key === currentSessionKey);
+        if (isNewSessionCommand || !sessionExists) {
           void loadSessions(host as unknown as OpenClawApp, {
             activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
           });

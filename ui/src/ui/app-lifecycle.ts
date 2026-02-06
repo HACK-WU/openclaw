@@ -17,10 +17,15 @@ import {
   syncTabWithLocation,
   syncThemeWithSettings,
 } from "./app-settings.ts";
+import { loadSessions } from "./controllers/sessions.ts";
+
+const CHAT_SESSIONS_ACTIVE_MINUTES = 120;
+const SETTINGS_KEY = "openclaw.control.settings.v1";
 
 type LifecycleHost = {
   basePath: string;
   tab: Tab;
+  connected: boolean;
   chatHasAutoScrolled: boolean;
   chatLoading: boolean;
   chatMessages: unknown[];
@@ -30,6 +35,7 @@ type LifecycleHost = {
   logsAtBottom: boolean;
   logsEntries: unknown[];
   popStateHandler: () => void;
+  storageHandler: ((e: StorageEvent) => void) | null;
   topbarObserver: ResizeObserver | null;
 };
 
@@ -40,6 +46,18 @@ export function handleConnected(host: LifecycleHost) {
   syncThemeWithSettings(host as unknown as Parameters<typeof syncThemeWithSettings>[0]);
   attachThemeListener(host as unknown as Parameters<typeof attachThemeListener>[0]);
   window.addEventListener("popstate", host.popStateHandler);
+
+  // Set up storage event listener to sync sessions list across tabs
+  host.storageHandler = (e: StorageEvent) => {
+    if (e.key === SETTINGS_KEY && host.connected && host.tab === "chat") {
+      // Reload sessions list when settings change in another tab
+      void loadSessions(host as unknown as Parameters<typeof loadSessions>[0], {
+        activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
+      });
+    }
+  };
+  window.addEventListener("storage", host.storageHandler);
+
   connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
   startNodesPolling(host as unknown as Parameters<typeof startNodesPolling>[0]);
   if (host.tab === "logs") {
@@ -56,6 +74,10 @@ export function handleFirstUpdated(host: LifecycleHost) {
 
 export function handleDisconnected(host: LifecycleHost) {
   window.removeEventListener("popstate", host.popStateHandler);
+  if (host.storageHandler) {
+    window.removeEventListener("storage", host.storageHandler);
+    host.storageHandler = null;
+  }
   stopNodesPolling(host as unknown as Parameters<typeof stopNodesPolling>[0]);
   stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
   stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);

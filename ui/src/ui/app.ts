@@ -127,7 +127,7 @@ export class OpenClawApp extends LitElement {
   @state() assistantAvatar = injectedAssistantIdentity.avatar;
   @state() assistantAgentId = injectedAssistantIdentity.agentId ?? null;
 
-  @state() sessionKey = this.settings.sessionKey;
+  @state() sessionKey = this.settings.lastActiveSessionKey;
   @state() chatLoading = false;
   @state() chatSending = false;
   @state() chatMessage = "";
@@ -350,6 +350,7 @@ export class OpenClawApp extends LitElement {
   basePath = "";
   private popStateHandler = () =>
     onPopStateInternal(this as unknown as Parameters<typeof onPopStateInternal>[0]);
+  private storageHandler: ((e: StorageEvent) => void) | null = null;
   private themeMedia: MediaQueryList | null = null;
   private themeMediaHandler: ((event: MediaQueryListEvent) => void) | null = null;
   private topbarObserver: ResizeObserver | null = null;

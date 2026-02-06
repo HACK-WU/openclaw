@@ -59,7 +59,7 @@ type SettingsHost = {
 export function applySettings(host: SettingsHost, next: UiSettings) {
   const normalized = {
     ...next,
-    lastActiveSessionKey: next.lastActiveSessionKey?.trim() || next.sessionKey.trim() || "main",
+    lastActiveSessionKey: next.lastActiveSessionKey?.trim() || "main",
   };
   host.settings = normalized;
   saveSettings(normalized);
@@ -110,11 +110,14 @@ export function applySettingsFromUrl(host: SettingsHost) {
     const session = sessionRaw.trim();
     if (session) {
       host.sessionKey = session;
-      applySettings(host, {
-        ...host.settings,
-        sessionKey: session,
-        lastActiveSessionKey: session,
-      });
+      // Only update lastActiveSessionKey in settings, don't save sessionKey to localStorage
+      // sessionKey is now maintained only in memory per tab
+      if (host.settings.lastActiveSessionKey !== session) {
+        applySettings(host, {
+          ...host.settings,
+          lastActiveSessionKey: session,
+        });
+      }
     }
   }
 
@@ -324,11 +327,13 @@ export function onPopState(host: SettingsHost) {
   const session = url.searchParams.get("session")?.trim();
   if (session) {
     host.sessionKey = session;
-    applySettings(host, {
-      ...host.settings,
-      sessionKey: session,
-      lastActiveSessionKey: session,
-    });
+    // Only update lastActiveSessionKey in settings, don't save sessionKey to localStorage
+    if (host.settings.lastActiveSessionKey !== session) {
+      applySettings(host, {
+        ...host.settings,
+        lastActiveSessionKey: session,
+      });
+    }
   }
 
   setTabFromRoute(host, resolved);
