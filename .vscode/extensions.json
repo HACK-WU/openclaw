@@ -1,3 +1,39 @@
 {
-  "recommendations": ["oxc.oxc-vscode"]
+  "recommendations": [
+    // Linting & Formatting (项目使用 oxlint + oxfmt)
+    "oxc.oxc-vscode",
+
+    // TypeScript 增强
+    "ms-vscode.vscode-typescript-next",
+
+    // Git 增强
+    "eamodio.gitlens",
+
+    // 测试 (Vitest)
+    "vitest.explorer",
+
+    // Markdown
+    "yzhang.markdown-all-in-one",
+
+    // Swift (macOS/iOS 开发)
+    "sswg.swift-lang",
+
+    // Kotlin (Android 开发)
+    "mathiasfrohlich.kotlin",
+
+    // YAML
+    "redhat.vscode-yaml",
+
+    // Docker
+    "ms-azuretools.vscode-docker",
+
+    // 实用工具
+    "EditorConfig.EditorConfig",
+    "streetsidesoftware.code-spell-checker"
+  ],
+  "unwantedRecommendations": [
+    // 避免与 oxc 冲突的格式化工具
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint"
+  ]
 }
