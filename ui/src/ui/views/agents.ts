@@ -1831,12 +1831,13 @@ function renderAgentSkills(params: {
           <div style="display: flex; gap: 8px;">
             <input
               style="flex: 1;"
+              type="search"
               .value=${params.filter}
               @input=${(e: Event) => params.onFilterChange((e.target as HTMLInputElement).value)}
               placeholder="Search skills"
-              autocomplete="new-password"
-              data-lpignore="true"
-              data-form-type="other"
+              autocomplete="off"
+              readonly
+              @focus=${(e: Event) => (e.target as HTMLInputElement).removeAttribute("readonly")}
             />
             <button class="btn secondary small" @click=${() => params.onFilterChange("")}>${t("action.clear")}</button>
           </div>
