@@ -163,8 +163,9 @@ export function renderSkills(props: SkillsProps) {
               @input=${(e: Event) => props.onFilterChange((e.target as HTMLInputElement).value)}
               placeholder="${t("skills.filter")}"
               autocomplete="off"
+              name="skills-filter-${Date.now()}"
             />
-            ${props.filter ? html`<button class="btn secondary small" @click=${() => props.onFilterChange("")}>${t("action.clear")}</button>` : nothing}
+            <button class="btn secondary small" @click=${() => props.onFilterChange("")}>${t("action.clear")}</button>
           </div>
         </label>
         <div class="muted">${filtered.length} shown</div>
