@@ -8,6 +8,7 @@ import { refreshChat } from "./app-chat.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
 import { OpenClawApp } from "./app.ts";
 import { ChatState, loadChatHistory } from "./controllers/chat.ts";
+import { getAvailableLocales, type LocaleCode } from "./i18n/index.ts";
 import { icons } from "./icons.ts";
 import { iconForTab, pathForTab, titleForTab, type Tab } from "./navigation.ts";
 
@@ -344,6 +345,44 @@ function renderMonitorIcon() {
       <rect width="20" height="14" x="2" y="3" rx="2"></rect>
       <line x1="8" x2="16" y1="21" y2="21"></line>
       <line x1="12" x2="12" y1="17" y2="21"></line>
+    </svg>
+  `;
+}
+
+export function renderLocaleToggle(state: AppViewState) {
+  const locales = getAvailableLocales();
+
+  return html`
+    <div class="locale-toggle">
+      <select
+        class="locale-toggle__select"
+        .value=${state.locale}
+        @change=${(e: Event) => {
+          const next = (e.target as HTMLSelectElement).value as LocaleCode;
+          state.setLocale(next);
+        }}
+        aria-label="Select language"
+        title="Language"
+      >
+        ${locales.map(
+          (locale) => html`
+            <option value=${locale.code} ?selected=${state.locale === locale.code}>
+              ${locale.name}
+            </option>
+          `,
+        )}
+      </select>
+      ${renderGlobeIcon()}
+    </div>
+  `;
+}
+
+function renderGlobeIcon() {
+  return html`
+    <svg class="locale-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="10"></circle>
+      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
+      <path d="M2 12h20"></path>
     </svg>
   `;
 }

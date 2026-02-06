@@ -78,6 +78,7 @@ import {
 } from "./app-tool-stream.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
+import { initLocale, setLocale as setLocaleInternal, type LocaleCode } from "./i18n/index.ts";
 import { loadSettings, type UiSettings } from "./storage.ts";
 import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types.ts";
 
@@ -88,6 +89,9 @@ declare global {
 }
 
 const injectedAssistantIdentity = resolveInjectedAssistantIdentity();
+
+// Initialize i18n with browser locale or stored preference
+const initialLocale = initLocale();
 
 function resolveOnboardingMode(): boolean {
   if (!window.location.search) {
@@ -111,6 +115,7 @@ export class OpenClawApp extends LitElement {
   @state() connected = false;
   @state() theme: ThemeMode = this.settings.theme ?? "system";
   @state() themeResolved: ResolvedTheme = "dark";
+  @state() locale: LocaleCode = initialLocale;
   @state() hello: GatewayHelloOk | null = null;
   @state() lastError: string | null = null;
   @state() eventLog: EventLogEntry[] = [];
@@ -417,6 +422,11 @@ export class OpenClawApp extends LitElement {
 
   setTheme(next: ThemeMode, context?: Parameters<typeof setThemeInternal>[2]) {
     setThemeInternal(this as unknown as Parameters<typeof setThemeInternal>[0], next, context);
+  }
+
+  setLocale(next: LocaleCode) {
+    setLocaleInternal(next);
+    this.locale = next;
   }
 
   async loadOverview() {
