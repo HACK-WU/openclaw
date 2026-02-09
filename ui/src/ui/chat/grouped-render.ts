@@ -13,6 +13,7 @@ import {
 } from "./message-extract.ts";
 import { isToolResultMessage, normalizeRoleForGrouping } from "./message-normalizer.ts";
 import { extractToolCards, renderToolCardSidebar } from "./tool-cards.ts";
+import { typewriter } from "./typewriter-directive.ts";
 
 type ImageBlock = {
   url: string;
@@ -74,7 +75,7 @@ export function renderReadingIndicatorGroup(assistant?: AssistantIdentity) {
 export function renderStreamingGroup(
   text: string,
   startedAt: number,
-  onOpenSidebar?: (content: string) => void,
+  _onOpenSidebar?: (content: string) => void,
   assistant?: AssistantIdentity,
 ) {
   const timestamp = new Date(startedAt).toLocaleTimeString([], {
@@ -87,15 +88,9 @@ export function renderStreamingGroup(
     <div class="chat-group assistant">
       ${renderAvatar("assistant", assistant)}
       <div class="chat-group-messages">
-        ${renderGroupedMessage(
-          {
-            role: "assistant",
-            content: [{ type: "text", text }],
-            timestamp: startedAt,
-          },
-          { isStreaming: true, showReasoning: false },
-          onOpenSidebar,
-        )}
+        <div class="chat-bubble streaming fade-in">
+          <div class="chat-text chat-text-streaming" ${typewriter(text)}></div>
+        </div>
         <div class="chat-group-footer">
           <span class="chat-sender-name">${name}</span>
           <span class="chat-group-timestamp">${timestamp}</span>

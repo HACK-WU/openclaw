@@ -19,6 +19,12 @@ import {
 import { loadControlUiBootstrapConfig } from "./controllers/control-ui-bootstrap.ts";
 import type { Tab } from "./navigation.ts";
 
+/**
+ * Heartbeat interval for detecting stale streaming state (ms).
+ * Uses a longer interval to avoid excessive checking.
+ */
+const CHAT_HEARTBEAT_INTERVAL_MS = 10_000;
+
 type LifecycleHost = {
   basePath: string;
   client?: { stop: () => void } | null;
@@ -33,12 +39,17 @@ type LifecycleHost = {
   chatMessages: unknown[];
   chatToolMessages: unknown[];
   chatStream: string;
+  chatRunId: string | null;
+  chatStreamStartedAt: number | null;
+  sessionKey: string;
   logsAutoFollow: boolean;
   logsAtBottom: boolean;
   logsEntries: unknown[];
   popStateHandler: () => void;
   storageHandler: ((e: StorageEvent) => void) | null;
   topbarObserver: ResizeObserver | null;
+  chatHeartbeatInterval: ReturnType<typeof setInterval> | null;
+  client: unknown;
 };
 
 export function handleConnected(host: LifecycleHost) {
@@ -61,6 +72,11 @@ export function handleConnected(host: LifecycleHost) {
   };
   window.addEventListener("storage", host.storageHandler);
 
+  // Set up heartbeat for detecting stale streaming state
+  host.chatHeartbeatInterval = setInterval(() => {
+    handleChatHeartbeat(host);
+  }, CHAT_HEARTBEAT_INTERVAL_MS);
+
   connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
   startNodesPolling(host as unknown as Parameters<typeof startNodesPolling>[0]);
   if (host.tab === "logs") {
@@ -68,6 +84,29 @@ export function handleConnected(host: LifecycleHost) {
   }
   if (host.tab === "debug") {
     startDebugPolling(host as unknown as Parameters<typeof startDebugPolling>[0]);
+  }
+}
+
+/**
+ * Heartbeat handler to detect and recover from stale streaming state.
+ * If a chat stream has been active for too long without updates, refresh the history.
+ */
+function handleChatHeartbeat(host: LifecycleHost) {
+  if (!host.connected || host.tab !== "chat") {
+    return;
+  }
+
+  // Check for stream timeout
+  if (checkChatStreamTimeout(host as unknown as Parameters<typeof checkChatStreamTimeout>[0])) {
+    console.warn(
+      "[chat-heartbeat] Stream timeout detected, clearing stale state and refreshing history",
+    );
+    // Clear stale streaming state
+    host.chatRunId = null;
+    (host as unknown as { chatStream: string | null }).chatStream = null;
+    (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
+    // Refresh chat history to get the actual state
+    void loadChatHistory(host as unknown as Parameters<typeof loadChatHistory>[0]);
   }
 }
 
@@ -80,6 +119,11 @@ export function handleDisconnected(host: LifecycleHost) {
   if (host.storageHandler) {
     window.removeEventListener("storage", host.storageHandler);
     host.storageHandler = null;
+  }
+  // Clear heartbeat interval
+  if (host.chatHeartbeatInterval) {
+    clearInterval(host.chatHeartbeatInterval);
+    host.chatHeartbeatInterval = null;
   }
   stopNodesPolling(host as unknown as Parameters<typeof stopNodesPolling>[0]);
   stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
