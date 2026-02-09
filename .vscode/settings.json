@@ -65,7 +65,6 @@
   "typescript.reportStyleChecksAsWarnings": false,
   "typescript.updateImportsOnFileMove.enabled": "always",
   "typescript.tsdk": "node_modules/typescript/lib",
-  "typescript.experimental.useTsgo": true,
   "typescript.preferences.quoteStyle": "double",
 
   // 禁用内置的 JS/TS 校验 (使用 oxlint)
