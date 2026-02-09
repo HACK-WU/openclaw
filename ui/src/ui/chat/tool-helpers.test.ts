@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { formatToolOutputForSidebar, getTruncatedPreview } from "./tool-helpers.ts";
+import {
+  containsAnsiEscapes,
+  formatToolOutputForSidebar,
+  getTruncatedPreview,
+  isTerminalLikeOutput,
+  stripAnsiEscapes,
+} from "./tool-helpers.ts";
 
 describe("tool-helpers", () => {
   describe("formatToolOutputForSidebar", () => {
@@ -58,6 +64,12 @@ describe("tool-helpers", () => {
       expect(result).toBe("[not valid json");
     });
 
+    it("does not attempt to format terminal-like output as JSON", () => {
+      const input = "[2K[1A[38;5;79mMimicking...";
+      const result = formatToolOutputForSidebar(input);
+      expect(result).toBe(input);
+    });
+
     it("trims whitespace before detecting JSON", () => {
       const input = '   {"trimmed": true}   ';
       const result = formatToolOutputForSidebar(input);
@@ -74,6 +86,25 @@ describe("tool-helpers", () => {
     it("handles whitespace-only string", () => {
       const result = formatToolOutputForSidebar("   ");
       expect(result).toBe("   ");
+    });
+  });
+
+  describe("containsAnsiEscapes / isTerminalLikeOutput / stripAnsiEscapes", () => {
+    it("detects ANSI escapes reliably", () => {
+      const input = "hello \u001b[38;5;79mworld\u001b[0m";
+      expect(containsAnsiEscapes(input)).toBe(true);
+      // Call twice to ensure we never regress into stateful /g test behavior
+      expect(containsAnsiEscapes(input)).toBe(true);
+    });
+
+    it("detects terminal-like output even when ESC is missing", () => {
+      const input = "[2K[1A[38;5;79mMimicking...";
+      expect(isTerminalLikeOutput(input)).toBe(true);
+    });
+
+    it("strips ANSI escapes", () => {
+      const input = "a\u001b[31mb\u001b[0mc";
+      expect(stripAnsiEscapes(input)).toBe("abc");
     });
   });
 

@@ -40,4 +40,6 @@ export type ToolCard = {
   name: string;
   args?: unknown;
   text?: string;
+  /** 标记该工具输出是否来自 PTY（伪终端），需要使用终端模拟器渲染 */
+  isPty?: boolean;
 };
