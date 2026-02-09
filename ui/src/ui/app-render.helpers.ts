@@ -548,7 +548,8 @@ export function renderNavSessionsList(state: AppViewState) {
                   ${repeat(
                     displaySessions,
                     (session) => session.key,
-                    (session) => renderNavSessionItem(session, currentSessionKey, state),
+                    (session) =>
+                      renderNavSessionItem(session, currentSessionKey, state, sessions.length),
                   )}
                 </ul>
                 ${hasMore ? html`<div class="nav-sessions__more">${t("chat.sidebar.moreCount", { count: sessions.length - NAV_SESSIONS_LIMIT })}</div>` : nothing}
@@ -562,6 +563,7 @@ function renderNavSessionItem(
   session: GatewaySessionRow,
   currentSessionKey: string,
   state: AppViewState,
+  totalSessions: number,
 ) {
   const isActive = session.key === currentSessionKey;
   const displayName = session.label || session.key;
@@ -602,7 +604,7 @@ function renderNavSessionItem(
         </div>
       </div>
       ${
-        session.key === "main"
+        totalSessions <= 1
           ? nothing
           : html`
             <button

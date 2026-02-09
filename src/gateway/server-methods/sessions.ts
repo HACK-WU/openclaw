@@ -10,7 +10,6 @@ import { loadConfig } from "../../config/config.js";
 import {
   loadSessionStore,
   snapshotSessionOrigin,
-  resolveMainSessionKey,
   type SessionEntry,
   updateSessionStore,
 } from "../../config/sessions.js";
@@ -527,7 +526,10 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       respond(
         false,
         undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, `Cannot delete the main session (${mainKey}).`),
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `Cannot delete the last remaining session (${target.canonicalKey}).`,
+        ),
       );
       return;
     }
