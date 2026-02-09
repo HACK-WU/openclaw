@@ -1,7 +1,7 @@
 import { html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { AssistantIdentity } from "../assistant-identity.ts";
-import type { MessageGroup } from "../types/chat-types.ts";
+import type { MessageGroup, ToolCard } from "../types/chat-types.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import { renderCopyAsMarkdownButton } from "./copy-as-markdown.ts";
@@ -247,8 +247,32 @@ function renderGroupedMessage(
     .filter(Boolean)
     .join(" ");
 
-  if (!markdown && hasToolCards && isToolResult) {
-    return html`${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}`;
+  // Tool result 消息：不显示原始文本气泡（避免与右侧面板重复），
+  // 但保留图片渲染；工具输出通过工具卡片的 "View" 在右侧面板查看。
+  if (isToolResult) {
+    const renderedCards = hasToolCards
+      ? html`${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}`
+      : markdown
+        ? html`${renderToolCardSidebar(
+            {
+              kind: "result",
+              name: extractToolName(message),
+              text: markdown,
+            } satisfies ToolCard,
+            onOpenSidebar,
+          )}`
+        : nothing;
+
+    if (hasImages) {
+      return html`
+        <div class="chat-bubble fade-in">
+          ${renderMessageImages(images)}
+          ${renderedCards}
+        </div>
+      `;
+    }
+
+    return renderedCards;
   }
 
   if (!markdown && !hasToolCards && !hasImages) {
@@ -274,4 +298,13 @@ function renderGroupedMessage(
       ${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}
     </div>
   `;
+}
+
+/** 从 tool result 消息中提取工具名称 */
+function extractToolName(message: unknown): string {
+  const m = message as Record<string, unknown>;
+  if (typeof m.toolName === "string") return m.toolName;
+  if (typeof m.tool_name === "string") return m.tool_name;
+  if (typeof m.name === "string") return m.name;
+  return "tool";
 }
