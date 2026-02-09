@@ -568,11 +568,11 @@ export class OpenClawApp extends LitElement {
       this.deleteSessionDialog = null;
       // Refresh sessions list
       await loadSessions(this);
-      // If deleted session was current session, switch to main
+      // If deleted session was current session, switch to first available
       if (this.sessionKey === sessionKeyToDelete) {
-        const mainSession = this.sessionsResult?.sessions.find((s) => s.key === "main");
-        if (mainSession) {
-          this.sessionKey = "main";
+        const firstSession = this.sessionsResult?.sessions[0];
+        if (firstSession) {
+          this.sessionKey = firstSession.key;
         }
       }
     } catch (err) {

@@ -9,7 +9,6 @@ import { loadConfig } from "../../config/config.js";
 import {
   loadSessionStore,
   snapshotSessionOrigin,
-  resolveMainSessionKey,
   type SessionEntry,
   updateSessionStore,
 } from "../../config/sessions.js";
@@ -291,13 +290,19 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     }
 
     const cfg = loadConfig();
-    const mainKey = resolveMainSessionKey(cfg);
     const target = resolveGatewaySessionStoreTarget({ cfg, key });
-    if (target.canonicalKey === mainKey) {
+
+    // Only prevent deletion when it's the last remaining session
+    const { store } = loadCombinedSessionStoreForGateway(cfg);
+    const sessionCount = Object.keys(store).length;
+    if (sessionCount <= 1) {
       respond(
         false,
         undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, `Cannot delete the main session (${mainKey}).`),
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `Cannot delete the last remaining session (${target.canonicalKey}).`,
+        ),
       );
       return;
     }
