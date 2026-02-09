@@ -3,6 +3,18 @@ import type { ChatAttachment } from "../ui-types.ts";
 import { extractText } from "../chat/message-extract.ts";
 import { generateUUID } from "../uuid.ts";
 
+/**
+ * Throttle interval for chat stream updates (ms).
+ * Balances smooth visual updates (~20fps) with performance.
+ */
+export const CHAT_STREAM_THROTTLE_MS = 50;
+
+/**
+ * Timeout for detecting stale streaming state (ms).
+ * If chatRunId exists but no updates for this duration, auto-refresh.
+ */
+export const CHAT_STREAM_TIMEOUT_MS = 60_000;
+
 export type ChatState = {
   client: GatewayBrowserClient | null;
   connected: boolean;
@@ -18,6 +30,104 @@ export type ChatState = {
   chatStreamStartedAt: number | null;
   lastError: string | null;
 };
+
+/**
+ * Internal buffer for throttling chat stream updates.
+ * Not part of reactive state to avoid triggering re-renders.
+ */
+type ChatStreamThrottleState = {
+  buffer: string | null;
+  pendingSync: number | null; // requestAnimationFrame ID or setTimeout ID
+  lastSyncTime: number;
+};
+
+// Module-level throttle state (keyed by sessionKey for multi-session support)
+const throttleStates = new Map<string, ChatStreamThrottleState>();
+
+function getThrottleState(sessionKey: string): ChatStreamThrottleState {
+  let ts = throttleStates.get(sessionKey);
+  if (!ts) {
+    ts = { buffer: null, pendingSync: null, lastSyncTime: 0 };
+    throttleStates.set(sessionKey, ts);
+  }
+  return ts;
+}
+
+/**
+ * Schedule a throttled sync of the chat stream buffer to state.
+ * Uses requestAnimationFrame for smooth visual updates.
+ */
+function scheduleChatStreamSync(state: ChatState, ts: ChatStreamThrottleState) {
+  if (ts.pendingSync !== null) {
+    return; // Already scheduled
+  }
+
+  const now = performance.now();
+  const elapsed = now - ts.lastSyncTime;
+
+  if (elapsed >= CHAT_STREAM_THROTTLE_MS) {
+    // Enough time has passed, sync immediately
+    syncChatStreamBuffer(state, ts);
+  } else {
+    // Schedule sync after remaining throttle time
+    const delay = CHAT_STREAM_THROTTLE_MS - elapsed;
+    ts.pendingSync = window.setTimeout(() => {
+      ts.pendingSync = null;
+      syncChatStreamBuffer(state, ts);
+    }, delay);
+  }
+}
+
+/**
+ * Sync the buffered stream content to state, triggering a re-render.
+ */
+function syncChatStreamBuffer(state: ChatState, ts: ChatStreamThrottleState) {
+  ts.lastSyncTime = performance.now();
+  if (ts.buffer !== null && ts.buffer !== state.chatStream) {
+    state.chatStream = ts.buffer;
+  }
+}
+
+/**
+ * Force flush any pending stream buffer to state.
+ * Called on final/abort/error to ensure final content is rendered.
+ */
+export function flushChatStream(state: ChatState) {
+  const ts = getThrottleState(state.sessionKey);
+  if (ts.pendingSync !== null) {
+    window.clearTimeout(ts.pendingSync);
+    ts.pendingSync = null;
+  }
+  if (ts.buffer !== null) {
+    state.chatStream = ts.buffer;
+    ts.buffer = null;
+  }
+}
+
+/**
+ * Clear throttle state for a session (e.g., on disconnect or session switch).
+ */
+export function clearChatStreamThrottle(sessionKey: string) {
+  const ts = throttleStates.get(sessionKey);
+  if (ts) {
+    if (ts.pendingSync !== null) {
+      window.clearTimeout(ts.pendingSync);
+    }
+    throttleStates.delete(sessionKey);
+  }
+}
+
+/**
+ * Check if the current chat stream has timed out.
+ * Returns true if we should auto-refresh the chat history.
+ */
+export function checkChatStreamTimeout(state: ChatState): boolean {
+  if (!state.chatRunId || !state.chatStreamStartedAt) {
+    return false;
+  }
+  const elapsed = Date.now() - state.chatStreamStartedAt;
+  return elapsed > CHAT_STREAM_TIMEOUT_MS;
+}
 
 export type ChatEventPayload = {
   runId: string;
@@ -190,18 +300,25 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     if (typeof next === "string") {
       const current = state.chatStream ?? "";
       if (!current || next.length >= current.length) {
-        state.chatStream = next;
+        // Use throttled buffer instead of direct state update
+        const ts = getThrottleState(state.sessionKey);
+        ts.buffer = next;
+        scheduleChatStreamSync(state, ts);
       }
     }
   } else if (payload.state === "final") {
+    // Flush any pending buffer before clearing
+    flushChatStream(state);
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
   } else if (payload.state === "aborted") {
+    flushChatStream(state);
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
   } else if (payload.state === "error") {
+    flushChatStream(state);
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;

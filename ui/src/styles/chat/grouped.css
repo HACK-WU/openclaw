@@ -256,6 +256,34 @@ img.chat-avatar {
   }
 }
 
+/* Typewriter cursor for streaming text */
+.chat-text-streaming::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: blink-cursor 600ms steps(2) infinite;
+}
+
+@keyframes blink-cursor {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-text-streaming::after {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 /* Fade-in animation for new messages */
 .chat-bubble.fade-in {
   animation: fade-in 200ms ease-out;
