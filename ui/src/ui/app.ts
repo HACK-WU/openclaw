@@ -548,36 +548,101 @@ export class OpenClawApp extends LitElement {
     this.connect();
   }
 
+  /**
+   * 取消网关URL修改
+   *
+   * 当用户在修改网关URL的对话框中点击"取消"按钮时调用此方法。
+   * 该方法会清除待确认的网关URL，使UI返回到显示当前URL的状态。
+   *
+   * 工作流程：
+   * 1. 用户触发网关URL修改操作（例如通过设置界面）
+   * 2. 系统显示对话框，用户输入新的网关URL
+   * 3. 用户可以点击"确认"（调用handleGatewayUrlConfirm）或"取消"（调用本方法）
+   * 4. 如果点击取消，本方法会将pendingGatewayUrl重置为null
+   * 5. UI检测到pendingGatewayUrl为null后，关闭对话框并恢复显示当前URL
+   *
+   * 相关方法：
+   * - handleGatewayUrlConfirm(): 确认并应用新的网关URL
+   * - applySettings(): 保存设置到本地存储
+   * - connect(): 使用新URL重新连接网关
+   */
   handleGatewayUrlCancel() {
+    // 清除待确认的网关URL
+    // 将状态重置为null，表示没有待处理的URL变更
+    // 这将导致UI关闭网关URL修改对话框，并恢复显示当前生效的网关URL
     this.pendingGatewayUrl = null;
   }
 
+  /**
+   * 确认删除会话
+   *
+   * 当用户在删除会话确认对话框中点击"确认"按钮时调用此方法。
+   * 该方法负责执行删除操作、更新会话列表，并处理删除当前会话的情况。
+   *
+   * 工作流程：
+   * 1. 验证前置条件（对话框状态、客户端连接等）
+   * 2. 设置删除中状态，禁用按钮并显示加载动画
+   * 3. 调用后端API执行删除操作
+   * 4. 删除成功后关闭对话框并刷新会话列表
+   * 5. 如果删除的是当前会话，自动切换到第一个可用会话
+   * 6. 处理删除失败的情况，显示错误信息
+   *
+   * 相关状态：
+   * - deleteSessionDialog: 删除对话框状态对象
+   * - sessionsResult: 会话列表查询结果
+   * - sessionKey: 当前选中的会话key
+   */
   async handleDeleteSessionConfirm() {
+    // 前置条件检查
+    // 确保删除对话框存在、客户端对象已初始化、已连接到服务器
     if (!this.deleteSessionDialog || !this.client || !this.connected) {
       return;
     }
+
+    // 获取要删除的会话唯一标识
     const sessionKeyToDelete = this.deleteSessionDialog.sessionKey;
+
+    // 更新对话框状态：
+    // 1. 设置 isDeleting=true 触发UI显示加载动画并禁用按钮
+    // 2. 清空之前的错误信息（如果有）
     this.deleteSessionDialog.isDeleting = true;
     this.deleteSessionDialog.error = null;
+
     try {
+      // 调用后端API删除会话
+      // 参数说明：
+      // - key: 要删除的会话唯一标识
+      // - deleteTranscript: true 表示同时删除该会话的聊天记录
       await this.client.request("sessions.delete", {
         key: sessionKeyToDelete,
         deleteTranscript: true,
       });
-      // Close dialog
+
+      // 删除成功，关闭删除确认对话框
       this.deleteSessionDialog = null;
-      // Refresh sessions list
+
+      // 重新加载会话列表以更新UI
+      // loadSessions 会查询后端获取最新的会话列表并更新 this.sessionsResult
       await loadSessions(this);
-      // If deleted session was current session, switch to first available
+
+      // 特殊处理：如果删除的是当前选中的会话
+      // 需要切换到其他可用会话，避免UI停留在已删除的会话上
       if (this.sessionKey === sessionKeyToDelete) {
+        // 获取会话列表中的第一个会话
         const firstSession = this.sessionsResult?.sessions[0];
         if (firstSession) {
+          // 切换当前会话到第一个可用会话
+          // 这会触发UI更新并加载该会话的聊天记录
           this.sessionKey = firstSession.key;
         }
       }
     } catch (err) {
+      // 删除失败时的错误处理
+      // 只有在对话框仍然存在时才更新错误状态（防止用户已关闭对话框后出现异常）
       if (this.deleteSessionDialog) {
+        // 恢复按钮状态（允许用户重新尝试）
         this.deleteSessionDialog.isDeleting = false;
+        // 显示错误信息，提示用户删除失败的原因
         this.deleteSessionDialog.error = String(err);
       }
     }
