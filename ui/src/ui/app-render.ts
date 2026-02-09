@@ -129,10 +129,15 @@ export function renderApp(state: AppViewState) {
     state.agentsList?.agents?.[0]?.id ??
     null;
 
+  // ========================================
+  // 主应用布局容器
+  // ========================================
   return html`
     <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}">
+      <!-- 顶部导航栏：包含折叠按钮、Logo 和状态指示器 -->
       <header class="topbar">
         <div class="topbar-left">
+          <!-- 侧边栏折叠/展开按钮 -->
           <button
             class="nav-collapse-toggle"
             @click=${() =>
@@ -145,6 +150,7 @@ export function renderApp(state: AppViewState) {
           >
             <span class="nav-collapse-toggle__icon">${icons.menu}</span>
           </button>
+          <!-- 品牌标识区域：Logo 和应用名称 -->
           <div class="brand">
             <div class="brand-logo">
               <img src=${basePath ? `${basePath}/favicon.svg` : "/favicon.svg"} alt="OpenClaw" />
@@ -155,27 +161,36 @@ export function renderApp(state: AppViewState) {
             </div>
           </div>
         </div>
+        <!-- 右侧状态区域：连接状态、语言切换、主题切换 -->
         <div class="topbar-status">
+          <!-- 连接状态指示器 -->
           <div class="pill">
             <span class="statusDot ${state.connected ? "ok" : ""}"></span>
             <span>Health</span>
             <span class="mono">${state.connected ? "OK" : "Offline"}</span>
           </div>
+          <!-- 语言切换按钮 -->
           ${renderLocaleToggle(state)}
+          <!-- 主题切换按钮 -->
           ${renderThemeToggle(state)}
         </div>
       </header>
+      <!-- 侧边栏导航：包含标签分组和外部链接 -->
       <aside class="nav ${state.settings.navCollapsed ? "nav--collapsed" : ""}">
         ${getTabGroups().map((group) => {
+          // 检查当前分组是否折叠
           const isGroupCollapsed = state.settings.navGroupsCollapsed[group.label] ?? false;
+          // 检查该分组中是否有激活的标签页
           const hasActiveTab = group.tabs.some((tab) => tab === state.tab);
+          // 特殊处理：判断是否是聊天分组（只包含 chat 标签）
           const isChatGroup = group.tabs.includes("chat") && group.tabs.length === 1;
 
-          // Special handling for chat group - add sessions list
+          // 特殊处理：聊天分组显示会话列表
           if (isChatGroup) {
             return html`
               <div class="nav-group nav-group--chat ${isGroupCollapsed && !hasActiveTab ? "nav-group--collapsed" : ""}">
                 <div class="nav-label nav-label--chat">
+                  <!-- 分组标题按钮，点击可折叠/展开 -->
                   <button
                     class="nav-label__btn"
                     @click=${() => {
@@ -189,9 +204,11 @@ export function renderApp(state: AppViewState) {
                     aria-expanded=${!isGroupCollapsed}
                   >
                     <span class="nav-label__text">${group.label}</span>
+                    <!-- 折叠/展开图标 -->
                     <span class="nav-label__chevron">${isGroupCollapsed ? "+" : "−"}</span>
                   </button>
                 </div>
+                <!-- 渲染会话列表（仅在聊天分组中显示） -->
                 <div class="nav-group__items">
                   ${renderNavSessionsList(state)}
                 </div>
@@ -199,8 +216,10 @@ export function renderApp(state: AppViewState) {
             `;
           }
 
+          // 普通分组渲染
           return html`
             <div class="nav-group ${isGroupCollapsed && !hasActiveTab ? "nav-group--collapsed" : ""}">
+              <!-- 分组标题按钮 -->
               <button
                 class="nav-label"
                 @click=${() => {
@@ -216,17 +235,20 @@ export function renderApp(state: AppViewState) {
                 <span class="nav-label__text">${group.label}</span>
                 <span class="nav-label__chevron">${isGroupCollapsed ? "+" : "−"}</span>
               </button>
+              <!-- 分组内的标签页列表 -->
               <div class="nav-group__items">
                 ${group.tabs.map((tab) => renderTab(state, tab))}
               </div>
             </div>
           `;
         })}
+        <!-- 外部资源链接分组 -->
         <div class="nav-group nav-group--links">
           <div class="nav-label nav-label--static">
             <span class="nav-label__text">${t("nav.group.resources")}</span>
           </div>
           <div class="nav-group__items">
+            <!-- 文档链接（在新标签页打开） -->
             <a
               class="nav-item nav-item--external"
               href="https://docs.openclaw.ai"
@@ -240,33 +262,56 @@ export function renderApp(state: AppViewState) {
           </div>
         </div>
       </aside>
+      <!-- 主内容区域：根据当前标签页渲染不同内容 -->
       <main class="content ${isChat ? "content--chat" : ""}">
+        <!-- 内容区域标题栏 -->
         <section class="content-header">
           <div>
+            <!-- 页面标题（chat 和 usage 标签页不显示标题） -->
             ${state.tab === "usage" || state.tab === "chat" ? nothing : html`<div class="page-title">${titleForTab(state.tab)}</div>`}
+            <!-- 页面副标题（chat 和 usage 标签页不显示） -->
             ${state.tab === "usage" || state.tab === "chat" ? nothing : html`<div class="page-sub">${subtitleForTab(state.tab)}</div>`}
           </div>
+          <!-- 页面元数据：错误信息和聊天控制按钮 -->
           <div class="page-meta">
+            <!-- 显示错误提示（如果有） -->
             ${state.lastError ? html`<div class="pill danger">${state.lastError}</div>` : nothing}
+            <!-- 仅在聊天标签页显示聊天控制按钮 -->
             ${isChat ? renderChatControls(state) : nothing}
           </div>
         </section>
 
+        <!-- ========================================
+           OVERVIEW 标签页：概览面板
+           ======================================== -->
         ${
           state.tab === "overview"
             ? renderOverview({
+                // 连接状态
                 connected: state.connected,
+                // Gateway Hello 响应数据
                 hello: state.hello,
+                // 用户设置
                 settings: state.settings,
+                // 密码
                 password: state.password,
+                // 最后的错误消息
                 lastError: state.lastError,
+                // 实例数量
                 presenceCount,
+                // 会话数量
                 sessionsCount,
+                // Cron 任务是否启用
                 cronEnabled: state.cronStatus?.enabled ?? null,
+                // 下一次 Cron 执行时间
                 cronNext,
+                // 上次渠道刷新时间
                 lastChannelsRefresh: state.channelsLastSuccess,
+                // 设置变更回调
                 onSettingsChange: (next) => state.applySettings(next),
+                // 密码变更回调
                 onPasswordChange: (next) => (state.password = next),
+                // 会话键变更回调：切换会话时清理状态
                 onSessionKeyChange: (next) => {
                   state.sessionKey = next;
                   state.chatMessage = "";
@@ -285,12 +330,17 @@ export function renderApp(state: AppViewState) {
                   void loadChatHistory(state);
                   void refreshChatAvatar(state);
                 },
+                // 连接 Gateway 回调
                 onConnect: () => state.connect(),
+                // 刷新概览数据回调
                 onRefresh: () => state.loadOverview(),
               })
             : nothing
         }
 
+        <!-- ========================================
+           CHANNELS 标签页：渠道配置面板
+           ======================================== -->
         ${
           state.tab === "channels"
             ? renderChannels({
@@ -311,25 +361,41 @@ export function renderApp(state: AppViewState) {
                 configFormDirty: state.configFormDirty,
                 nostrProfileFormState: state.nostrProfileFormState,
                 nostrProfileAccountId: state.nostrProfileAccountId,
+                // 刷新渠道状态（可选择是否进行探测）
                 onRefresh: (probe) => loadChannels(state, probe),
+                // 开始 WhatsApp 登录
                 onWhatsAppStart: (force) => state.handleWhatsAppStart(force),
+                // 等待 WhatsApp 登录完成
                 onWhatsAppWait: () => state.handleWhatsAppWait(),
+                // 退出 WhatsApp 登录
                 onWhatsAppLogout: () => state.handleWhatsAppLogout(),
+                // 更新配置表单值
                 onConfigPatch: (path, value) => updateConfigFormValue(state, path, value),
+                // 保存渠道配置
                 onConfigSave: () => state.handleChannelConfigSave(),
+                // 重新加载渠道配置
                 onConfigReload: () => state.handleChannelConfigReload(),
+                // 编辑 Nostr Profile
                 onNostrProfileEdit: (accountId, profile) =>
                   state.handleNostrProfileEdit(accountId, profile),
+                // 取消 Nostr Profile 编辑
                 onNostrProfileCancel: () => state.handleNostrProfileCancel(),
+                // Nostr Profile 字段变更
                 onNostrProfileFieldChange: (field, value) =>
                   state.handleNostrProfileFieldChange(field, value),
+                // 保存 Nostr Profile
                 onNostrProfileSave: () => state.handleNostrProfileSave(),
+                // 导入 Nostr Profile
                 onNostrProfileImport: () => state.handleNostrProfileImport(),
+                // 切换高级模式
                 onNostrProfileToggleAdvanced: () => state.handleNostrProfileToggleAdvanced(),
               })
             : nothing
         }
 
+        <!-- ========================================
+           INSTANCES 标签页：实例列表面板
+           ======================================== -->
         ${
           state.tab === "instances"
             ? renderInstances({
@@ -337,11 +403,15 @@ export function renderApp(state: AppViewState) {
                 entries: state.presenceEntries,
                 lastError: state.presenceError,
                 statusMessage: state.presenceStatus,
+                // 刷新实例列表
                 onRefresh: () => loadPresence(state),
               })
             : nothing
         }
 
+        <!-- ========================================
+           SESSIONS 标签页：会话管理面板
+           ======================================== -->
         ${
           state.tab === "sessions"
             ? renderSessions({
@@ -353,19 +423,26 @@ export function renderApp(state: AppViewState) {
                 includeGlobal: state.sessionsIncludeGlobal,
                 includeUnknown: state.sessionsIncludeUnknown,
                 basePath: state.basePath,
+                // 过滤器变更
                 onFiltersChange: (next) => {
                   state.sessionsFilterActive = next.activeMinutes;
                   state.sessionsFilterLimit = next.limit;
                   state.sessionsIncludeGlobal = next.includeGlobal;
                   state.sessionsIncludeUnknown = next.includeUnknown;
                 },
+                // 刷新会话列表
                 onRefresh: () => loadSessions(state),
+                // 修改会话属性（label, thinkingLevel 等）
                 onPatch: (key, patch) => patchSession(state, key, patch),
+                // 删除会话
                 onDelete: (key) => deleteSession(state, key),
               })
             : nothing
         }
 
+        <!-- ========================================
+           USAGE 标签页：使用统计面板
+           ======================================== -->
         ${
           state.tab === "usage"
             ? renderUsage({
@@ -629,6 +706,9 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
 
+        <!-- ========================================
+           CRON 标签页：定时任务面板
+           ======================================== -->
         ${
           state.tab === "cron"
             ? renderCron({
@@ -656,6 +736,9 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
 
+        <!-- ========================================
+           AGENTS 标签页：智能体管理面板
+           ======================================== -->
         ${
           state.tab === "agents"
             ? renderAgents({
@@ -1002,6 +1085,9 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
 
+        <!-- ========================================
+           SKILLS 标签页：技能插件面板
+           ======================================== -->
         ${
           state.tab === "skills"
             ? renderSkills({
@@ -1033,6 +1119,9 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
 
+        <!-- ========================================
+           NODES 标签页：节点设备管理面板
+           ======================================== -->
         ${
           state.tab === "nodes"
             ? renderNodes({
@@ -1112,6 +1201,9 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
 
+        <!-- ========================================
+           CHAT 标签页：聊天界面
+           ======================================== -->
         ${
           state.tab === "chat"
             ? renderChat({
@@ -1253,6 +1345,9 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
 
+        <!-- ========================================
+           CONFIG 标签页：配置面板
+           ======================================== -->
         ${
           state.tab === "config"
             ? renderConfig({
@@ -1293,6 +1388,9 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
 
+        <!-- ========================================
+           DEBUG 标签页：调试工具面板
+           ======================================== -->
         ${
           state.tab === "debug"
             ? renderDebug({
@@ -1314,6 +1412,9 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
 
+        <!-- ========================================
+           LOGS 标签页：日志查看面板
+           ======================================== -->
         ${
           state.tab === "logs"
             ? renderLogs({
@@ -1337,8 +1438,18 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
       </main>
+
+      <!-- ========================================
+         模态对话框和提示组件
+         ======================================== -->
+
+      <!-- 执行批准提示对话框 -->
       ${renderExecApprovalPrompt(state)}
+
+      <!-- Gateway URL 确认对话框 -->
       ${renderGatewayUrlConfirmation(state)}
+
+      <!-- 删除会话确认对话框 -->
       ${renderDeleteSessionDialog(state as unknown as Parameters<typeof renderDeleteSessionDialog>[0])}
     </div>
   `;
