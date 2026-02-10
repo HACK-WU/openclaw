@@ -34,6 +34,9 @@ export type NormalizedMessage = {
   id?: string;
 };
 
+/** Tool card category for different rendering treatments */
+export type ToolCardCategory = "general" | "bash" | "pty";
+
 /** Tool card representation for tool calls and results */
 export type ToolCard = {
   kind: "call" | "result";
@@ -42,4 +45,16 @@ export type ToolCard = {
   text?: string;
   /** 标记该工具输出是否来自 PTY（伪终端），需要使用终端模拟器渲染 */
   isPty?: boolean;
+  /** 卡片分类：general（合并卡片）、bash（独立命令卡片）、pty（实时终端卡片） */
+  category?: ToolCardCategory;
+};
+
+/** Classified tool cards for grouped rendering */
+export type ClassifiedToolCards = {
+  /** Non-bash, non-PTY tool calls - merged into one collapsible card */
+  generalTools: ToolCard[];
+  /** Bash commands - each gets its own collapsible card */
+  bashCommands: ToolCard[];
+  /** PTY terminals - real-time terminal cards */
+  ptyTerminals: ToolCard[];
 };

@@ -440,6 +440,14 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
     const role = normalizeRoleForGrouping(normalized.role);
     const timestamp = normalized.timestamp || Date.now();
 
+    // Tool messages merge into the preceding assistant group to form
+    // a single "turn" (assistant text + tool calls + tool results).
+    // This allows tool cards to be collected and rendered together.
+    if (role === "tool" && currentGroup?.role === "assistant") {
+      currentGroup.messages.push({ message: item.message, key: item.key });
+      continue;
+    }
+
     if (!currentGroup || currentGroup.role !== role) {
       if (currentGroup) {
         result.push(currentGroup);

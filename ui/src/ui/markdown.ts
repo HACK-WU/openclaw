@@ -33,6 +33,7 @@ const allowedTags = [
   "thead",
   "tr",
   "ul",
+  "span", // Added for streaming cursor
 ];
 
 const allowedAttrs = ["class", "href", "rel", "target", "title", "start"];
@@ -130,4 +131,85 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+/**
+ * Patch incomplete Markdown to prevent rendering artifacts during streaming.
+ * Handles unclosed code blocks, inline code, bold, and italic markers.
+ */
+export function patchIncompleteMarkdown(text: string): string {
+  let result = text;
+
+  // Count ``` occurrences for code blocks (odd = unclosed)
+  const codeBlockCount = (result.match(/```/g) || []).length;
+  if (codeBlockCount % 2 !== 0) {
+    result += "\n```";
+  }
+
+  // For inline markers, we need to be more careful:
+  // Only patch if the marker is in the last line (likely still being typed)
+  const lines = result.split("\n");
+  const lastLine = lines[lines.length - 1] || "";
+
+  // Inline code: count backticks in last line (excluding code block markers)
+  // Skip if we just closed a code block above
+  if (codeBlockCount % 2 === 0) {
+    const inlineBackticks = (lastLine.match(/`/g) || []).length;
+    if (inlineBackticks % 2 !== 0) {
+      result += "`";
+    }
+  }
+
+  // Bold **: count in last line
+  const boldCount = (lastLine.match(/\*\*/g) || []).length;
+  if (boldCount % 2 !== 0) {
+    result += "**";
+  }
+
+  // Italic * (single asterisk, not part of **): more complex
+  // Count single asterisks that are not part of ** pairs
+  const singleAsterisks = lastLine.replace(/\*\*/g, "").match(/\*/g) || [];
+  if (singleAsterisks.length % 2 !== 0) {
+    result += "*";
+  }
+
+  return result;
+}
+
+/**
+ * Render Markdown to sanitized HTML without caching.
+ * Designed for streaming content that changes frequently.
+ * Optionally appends a streaming cursor element.
+ */
+export function renderMarkdownUncached(markdown: string, withCursor = false): string {
+  const input = markdown.trim();
+  if (!input) {
+    return withCursor ? '<span class="streaming-cursor"></span>' : "";
+  }
+
+  installHooks();
+
+  // Patch incomplete markdown to prevent rendering artifacts
+  const patched = patchIncompleteMarkdown(input);
+
+  // Parse and sanitize (no caching for streaming content)
+  const rendered = marked.parse(patched) as string;
+  let sanitized = DOMPurify.sanitize(rendered, {
+    ALLOWED_TAGS: allowedTags,
+    ALLOWED_ATTR: allowedAttrs,
+  });
+
+  // Inject streaming cursor at the end if requested
+  if (withCursor) {
+    // Find the last text-containing element and append cursor there
+    // For simplicity, we append to the end of the HTML string
+    // The CSS will position it correctly as an inline element
+    sanitized = sanitized.replace(/<\/p>\s*$/, '<span class="streaming-cursor"></span></p>');
+    // If no closing </p>, just append
+    if (!sanitized.includes("streaming-cursor")) {
+      sanitized += '<span class="streaming-cursor"></span>';
+    }
+  }
+
+  return sanitized;
 }
