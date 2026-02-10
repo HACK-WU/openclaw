@@ -11,7 +11,13 @@ import {
   formatReasoningMarkdown,
 } from "./message-extract.ts";
 import { isToolResultMessage, normalizeRoleForGrouping } from "./message-normalizer.ts";
-import { extractToolCards, renderToolCardSidebar } from "./tool-cards.ts";
+import {
+  classifyToolCards,
+  extractToolCards,
+  renderBashCommandCard,
+  renderPtyTerminalCard,
+  renderToolGroupCard,
+} from "./tool-cards.ts";
 import { typewriter } from "./typewriter-directive.ts";
 
 type ImageBlock = {
@@ -123,6 +129,26 @@ export function renderMessageGroup(
     minute: "2-digit",
   });
 
+  // Collect all tool cards across all messages in this group,
+  // then classify and render them once as merged cards at the group level.
+  const allToolCards: ToolCard[] = [];
+  for (const item of group.messages) {
+    const cards = extractToolCards(item.message);
+    allToolCards.push(...cards);
+    // For tool result messages without extracted cards, synthesize one from text
+    if (cards.length === 0 && isToolResultMessage(item.message)) {
+      const text = extractTextCached(item.message)?.trim() || undefined;
+      if (text) {
+        allToolCards.push({
+          kind: "result",
+          name: extractToolName(item.message),
+          text,
+        });
+      }
+    }
+  }
+  const classified = allToolCards.length > 0 ? classifyToolCards(allToolCards) : null;
+
   return html`
     <div class="chat-group ${roleClass}">
       ${renderAvatar(group.role, {
@@ -140,6 +166,7 @@ export function renderMessageGroup(
             opts.onOpenSidebar,
           ),
         )}
+        ${classified ? renderInlineToolCards(classified, opts.onOpenSidebar) : nothing}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${who}</span>
           <span class="chat-group-timestamp">${timestamp}</span>
@@ -214,7 +241,7 @@ function renderMessageImages(images: ImageBlock[]) {
 function renderGroupedMessage(
   message: unknown,
   opts: { isStreaming: boolean; showReasoning: boolean },
-  onOpenSidebar?: (content: string) => void,
+  _onOpenSidebar?: (content: string) => void,
 ) {
   const m = message as Record<string, unknown>;
   const role = typeof m.role === "string" ? m.role : "unknown";
@@ -225,8 +252,6 @@ function renderGroupedMessage(
     typeof m.toolCallId === "string" ||
     typeof m.tool_call_id === "string";
 
-  const toolCards = extractToolCards(message);
-  const hasToolCards = toolCards.length > 0;
   const images = extractImages(message);
   const hasImages = images.length > 0;
 
@@ -247,38 +272,25 @@ function renderGroupedMessage(
     .filter(Boolean)
     .join(" ");
 
-  // Tool result 消息：不显示原始文本气泡（避免与右侧面板重复），
-  // 但保留图片渲染；工具输出通过工具卡片的 "View" 在右侧面板查看。
+  // Tool result messages: tool cards are rendered at the group level,
+  // so here we only render images if present, otherwise skip.
   if (isToolResult) {
-    const renderedCards = hasToolCards
-      ? html`${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}`
-      : markdown
-        ? html`${renderToolCardSidebar(
-            {
-              kind: "result",
-              name: extractToolName(message),
-              text: markdown,
-            } satisfies ToolCard,
-            onOpenSidebar,
-          )}`
-        : nothing;
-
     if (hasImages) {
       return html`
         <div class="chat-bubble fade-in">
           ${renderMessageImages(images)}
-          ${renderedCards}
         </div>
       `;
     }
-
-    return renderedCards;
-  }
-
-  if (!markdown && !hasToolCards && !hasImages) {
+    // No content to render — tool cards handled at group level
     return nothing;
   }
 
+  if (!markdown && !hasImages) {
+    return nothing;
+  }
+
+  // Assistant/user messages: render text + images (tool cards at group level)
   return html`
     <div class="${bubbleClasses}">
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
@@ -295,7 +307,6 @@ function renderGroupedMessage(
           ? html`<div class="chat-text" dir="${detectTextDirection(markdown)}">${unsafeHTML(toSanitizedMarkdownHtml(markdown))}</div>`
           : nothing
       }
-      ${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}
     </div>
   `;
 }
@@ -307,4 +318,38 @@ function extractToolName(message: unknown): string {
   if (typeof m.tool_name === "string") return m.tool_name;
   if (typeof m.name === "string") return m.name;
   return "tool";
+}
+
+/**
+ * Render classified tool cards inline with the new card types:
+ * - General tools → merged into one collapsible group card
+ * - Bash commands → merged into one collapsible command card
+ * - PTY terminals → each gets its own collapsible terminal card with live xterm
+ *   (deduplicated by name in classifyToolCards; PTY tool_calls are skipped
+ *    so the terminal only renders once from the tool_result)
+ *
+ * All cards default to collapsed; click header to expand via DOM class toggle.
+ */
+function renderInlineToolCards(
+  classified: ReturnType<typeof classifyToolCards>,
+  onOpenSidebar?: (content: string) => void,
+) {
+  const parts = [];
+
+  // Render general tools as a merged group card (collapsible)
+  if (classified.generalTools.length > 0) {
+    parts.push(renderToolGroupCard(classified.generalTools, onOpenSidebar));
+  }
+
+  // Render bash commands as a merged command card (collapsible)
+  if (classified.bashCommands.length > 0) {
+    parts.push(renderBashCommandCard(classified.bashCommands, onOpenSidebar));
+  }
+
+  // Render PTY terminals as individual collapsible terminal cards
+  for (const card of classified.ptyTerminals) {
+    parts.push(renderPtyTerminalCard(card, onOpenSidebar));
+  }
+
+  return parts.length > 0 ? html`${parts}` : nothing;
 }
