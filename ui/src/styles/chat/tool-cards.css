@@ -9,9 +9,17 @@
   transition:
     border-color 150ms ease-out,
     background 150ms ease-out;
-  /* Fixed max-height to ensure cards don't expand too much */
-  max-height: 120px;
   overflow: hidden;
+}
+
+/* New collapsible card variants: padding handled by header/body-inner */
+.chat-tool-card--group,
+.chat-tool-card--bash,
+.chat-tool-card--pty {
+  padding: 0;
+  /* Ensure collapsible cards take full available width for proper terminal rendering */
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .chat-tool-card:hover {
@@ -39,6 +47,15 @@
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+}
+
+/* In collapsible variants, header has its own padding and is clickable */
+.chat-tool-card--group .chat-tool-card__header,
+.chat-tool-card--bash .chat-tool-card__header,
+.chat-tool-card--pty .chat-tool-card__header {
+  padding: 12px;
+  cursor: pointer;
+  user-select: none;
 }
 
 .chat-tool-card__title {
@@ -92,6 +109,74 @@
 
 .chat-tool-card--clickable:hover .chat-tool-card__action {
   opacity: 1;
+}
+
+/* Chevron for expand/collapse */
+.chat-tool-card__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  transition: transform 200ms ease-out;
+  color: var(--muted);
+}
+
+.chat-tool-card__chevron svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chat-tool-card--expanded .chat-tool-card__chevron {
+  transform: rotate(90deg);
+}
+
+/* Collapsible body: hidden by default, shown when expanded */
+.chat-tool-card__body {
+  display: none;
+}
+
+.chat-tool-card--expanded .chat-tool-card__body {
+  display: block;
+}
+
+/* Inner container with scroll */
+.chat-tool-card__body-inner {
+  overflow-y: auto;
+  max-height: 260px;
+  padding: 0 12px 12px;
+  min-width: 0;
+}
+
+/* Collapsed summary line below header (visible only when NOT expanded) */
+.chat-tool-card__collapsed-summary {
+  padding: 0 12px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.chat-tool-card__collapsed-summary .mono {
+  font-size: 11px;
+}
+
+/* Hide collapsed summary when card is expanded */
+.chat-tool-card--expanded .chat-tool-card__collapsed-summary {
+  display: none;
+}
+
+/* Terminal viewer inside cards should take full width */
+.chat-tool-card__body-inner terminal-viewer {
+  width: 100%;
+  min-width: 0;
 }
 
 /* Status indicator for completed/empty results */
@@ -199,4 +284,152 @@
     opacity: 1;
     transform: scale(1);
   }
+}
+
+/* ==============================================
+   Tool Card Variants
+   ============================================== */
+
+/* Merged tool group card */
+.chat-tool-card--group {
+  border-left: 3px solid var(--accent-subtle);
+}
+
+.chat-tool-card--group .chat-tool-card__header {
+  background: var(--panel);
+}
+
+/* Bash command card */
+.chat-tool-card--bash {
+  border-left: 3px solid var(--warning-subtle);
+}
+
+.chat-tool-card--bash .chat-tool-card__icon {
+  color: var(--warning);
+}
+
+/* PTY terminal card */
+.chat-tool-card--pty {
+  border-left: 3px solid var(--info-subtle);
+}
+
+.chat-tool-card--pty .chat-tool-card__icon {
+  color: var(--info);
+}
+
+/* PTY badge */
+.chat-tool-card__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--info-subtle);
+  color: var(--info);
+  border-radius: var(--radius-sm);
+}
+
+/* Tool list inside merged card */
+.chat-tool-card__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-tool-card__list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  background: var(--secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+
+.chat-tool-card__list-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.chat-tool-card__list-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.chat-tool-card__list-item-icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+}
+
+.chat-tool-card__list-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-tool-card__list-item-name {
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.chat-tool-card__list-item-detail {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  word-break: break-word;
+}
+
+/* Truncated output preview inside list items */
+.chat-tool-card__list-item-preview {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  padding: 4px 6px;
+  background: var(--secondary);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  overflow: hidden;
+  max-height: 36px;
+  line-height: 1.3;
+  border: 1px solid var(--border);
+}
+
+/* Sidebar link button */
+.chat-tool-card__sidebar-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background 150ms ease-out,
+    border-color 150ms ease-out;
+}
+
+.chat-tool-card__sidebar-link:hover {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+}
+
+.chat-tool-card__sidebar-link svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
 }

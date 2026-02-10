@@ -23,11 +23,15 @@
   flex-direction: column;
   gap: 2px;
   max-width: min(900px, calc(100% - 60px));
+  /* Tool/assistant messages should use full available width for cards like terminals */
+  width: min(900px, calc(100% - 60px));
 }
 
 /* User messages align content right */
 .chat-group.user .chat-group-messages {
   align-items: flex-end;
+  /* User bubbles should shrink-wrap content, not force full width */
+  width: auto;
 }
 
 .chat-group.user .chat-group-footer {
@@ -284,6 +288,7 @@ img.chat-avatar {
 }
 
 /* Typewriter cursor for streaming text */
+/* Legacy: CSS pseudo-element cursor (kept for fallback) */
 .chat-text-streaming::after {
   content: "";
   display: inline-block;
@@ -293,6 +298,22 @@ img.chat-avatar {
   vertical-align: text-bottom;
   background: var(--accent);
   animation: blink-cursor 600ms steps(2) infinite;
+}
+
+/* Modern: Injected span cursor for Markdown-rendered streaming text */
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: blink-cursor 600ms steps(2) infinite;
+}
+
+/* When using injected cursor, hide the pseudo-element */
+.chat-text-streaming:has(.streaming-cursor)::after {
+  display: none;
 }
 
 @keyframes blink-cursor {
@@ -305,7 +326,8 @@ img.chat-avatar {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-text-streaming::after {
+  .chat-text-streaming::after,
+  .streaming-cursor {
     animation: none;
     opacity: 1;
   }
