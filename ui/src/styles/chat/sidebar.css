@@ -58,12 +58,100 @@
   background: var(--panel);
 }
 
+.sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* Smaller close button for sidebar */
 .sidebar-header .btn {
   padding: 4px 8px;
   font-size: 14px;
   min-width: auto;
   line-height: 1;
+}
+
+/* Terminal output copy button */
+.sidebar-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  border-radius: var(--radius-md);
+  padding: 4px 6px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.sidebar-copy-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.sidebar-copy-btn__icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  position: relative;
+}
+
+.sidebar-copy-btn__icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sidebar-copy-btn__icon-copy,
+.sidebar-copy-btn__icon-check {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: opacity 150ms ease;
+}
+
+.sidebar-copy-btn__icon-check {
+  opacity: 0;
+}
+
+.sidebar-copy-btn[data-copied="1"] .sidebar-copy-btn__icon-copy {
+  opacity: 0;
+}
+
+.sidebar-copy-btn[data-copied="1"] .sidebar-copy-btn__icon-check {
+  opacity: 1;
+}
+
+.sidebar-copy-btn[data-copied="1"] {
+  border-color: var(--ok-subtle);
+  background: var(--ok-subtle);
+  color: var(--ok);
+}
+
+.sidebar-copy-btn[data-copying="1"] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.sidebar-copy-btn[data-error="1"] {
+  border-color: var(--danger-subtle);
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+.sidebar-copy-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .sidebar-title {
