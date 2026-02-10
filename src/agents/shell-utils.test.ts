@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getShellConfig } from "./shell-utils.js";
+import { getShellConfig, sanitizeBinaryOutput } from "./shell-utils.js";
 
 const isWin = process.platform === "win32";
 
@@ -77,5 +77,30 @@ describe("getShellConfig", () => {
     process.env.PATH = "";
     const { shell } = getShellConfig();
     expect(shell).toBe("sh");
+  });
+});
+
+describe("sanitizeBinaryOutput", () => {
+  it("preserves ANSI escape sequences", () => {
+    const input = "\x1b[38;5;79mHello\x1b[0m";
+    expect(sanitizeBinaryOutput(input)).toBe(input);
+  });
+
+  it("preserves cursor movement sequences", () => {
+    const input = "\x1b[2K\x1b[1G* Rotating…";
+    expect(sanitizeBinaryOutput(input)).toBe(input);
+  });
+
+  it("preserves TAB, LF, CR", () => {
+    expect(sanitizeBinaryOutput("a\tb\nc\rd")).toBe("a\tb\nc\rd");
+  });
+
+  it("strips other control characters (NUL, BEL, etc.)", () => {
+    expect(sanitizeBinaryOutput("a\x00b\x07c")).toBe("abc");
+  });
+
+  it("handles empty and normal text", () => {
+    expect(sanitizeBinaryOutput("")).toBe("");
+    expect(sanitizeBinaryOutput("hello world")).toBe("hello world");
   });
 });

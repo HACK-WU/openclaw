@@ -78,7 +78,8 @@ export function sanitizeBinaryOutput(text: string): string {
     if (code == null) {
       continue;
     }
-    if (code === 0x09 || code === 0x0a || code === 0x0d) {
+    // Preserve TAB, LF, CR, and ESC (needed for ANSI escape sequences in PTY output)
+    if (code === 0x09 || code === 0x0a || code === 0x0d || code === 0x1b) {
       chunks.push(char);
       continue;
     }
