@@ -95,6 +95,11 @@ export type ChatRunState = {
   buffers: Map<string, string>;
   deltaSentAt: Map<string, number>;
   abortedRuns: Map<string, number>;
+  chatRunBaseline: Map<string, string>;
+  /** Stores the last raw (pre-merge) text per run, used for tool-call detection. */
+  lastRawText: Map<string, string>;
+  /** Frozen text segments from previous tool-call boundaries (for multi-bubble streaming). */
+  completedSegments: Map<string, string[]>;
   clear: () => void;
 };
 
@@ -103,12 +108,18 @@ export function createChatRunState(): ChatRunState {
   const buffers = new Map<string, string>();
   const deltaSentAt = new Map<string, number>();
   const abortedRuns = new Map<string, number>();
+  const chatRunBaseline = new Map<string, string>();
+  const lastRawText = new Map<string, string>();
+  const completedSegments = new Map<string, string[]>();
 
   const clear = () => {
     registry.clear();
     buffers.clear();
     deltaSentAt.clear();
     abortedRuns.clear();
+    chatRunBaseline.clear();
+    lastRawText.clear();
+    completedSegments.clear();
   };
 
   return {
@@ -116,6 +127,9 @@ export function createChatRunState(): ChatRunState {
     buffers,
     deltaSentAt,
     abortedRuns,
+    chatRunBaseline,
+    lastRawText,
+    completedSegments,
     clear,
   };
 }
@@ -227,8 +241,64 @@ export function createAgentEventHandler({
   clearAgentRunContext,
   toolEventRecipients,
 }: AgentEventHandlerOptions) {
+  // Extract chatRunBaseline for direct access in emitChatDelta
+  const chatRunBaseline = chatRunState.chatRunBaseline;
+
   const emitChatDelta = (sessionKey: string, clientRunId: string, seq: number, text: string) => {
-    chatRunState.buffers.set(clientRunId, text);
+    const prevRaw = chatRunState.lastRawText.get(clientRunId);
+    let baseline = chatRunBaseline.get(clientRunId) ?? "";
+    let isBaselineChanged = false;
+
+    // Detect tool call: raw text got shorter and doesn't start with previous raw text.
+    // This indicates AI started a new message segment after a tool call.
+    // Compare against lastRawText (pre-merge) to avoid false positives when baseline exists.
+    if (prevRaw && text.length < prevRaw.length && !text.startsWith(prevRaw)) {
+      // Snapshot the previous full buffer as the new baseline prefix
+      const prevMerged = chatRunState.buffers.get(clientRunId) ?? prevRaw;
+      baseline = prevMerged;
+      chatRunBaseline.set(clientRunId, baseline);
+      isBaselineChanged = true;
+
+      // Freeze the previous raw text as a completed segment
+      const existing = chatRunState.completedSegments.get(clientRunId) ?? [];
+      existing.push(prevRaw);
+      chatRunState.completedSegments.set(clientRunId, existing);
+    }
+
+    // Track the raw (pre-merge) text for next comparison
+    chatRunState.lastRawText.set(clientRunId, text);
+
+    // Merge baseline with new text
+    const merged = baseline ? baseline + "\n\n" + text : text;
+    chatRunState.buffers.set(clientRunId, merged);
+
+    // Build segments array: completed segments + current active text
+    const completed = chatRunState.completedSegments.get(clientRunId);
+    const segments = completed && completed.length > 0 ? [...completed, text] : undefined;
+
+    // If baseline changed (tool call detected), broadcast immediately, ignoring throttle
+    if (isBaselineChanged) {
+      const payload = {
+        runId: clientRunId,
+        sessionKey,
+        seq,
+        state: "delta" as const,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: merged }],
+          timestamp: Date.now(),
+        },
+        segments,
+      };
+      if (!shouldSuppressHeartbeatBroadcast(clientRunId)) {
+        broadcast("chat", payload, { dropIfSlow: true });
+      }
+      nodeSendToSession(sessionKey, "chat", payload);
+      chatRunState.deltaSentAt.set(clientRunId, Date.now());
+      return;
+    }
+
+    // Normal throttling logic
     const now = Date.now();
     const last = chatRunState.deltaSentAt.get(clientRunId) ?? 0;
     if (now - last < 150) {
@@ -242,9 +312,10 @@ export function createAgentEventHandler({
       state: "delta" as const,
       message: {
         role: "assistant",
-        content: [{ type: "text", text }],
+        content: [{ type: "text", text: merged }],
         timestamp: now,
       },
+      segments,
     };
     // Suppress webchat broadcast for heartbeat runs when showOk is false
     if (!shouldSuppressHeartbeatBroadcast(clientRunId)) {
@@ -263,6 +334,9 @@ export function createAgentEventHandler({
     const text = chatRunState.buffers.get(clientRunId)?.trim() ?? "";
     chatRunState.buffers.delete(clientRunId);
     chatRunState.deltaSentAt.delete(clientRunId);
+    chatRunBaseline.delete(clientRunId);
+    chatRunState.lastRawText.delete(clientRunId);
+    chatRunState.completedSegments.delete(clientRunId);
     if (jobState === "done") {
       const payload = {
         runId: clientRunId,
@@ -399,6 +473,9 @@ export function createAgentEventHandler({
         chatRunState.abortedRuns.delete(evt.runId);
         chatRunState.buffers.delete(clientRunId);
         chatRunState.deltaSentAt.delete(clientRunId);
+        chatRunBaseline.delete(clientRunId);
+        chatRunState.lastRawText.delete(clientRunId);
+        chatRunState.completedSegments.delete(clientRunId);
         if (chatLink) {
           chatRunState.registry.remove(evt.runId, clientRunId, sessionKey);
         }
