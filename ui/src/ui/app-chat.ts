@@ -19,6 +19,7 @@ export type ChatHost = {
   chatRunId: string | null;
   chatSending: boolean;
   chatStream: string | null;
+  chatStreamSegments: string[] | null;
   chatStreamStartedAt: number | null;
   sessionKey: string;
   basePath: string;
@@ -304,6 +305,7 @@ export async function switchSession(host: ChatHost, newSessionKey: string): Prom
 
   // Clear current session state synchronously for instant visual update
   host.chatStream = null;
+  host.chatStreamSegments = null;
   host.chatStreamStartedAt = null;
   host.chatRunId = null;
   host.chatQueue = [];
