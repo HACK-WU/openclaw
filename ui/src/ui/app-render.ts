@@ -317,6 +317,7 @@ export function renderApp(state: AppViewState) {
                   state.chatMessage = "";
                   state.chatAttachments = [];
                   state.chatStream = null;
+                  state.chatStreamSegments = null;
                   state.chatStreamStartedAt = null;
                   state.chatRunId = null;
                   state.chatQueue = [];
@@ -1222,6 +1223,7 @@ export function renderApp(state: AppViewState) {
                 messages: state.chatMessages,
                 toolMessages: state.chatToolMessages,
                 stream: state.chatStream,
+                streamSegments: state.chatStreamSegments,
                 streamStartedAt: state.chatStreamStartedAt,
                 draft: state.chatMessage,
                 queue: state.chatQueue,
@@ -1291,6 +1293,7 @@ export function renderApp(state: AppViewState) {
                   // Switch to the new session
                   // Clear current state and update session key
                   state.chatStream = null;
+                  state.chatStreamSegments = null;
                   state.chatStreamStartedAt = null;
                   state.chatRunId = null;
                   state.chatQueue = [];

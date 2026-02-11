@@ -218,18 +218,18 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
   if (payload.stream !== "tool") {
     return;
   }
+  // Must have an active chat run to accept tool events
+  if (!host.chatRunId) {
+    return;
+  }
   const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
   if (sessionKey && sessionKey !== host.sessionKey) {
     return;
   }
-  // Fallback: only accept session-less events for the active run.
-  if (!sessionKey && host.chatRunId && payload.runId !== host.chatRunId) {
-    return;
-  }
-  if (host.chatRunId && payload.runId !== host.chatRunId) {
-    return;
-  }
-  if (!host.chatRunId) {
+  // Agent events carry backend runId (not the client idempotencyKey used as chatRunId).
+  // When sessionKey matches the active session, accept the event regardless of runId.
+  // For session-less events, fall back to runId comparison.
+  if (!sessionKey && payload.runId !== host.chatRunId) {
     return;
   }
 

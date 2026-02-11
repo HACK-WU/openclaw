@@ -27,6 +27,7 @@ export type ChatState = {
   chatAttachments: ChatAttachment[];
   chatRunId: string | null;
   chatStream: string | null;
+  chatStreamSegments: string[] | null;
   chatStreamStartedAt: number | null;
   lastError: string | null;
 };
@@ -37,6 +38,7 @@ export type ChatState = {
  */
 type ChatStreamThrottleState = {
   buffer: string | null;
+  segmentsBuffer: string[] | null;
   pendingSync: number | null; // requestAnimationFrame ID or setTimeout ID
   lastSyncTime: number;
 };
@@ -47,7 +49,7 @@ const throttleStates = new Map<string, ChatStreamThrottleState>();
 function getThrottleState(sessionKey: string): ChatStreamThrottleState {
   let ts = throttleStates.get(sessionKey);
   if (!ts) {
-    ts = { buffer: null, pendingSync: null, lastSyncTime: 0 };
+    ts = { buffer: null, segmentsBuffer: null, pendingSync: null, lastSyncTime: 0 };
     throttleStates.set(sessionKey, ts);
   }
   return ts;
@@ -85,6 +87,7 @@ function syncChatStreamBuffer(state: ChatState, ts: ChatStreamThrottleState) {
   ts.lastSyncTime = performance.now();
   if (ts.buffer !== null && ts.buffer !== state.chatStream) {
     state.chatStream = ts.buffer;
+    state.chatStreamSegments = ts.segmentsBuffer;
   }
 }
 
@@ -100,7 +103,9 @@ export function flushChatStream(state: ChatState) {
   }
   if (ts.buffer !== null) {
     state.chatStream = ts.buffer;
+    state.chatStreamSegments = ts.segmentsBuffer;
     ts.buffer = null;
+    ts.segmentsBuffer = null;
   }
 }
 
@@ -213,6 +218,7 @@ export async function sendChatMessage(
   const runId = generateUUID();
   state.chatRunId = runId;
   state.chatStream = "";
+  state.chatStreamSegments = null;
   state.chatStreamStartedAt = now;
 
   // Convert attachments to API format
@@ -245,6 +251,7 @@ export async function sendChatMessage(
     const error = String(err);
     state.chatRunId = null;
     state.chatStream = null;
+    state.chatStreamSegments = null;
     state.chatStreamStartedAt = null;
     state.lastError = error;
     state.chatMessages = [
@@ -303,6 +310,9 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
         // Use throttled buffer instead of direct state update
         const ts = getThrottleState(state.sessionKey);
         ts.buffer = next;
+        // Capture segments from the payload (backend provides completed segment boundaries)
+        const rawSegments = (payload as Record<string, unknown>).segments;
+        ts.segmentsBuffer = Array.isArray(rawSegments) ? (rawSegments as string[]) : null;
         scheduleChatStreamSync(state, ts);
       }
     }
@@ -310,16 +320,19 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     // Flush any pending buffer before clearing
     flushChatStream(state);
     state.chatStream = null;
+    state.chatStreamSegments = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
   } else if (payload.state === "aborted") {
     flushChatStream(state);
     state.chatStream = null;
+    state.chatStreamSegments = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
   } else if (payload.state === "error") {
     flushChatStream(state);
     state.chatStream = null;
+    state.chatStreamSegments = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
     state.lastError = payload.errorMessage ?? "chat error";

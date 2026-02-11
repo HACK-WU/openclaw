@@ -77,11 +77,32 @@ export function renderReadingIndicatorGroup(assistant?: AssistantIdentity) {
   `;
 }
 
+/**
+ * Collect and classify tool cards from real-time tool stream messages.
+ */
+function collectStreamToolCards(
+  toolMessages: unknown[],
+  onOpenSidebar?: (content: string) => void,
+) {
+  const allCards: ToolCard[] = [];
+  for (const msg of toolMessages) {
+    const cards = extractToolCards(msg);
+    allCards.push(...cards);
+  }
+  if (allCards.length === 0) {
+    return nothing;
+  }
+  const classified = classifyToolCards(allCards);
+  return renderInlineToolCards(classified, onOpenSidebar);
+}
+
 export function renderStreamingGroup(
   text: string,
   startedAt: number,
-  _onOpenSidebar?: (content: string) => void,
+  onOpenSidebar?: (content: string) => void,
   assistant?: AssistantIdentity,
+  toolMessages?: unknown[],
+  segments?: string[],
 ) {
   const timestamp = new Date(startedAt).toLocaleTimeString([], {
     hour: "numeric",
@@ -89,12 +110,53 @@ export function renderStreamingGroup(
   });
   const name = assistant?.name ?? "Assistant";
 
+  const hasTools = toolMessages && toolMessages.length > 0;
+
+  // Tool cards from real-time tool stream
+  const toolCardsHtml = hasTools ? collectStreamToolCards(toolMessages, onOpenSidebar) : nothing;
+
+  // Use backend-provided segments to split into multiple bubbles.
+  // Segments represent text between tool call boundaries, provided by the gateway.
+  const hasSegments = segments && segments.length > 1;
+
+  if (!hasSegments) {
+    // Single segment or no segments: render as one bubble
+    return html`
+      <div class="chat-group assistant">
+        ${renderAvatar("assistant", assistant)}
+        <div class="chat-group-messages">
+          ${toolCardsHtml}
+          <div class="chat-bubble streaming fade-in">
+            <div class="chat-text chat-text-streaming" ${typewriter(text)}></div>
+          </div>
+          <div class="chat-group-footer">
+            <span class="chat-sender-name">${name}</span>
+            <span class="chat-group-timestamp">${timestamp}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Multiple segments: completed segments as static bubbles,
+  // tool cards after them, then the active segment with typewriter.
+  const completedSegments = segments.slice(0, -1);
+  const activeSegment = segments[segments.length - 1];
+
   return html`
     <div class="chat-group assistant">
       ${renderAvatar("assistant", assistant)}
       <div class="chat-group-messages">
+        ${completedSegments.map(
+          (seg) => html`
+            <div class="chat-bubble fade-in">
+              <div class="chat-text">${unsafeHTML(toSanitizedMarkdownHtml(seg))}</div>
+            </div>
+          `,
+        )}
+        ${toolCardsHtml}
         <div class="chat-bubble streaming fade-in">
-          <div class="chat-text chat-text-streaming" ${typewriter(text)}></div>
+          <div class="chat-text chat-text-streaming" ${typewriter(activeSegment)}></div>
         </div>
         <div class="chat-group-footer">
           <span class="chat-sender-name">${name}</span>

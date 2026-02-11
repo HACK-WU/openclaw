@@ -40,6 +40,7 @@ type LifecycleHost = {
   chatToolMessages: unknown[];
   chatStream: string;
   chatRunId: string | null;
+  chatStreamSegments: string[] | null;
   chatStreamStartedAt: number | null;
   sessionKey: string;
   logsAutoFollow: boolean;
@@ -103,6 +104,7 @@ function handleChatHeartbeat(host: LifecycleHost) {
     // Clear stale streaming state
     host.chatRunId = null;
     (host as unknown as { chatStream: string | null }).chatStream = null;
+    (host as unknown as { chatStreamSegments: string[] | null }).chatStreamSegments = null;
     (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
     // Refresh chat history to get the actual state
     void loadChatHistory(host as unknown as Parameters<typeof loadChatHistory>[0]);

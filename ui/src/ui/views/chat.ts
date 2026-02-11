@@ -33,6 +33,7 @@ export type ChatProps = {
   messages: unknown[];
   toolMessages: unknown[];
   stream: string | null;
+  streamSegments: string[] | null;
   streamStartedAt: number | null;
   assistantAvatarUrl?: string | null;
   draft: string;
@@ -250,6 +251,8 @@ export function renderChat(props: ChatProps) {
               item.startedAt,
               props.onOpenSidebar,
               assistantIdentity,
+              item.toolMessages,
+              item.segments,
             );
           }
 
@@ -528,14 +531,18 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       message: msg,
     });
   }
-  // 实时 tool stream 消息（工具调用/结果卡片）始终显示，
-  // 不再受 showThinking 控制——用户需要看到工具执行进度。
-  for (let i = 0; i < tools.length; i++) {
-    items.push({
-      kind: "message",
-      key: messageKey(tools[i], i + history.length),
-      message: tools[i],
-    });
+  // Real-time tool stream messages (tool call/result cards).
+  // When streaming text is active, tool cards are rendered inside the streaming
+  // group to appear inline with the text. Otherwise, render them as separate items.
+  const hasActiveStream = props.stream !== null && props.stream.trim().length > 0;
+  if (!hasActiveStream) {
+    for (let i = 0; i < tools.length; i++) {
+      items.push({
+        kind: "message",
+        key: messageKey(tools[i], i + history.length),
+        message: tools[i],
+      });
+    }
   }
 
   if (props.stream !== null) {
@@ -546,8 +553,18 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
         key,
         text: props.stream,
         startedAt: props.streamStartedAt ?? Date.now(),
+        toolMessages: tools.length > 0 ? tools : undefined,
+        segments: props.streamSegments ?? undefined,
       });
     } else {
+      // No text yet — show reading indicator; tool messages still show separately
+      for (let i = 0; i < tools.length; i++) {
+        items.push({
+          kind: "message",
+          key: messageKey(tools[i], i + history.length),
+          message: tools[i],
+        });
+      }
       items.push({ kind: "reading-indicator", key });
     }
   }
