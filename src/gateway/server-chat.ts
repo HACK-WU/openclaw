@@ -402,6 +402,15 @@ export function createAgentEventHandler({
     const last = agentRunSeq.get(evt.runId) ?? 0;
     const isToolEvent = evt.stream === "tool";
     const toolVerbose = isToolEvent ? resolveToolVerboseLevel(evt.runId, sessionKey) : "off";
+    // When verbose is off, still deliver to explicitly registered tool-event recipients
+    // (clients that declared the tool-events capability). Only skip the global broadcast.
+    const hasToolRecipients = isToolEvent
+      ? (toolEventRecipients.get(evt.runId)?.size ?? 0) > 0
+      : false;
+    if (isToolEvent && toolVerbose === "off" && !hasToolRecipients) {
+      agentRunSeq.set(evt.runId, evt.seq);
+      return;
+    }
     // Build tool payload: strip result/partialResult unless verbose=full
     const toolPayload =
       isToolEvent && toolVerbose !== "full"
