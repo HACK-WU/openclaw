@@ -145,6 +145,11 @@ export type ChatRunState = {
   buffers: Map<string, string>;
   deltaSentAt: Map<string, number>;
   abortedRuns: Map<string, number>;
+  chatRunBaseline: Map<string, string>;
+  /** Stores the last raw (pre-merge) text per run, used for tool-call detection. */
+  lastRawText: Map<string, string>;
+  /** Frozen text segments from previous tool-call boundaries (for multi-bubble streaming). */
+  completedSegments: Map<string, string[]>;
   clear: () => void;
 };
 
@@ -153,12 +158,18 @@ export function createChatRunState(): ChatRunState {
   const buffers = new Map<string, string>();
   const deltaSentAt = new Map<string, number>();
   const abortedRuns = new Map<string, number>();
+  const chatRunBaseline = new Map<string, string>();
+  const lastRawText = new Map<string, string>();
+  const completedSegments = new Map<string, string[]>();
 
   const clear = () => {
     registry.clear();
     buffers.clear();
     deltaSentAt.clear();
     abortedRuns.clear();
+    chatRunBaseline.clear();
+    lastRawText.clear();
+    completedSegments.clear();
   };
 
   return {
@@ -166,6 +177,9 @@ export function createChatRunState(): ChatRunState {
     buffers,
     deltaSentAt,
     abortedRuns,
+    chatRunBaseline,
+    lastRawText,
+    completedSegments,
     clear,
   };
 }
@@ -311,6 +325,7 @@ export function createAgentEventHandler({
         content: [{ type: "text", text: cleaned }],
         timestamp: now,
       },
+      segments,
     };
     broadcast("chat", payload, { dropIfSlow: true });
     nodeSendToSession(sessionKey, "chat", payload);
@@ -337,6 +352,9 @@ export function createAgentEventHandler({
       normalizedHeartbeatText.suppress || isSilentReplyText(text, SILENT_REPLY_TOKEN);
     chatRunState.buffers.delete(clientRunId);
     chatRunState.deltaSentAt.delete(clientRunId);
+    chatRunBaseline.delete(clientRunId);
+    chatRunState.lastRawText.delete(clientRunId);
+    chatRunState.completedSegments.delete(clientRunId);
     if (jobState === "done") {
       const payload = {
         runId: clientRunId,
@@ -485,6 +503,9 @@ export function createAgentEventHandler({
         chatRunState.abortedRuns.delete(evt.runId);
         chatRunState.buffers.delete(clientRunId);
         chatRunState.deltaSentAt.delete(clientRunId);
+        chatRunBaseline.delete(clientRunId);
+        chatRunState.lastRawText.delete(clientRunId);
+        chatRunState.completedSegments.delete(clientRunId);
         if (chatLink) {
           chatRunState.registry.remove(evt.runId, clientRunId, sessionKey);
         }
