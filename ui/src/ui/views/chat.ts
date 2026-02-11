@@ -440,14 +440,6 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
     const role = normalizeRoleForGrouping(normalized.role);
     const timestamp = normalized.timestamp || Date.now();
 
-    // Tool messages merge into the preceding assistant group to form
-    // a single "turn" (assistant text + tool calls + tool results).
-    // This allows tool cards to be collected and rendered together.
-    if (role === "tool" && currentGroup?.role === "assistant") {
-      currentGroup.messages.push({ message: item.message, key: item.key });
-      continue;
-    }
-
     if (!currentGroup || currentGroup.role !== role) {
       if (currentGroup) {
         result.push(currentGroup);
@@ -489,9 +481,11 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   }
   for (let i = historyStart; i < history.length; i++) {
     const msg = history[i];
+    const normalized = normalizeMessage(msg);
 
-    // Tool result 消息始终保留——grouped-render 会将其渲染为工具卡片
-    // （含 View 按钮可在侧边栏查看输出），不再跳过。
+    if (!props.showThinking && normalized.role.toLowerCase() === "toolresult") {
+      continue;
+    }
 
     items.push({
       kind: "message",
@@ -499,14 +493,14 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       message: msg,
     });
   }
-  // 实时 tool stream 消息（工具调用/结果卡片）始终显示，
-  // 不再受 showThinking 控制——用户需要看到工具执行进度。
-  for (let i = 0; i < tools.length; i++) {
-    items.push({
-      kind: "message",
-      key: messageKey(tools[i], i + history.length),
-      message: tools[i],
-    });
+  if (props.showThinking) {
+    for (let i = 0; i < tools.length; i++) {
+      items.push({
+        kind: "message",
+        key: messageKey(tools[i], i + history.length),
+        message: tools[i],
+      });
+    }
   }
 
   if (props.stream !== null) {

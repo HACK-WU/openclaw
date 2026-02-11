@@ -58,7 +58,6 @@
   background: var(--panel);
 }
 
-/* Sidebar header actions (close + copy buttons) */
 .sidebar-header-actions {
   display: flex;
   align-items: center;

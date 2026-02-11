@@ -22,16 +22,9 @@ export class TerminalViewer extends LitElement {
   /** 是否为预览模式（限制高度，用于 tool card 内联预览） */
   @property({ type: Boolean }) preview = false;
 
-  /** 是否为实时模式（增量写入，用于流式 PTY 输出） */
-  @property({ type: Boolean }) live = false;
-
   private term: Terminal | null = null;
   private fitAddon: FitAddon | null = null;
   private resizeObserver: ResizeObserver | null = null;
-  /** Track how many characters have been written (for incremental mode) */
-  private _writtenLength = 0;
-  /** Track the last content for detecting truncation/replacement */
-  private _lastContent = "";
 
   static styles = css`
     :host {
@@ -90,25 +83,11 @@ export class TerminalViewer extends LitElement {
 
   protected updated(changed: Map<string, unknown>) {
     if (changed.has("content") && this.term) {
-      if (
-        this.live &&
-        this.content.length > this._writtenLength &&
-        this.content.startsWith(this._lastContent)
-      ) {
-        // Live mode: new content is an append of old content, write only the delta
-        const delta = this.content.slice(this._writtenLength);
-        if (delta) {
-          this.term.write(delta);
-        }
-      } else {
-        // Full mode: content was truncated/replaced/first write
-        this.term.reset();
-        if (this.content) {
-          this.term.write(this.content);
-        }
+      // 内容更新时重新写入终端（阶段 1：简单可靠，非增量模式）
+      this.term.reset();
+      if (this.content) {
+        this.term.write(this.content);
       }
-      this._writtenLength = this.content.length;
-      this._lastContent = this.content;
     }
   }
 

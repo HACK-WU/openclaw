@@ -1,7 +1,6 @@
 import { noChange } from "lit";
 import { AsyncDirective } from "lit/async-directive.js";
 import { directive, type ElementPart, type PartInfo, PartType } from "lit/directive.js";
-import { renderMarkdownUncached } from "../markdown.ts";
 
 /**
  * Characters to reveal per animation frame at 60fps.
@@ -20,13 +19,6 @@ const CATCH_UP_THRESHOLD = 200;
  * Multiplier applied to CHARS_PER_FRAME when catching up.
  */
 const CATCH_UP_MULTIPLIER = 4;
-
-/**
- * Minimum interval (ms) between expensive Markdown re-renders.
- * During the animation loop we use cheap plain-text rendering;
- * Markdown is only parsed on content changes or when the animation completes.
- */
-const MD_RENDER_INTERVAL_MS = 300;
 
 /**
  * Escape HTML special characters for safe rendering as plain text.
@@ -67,8 +59,6 @@ class TypewriterDirective extends AsyncDirective {
   private _element: Element | null = null;
   // Current animation frame handle
   private _raf: number | null = null;
-  // Timestamp of last Markdown render (for throttling)
-  private _lastMdRender = 0;
 
   constructor(partInfo: PartInfo) {
     super(partInfo);
@@ -160,46 +150,9 @@ class TypewriterDirective extends AsyncDirective {
     }
   }
 
-  /**
-   * Render the current revealed text cheaply (plain text → HTML).
-   * Used during the per-frame animation loop where Markdown parsing
-   * would be prohibitively expensive at 60fps.
-   */
-  private _flushCheap() {
+  private _flush() {
     if (this._element) {
       (this._element as HTMLElement).innerHTML = toHtml(this._target, this._revealed);
-    }
-  }
-
-  /**
-   * Render the current revealed text with full Markdown parsing.
-   * Only called on content changes, throttled during streaming,
-   * and when the typewriter animation finishes.
-   */
-  private _flushMarkdown() {
-    if (this._element) {
-      const slice = this._target.slice(0, this._revealed);
-      const isStreaming = this._revealed < this._target.length;
-      (this._element as HTMLElement).innerHTML = renderMarkdownUncached(slice, isStreaming);
-      this._lastMdRender = performance.now();
-    }
-  }
-
-  private _flush() {
-    if (!this._element) return;
-
-    const now = performance.now();
-    const isAnimating = this._revealed < this._target.length;
-
-    if (!isAnimating) {
-      // Animation complete: render with Markdown for final display
-      this._flushMarkdown();
-    } else if (now - this._lastMdRender >= MD_RENDER_INTERVAL_MS) {
-      // Throttled Markdown render during streaming
-      this._flushMarkdown();
-    } else {
-      // Cheap plain-text render during animation frames
-      this._flushCheap();
     }
   }
 }
