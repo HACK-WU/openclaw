@@ -519,9 +519,8 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       continue;
     }
 
-    if (!props.showThinking && normalized.role.toLowerCase() === "toolresult") {
-      continue;
-    }
+    // Tool result 消息始终保留——grouped-render 会将其渲染为工具卡片
+    // （含 View 按钮可在侧边栏查看输出），不再跳过。
 
     items.push({
       kind: "message",
@@ -529,14 +528,14 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       message: msg,
     });
   }
-  if (props.showThinking) {
-    for (let i = 0; i < tools.length; i++) {
-      items.push({
-        kind: "message",
-        key: messageKey(tools[i], i + history.length),
-        message: tools[i],
-      });
-    }
+  // 实时 tool stream 消息（工具调用/结果卡片）始终显示，
+  // 不再受 showThinking 控制——用户需要看到工具执行进度。
+  for (let i = 0; i < tools.length; i++) {
+    items.push({
+      kind: "message",
+      key: messageKey(tools[i], i + history.length),
+      message: tools[i],
+    });
   }
 
   if (props.stream !== null) {
