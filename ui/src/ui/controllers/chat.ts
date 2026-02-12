@@ -319,11 +319,9 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   } else if (payload.state === "final") {
     // Flush any pending buffer to ensure final content is rendered
     flushChatStream(state);
-    // Note: Don't clear chatStream immediately - keep showing the final content
-    // until loadChatHistory completes and updates chatMessages.
-    // Only clear runId to prevent stale stream detection.
-    state.chatRunId = null;
-    // Return "final" to signal that history should be loaded
+    // Note: Don't clear chatStream/chatRunId immediately - keep showing the final content
+    // and accepting tool events until loadChatHistory completes.
+    // Return "final" to signal that history should be loaded.
     return "final";
   } else if (payload.state === "aborted") {
     flushChatStream(state);

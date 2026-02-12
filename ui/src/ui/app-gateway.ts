@@ -218,7 +218,8 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     const state = handleChatEvent(host as unknown as OpenClawApp, payload);
 
     if (state === "final" || state === "error" || state === "aborted") {
-      resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+      // Don't reset tool stream immediately - keep showing tool cards
+      // until history loads. resetToolStream will be called after loadChatHistory.
       void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
       if (isNewSessionCommand) {
         host.refreshSessionsAfterChat.delete(runId);
@@ -246,12 +247,17 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
           (host as unknown as OpenClawApp).chatStream = null;
           (host as unknown as OpenClawApp).chatStreamSegments = null;
           (host as unknown as OpenClawApp).chatStreamStartedAt = null;
+          (host as unknown as OpenClawApp).chatRunId = null;
+          // Reset tool stream after history is loaded
+          resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
         })
         .catch(() => {
           // If history load fails, still clear stream to prevent stuck state
           (host as unknown as OpenClawApp).chatStream = null;
           (host as unknown as OpenClawApp).chatStreamSegments = null;
           (host as unknown as OpenClawApp).chatStreamStartedAt = null;
+          (host as unknown as OpenClawApp).chatRunId = null;
+          resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
         });
     }
     return;
