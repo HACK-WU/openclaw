@@ -95,11 +95,12 @@ describe("handleChatEvent", () => {
     expect(state.chatStreamStartedAt).toBe(123);
   });
 
-  it("processes final from own run and clears state", () => {
+  it("processes final from own run and clears runId but keeps stream for UI continuity", () => {
     const state = createState({
       sessionKey: "main",
       chatRunId: "run-1",
       chatStream: "Reply",
+      chatStreamSegments: null,
       chatStreamStartedAt: 100,
     });
     const payload: ChatEventPayload = {
@@ -108,9 +109,12 @@ describe("handleChatEvent", () => {
       state: "final",
     };
     expect(handleChatEvent(state, payload)).toBe("final");
+    // chatRunId should be cleared immediately to prevent stale stream detection
     expect(state.chatRunId).toBe(null);
-    expect(state.chatStream).toBe(null);
-    expect(state.chatStreamStartedAt).toBe(null);
+    // chatStream should NOT be cleared immediately - it stays visible
+    // until loadChatHistory completes (handled by the caller)
+    expect(state.chatStream).toBe("Reply");
+    expect(state.chatStreamStartedAt).toBe(100);
   });
 });
 

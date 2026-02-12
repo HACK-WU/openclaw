@@ -238,7 +238,21 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       }
     }
     if (state === "final") {
-      void loadChatHistory(host as unknown as OpenClawApp);
+      // Load chat history and clear stream state after history is loaded
+      // This prevents the UI gap between stream clearing and history loading
+      loadChatHistory(host as unknown as OpenClawApp)
+        .then(() => {
+          // Clear stream state after history is loaded and messages are updated
+          (host as unknown as OpenClawApp).chatStream = null;
+          (host as unknown as OpenClawApp).chatStreamSegments = null;
+          (host as unknown as OpenClawApp).chatStreamStartedAt = null;
+        })
+        .catch(() => {
+          // If history load fails, still clear stream to prevent stuck state
+          (host as unknown as OpenClawApp).chatStream = null;
+          (host as unknown as OpenClawApp).chatStreamSegments = null;
+          (host as unknown as OpenClawApp).chatStreamStartedAt = null;
+        });
     }
     return;
   }
