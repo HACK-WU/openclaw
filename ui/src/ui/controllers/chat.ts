@@ -378,7 +378,8 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     state.chatStream = null;
     state.chatStreamSegments = null;
     state.chatRunId = null;
-    state.chatStreamStartedAt = null;
+    // Return "final" to signal that history should be loaded
+    return "final";
   } else if (payload.state === "aborted") {
     const normalizedMessage = normalizeAbortedAssistantMessage(payload.message);
     if (normalizedMessage) {

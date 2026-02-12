@@ -4,22 +4,30 @@ import { directive, type ElementPart, type PartInfo, PartType } from "lit/direct
 import { renderMarkdownUncached } from "../markdown.ts";
 
 /**
- * Characters to reveal per animation frame at 60fps.
- * At 60fps → ~720 chars/sec — fast enough to keep up with most LLM streaming output
- * while still providing a smooth, consistent typewriter feel.
+ * Minimum interval between character reveals (ms).
+ * Lower = faster typing, Higher = slower more visible typing.
+ * 30ms ≈ 33 chars/sec (smooth but visible)
  */
-const CHARS_PER_FRAME = 12;
+const TYPEWRITER_INTERVAL_MS = 30;
+
+/**
+ * Characters to reveal per tick.
+ * Keep at 1 for most natural, visible character-by-character effect.
+ * Can increase to 2-3 for slightly faster but still smooth animation.
+ */
+const CHARS_PER_TICK = 1;
 
 /**
  * When the unrevealed text exceeds this threshold,
- * increase reveal speed to prevent the display from falling too far behind.
+ * increase reveal speed to prevent falling too far behind LLM streaming.
  */
-const CATCH_UP_THRESHOLD = 200;
+const CATCH_UP_THRESHOLD = 100;
 
 /**
- * Multiplier applied to CHARS_PER_FRAME when catching up.
+ * Multiplier applied to CHARS_PER_TICK when catching up.
+ * Keep low to maintain visible typing effect even during catch-up.
  */
-const CATCH_UP_MULTIPLIER = 4;
+const CATCH_UP_MULTIPLIER = 2;
 
 /**
  * Minimum interval (ms) between expensive Markdown re-renders.
@@ -65,8 +73,8 @@ class TypewriterDirective extends AsyncDirective {
   private _revealed = 0;
   // The DOM element we're writing into
   private _element: Element | null = null;
-  // Current animation frame handle
-  private _raf: number | null = null;
+  // Current timer handle (setTimeout)
+  private _timer: number | null = null;
   // Timestamp of last Markdown render (for throttling)
   private _lastMdRender = 0;
 
@@ -104,29 +112,29 @@ class TypewriterDirective extends AsyncDirective {
     this._flush();
 
     // Start the animation loop if not already running and there's text to reveal.
-    if (this._raf === null && this._revealed < this._target.length && this.isConnected) {
-      this._scheduleFrame();
+    if (this._timer === null && this._revealed < this._target.length && this.isConnected) {
+      this._scheduleTick();
     }
 
-    // If we've already caught up, ensure no pending frame is left behind.
-    if (this._revealed >= this._target.length && this._raf !== null) {
-      cancelAnimationFrame(this._raf);
-      this._raf = null;
+    // If we've already caught up, ensure no pending timer is left behind.
+    if (this._revealed >= this._target.length && this._timer !== null) {
+      clearTimeout(this._timer);
+      this._timer = null;
     }
 
     return noChange;
   }
 
   protected override disconnected() {
-    if (this._raf !== null) {
-      cancelAnimationFrame(this._raf);
-      this._raf = null;
+    if (this._timer !== null) {
+      clearTimeout(this._timer);
+      this._timer = null;
     }
   }
 
   protected override reconnected() {
-    if (this._raf === null && this._revealed < this._target.length) {
-      this._scheduleFrame();
+    if (this._timer === null && this._revealed < this._target.length) {
+      this._scheduleTick();
     }
   }
 
@@ -135,11 +143,12 @@ class TypewriterDirective extends AsyncDirective {
     return noChange;
   }
 
-  private _scheduleFrame() {
-    this._raf = requestAnimationFrame(() => {
-      this._raf = null;
+  private _scheduleTick() {
+    // Use setTimeout for consistent interval timing
+    this._timer = window.setTimeout(() => {
+      this._timer = null;
       this._tick();
-    });
+    }, TYPEWRITER_INTERVAL_MS);
   }
 
   private _tick() {
@@ -148,15 +157,16 @@ class TypewriterDirective extends AsyncDirective {
     }
 
     const remaining = this._target.length - this._revealed;
+    // Determine how many characters to reveal this tick
     const speed =
-      remaining > CATCH_UP_THRESHOLD ? CHARS_PER_FRAME * CATCH_UP_MULTIPLIER : CHARS_PER_FRAME;
+      remaining > CATCH_UP_THRESHOLD ? CHARS_PER_TICK * CATCH_UP_MULTIPLIER : CHARS_PER_TICK;
 
     this._revealed = Math.min(this._revealed + speed, this._target.length);
     this._flush();
 
     // Continue if there's more to reveal
     if (this._revealed < this._target.length) {
-      this._scheduleFrame();
+      this._scheduleTick();
     }
   }
 
