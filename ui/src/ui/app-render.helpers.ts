@@ -9,7 +9,7 @@ import { refreshChat, switchSession } from "./app-chat.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
 import { OpenClawApp } from "./app.ts";
 import { ChatState, loadChatHistory } from "./controllers/chat.ts";
-import { formatAgo } from "./format.ts";
+import { formatRelativeTimestamp } from "./format.ts";
 import { getAvailableLocales, type LocaleCode } from "./i18n/index.ts";
 import { t } from "./i18n/index.ts";
 import { icons } from "./icons.ts";
@@ -491,7 +491,7 @@ function renderNavSessionItem(
   const displayName = session.label || session.key;
 
   // 格式化最后更新时间（如："3分钟前"、"1小时前"）
-  const updatedAgo = session.updatedAt ? formatAgo(session.updatedAt) : "";
+  const updatedAgo = session.updatedAt ? formatRelativeTimestamp(session.updatedAt) : "";
 
   // 检查是否正在切换会话（用于防止重复点击）
   const isSwitching = (state as unknown as { sessionSwitching?: boolean }).sessionSwitching;
@@ -529,17 +529,17 @@ function renderNavSessionItem(
         <div class="nav-sessions__item-icon">
           ${isActive ? icons.messageCircle : icons.messageSquare}
         </div>
-        
+
         <!-- 会话信息区域 -->
         <div class="nav-sessions__item-info">
           <!-- 会话名称 -->
           <div class="nav-sessions__item-name">${displayName}</div>
-          
+
           <!-- 最后更新时间（如果存在的话） -->
           ${updatedAgo ? html`<div class="nav-sessions__item-time">${updatedAgo}</div>` : nothing}
         </div>
       </div>
-      
+
       <!-- 删除按钮区域 -->
       ${
         // 当会话总数大于 1 时才显示删除按钮，避免删除最后一个会话
