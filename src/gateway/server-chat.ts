@@ -150,6 +150,8 @@ export type ChatRunState = {
   lastRawText: Map<string, string>;
   /** Frozen text segments from previous tool-call boundaries (for multi-bubble streaming). */
   completedSegments: Map<string, string[]>;
+  /** Trailing-edge timers for throttled chat deltas (ensures final state is always sent). */
+  trailingTimers: Map<string, ReturnType<typeof setTimeout>>;
   clear: () => void;
 };
 
@@ -161,6 +163,7 @@ export function createChatRunState(): ChatRunState {
   const chatRunBaseline = new Map<string, string>();
   const lastRawText = new Map<string, string>();
   const completedSegments = new Map<string, string[]>();
+  const trailingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const clear = () => {
     registry.clear();
@@ -170,6 +173,10 @@ export function createChatRunState(): ChatRunState {
     chatRunBaseline.clear();
     lastRawText.clear();
     completedSegments.clear();
+    for (const timer of trailingTimers.values()) {
+      clearTimeout(timer);
+    }
+    trailingTimers.clear();
   };
 
   return {
@@ -180,6 +187,7 @@ export function createChatRunState(): ChatRunState {
     chatRunBaseline,
     lastRawText,
     completedSegments,
+    trailingTimers,
     clear,
   };
 }
@@ -312,7 +320,50 @@ export function createAgentEventHandler({
     const now = Date.now();
     const last = chatRunState.deltaSentAt.get(clientRunId) ?? 0;
     if (now - last < 150) {
+      // Schedule a trailing-edge send so the latest text is always delivered.
+      // Without this, fast bursts of assistant text only emit the first delta
+      // and the rest is silently dropped until the next non-throttled event.
+      if (!chatRunState.trailingTimers.has(clientRunId)) {
+        const delay = 150 - (now - last);
+        const timer = setTimeout(() => {
+          chatRunState.trailingTimers.delete(clientRunId);
+          const latestMerged = chatRunState.buffers.get(clientRunId);
+          if (latestMerged === undefined) {
+            return;
+          }
+          const latestRaw = chatRunState.lastRawText.get(clientRunId) ?? "";
+          const latestCompleted = chatRunState.completedSegments.get(clientRunId);
+          const latestSegments =
+            latestCompleted && latestCompleted.length > 0
+              ? [...latestCompleted, latestRaw]
+              : undefined;
+          chatRunState.deltaSentAt.set(clientRunId, Date.now());
+          const trailingPayload = {
+            runId: clientRunId,
+            sessionKey,
+            seq,
+            state: "delta" as const,
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: latestMerged }],
+              timestamp: Date.now(),
+            },
+            segments: latestSegments,
+          };
+          if (!shouldSuppressHeartbeatBroadcast(clientRunId)) {
+            broadcast("chat", trailingPayload, { dropIfSlow: true });
+          }
+          nodeSendToSession(sessionKey, "chat", trailingPayload);
+        }, delay);
+        chatRunState.trailingTimers.set(clientRunId, timer);
+      }
       return;
+    }
+    // Clear trailing timer since we're sending now
+    const existingTimer = chatRunState.trailingTimers.get(clientRunId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      chatRunState.trailingTimers.delete(clientRunId);
     }
     chatRunState.deltaSentAt.set(clientRunId, now);
     const payload = {
@@ -355,6 +406,12 @@ export function createAgentEventHandler({
     chatRunBaseline.delete(clientRunId);
     chatRunState.lastRawText.delete(clientRunId);
     chatRunState.completedSegments.delete(clientRunId);
+    // Clear any pending trailing-edge timer for this run
+    const trailingTimer = chatRunState.trailingTimers.get(clientRunId);
+    if (trailingTimer) {
+      clearTimeout(trailingTimer);
+      chatRunState.trailingTimers.delete(clientRunId);
+    }
     if (jobState === "done") {
       const payload = {
         runId: clientRunId,
