@@ -112,6 +112,27 @@ export class TerminalViewer extends LitElement {
     }
   }
 
+  /**
+   * Fit terminal width to container without changing the row count.
+   * Using fitAddon.fit() directly causes a feedback loop: fit() shrinks rows
+   * → container shrinks → ResizeObserver fires → fit() shrinks again → terminal
+   * collapses to near-zero height. Instead, use proposeDimensions() to get
+   * the ideal column count, then resize with the current row count preserved.
+   */
+  private fitWidth() {
+    if (!this.fitAddon || !this.term) {
+      return;
+    }
+    try {
+      const dims = this.fitAddon.proposeDimensions();
+      if (dims && dims.cols > 0 && dims.cols !== this.term.cols) {
+        this.term.resize(dims.cols, this.term.rows);
+      }
+    } catch {
+      // ignore fit errors
+    }
+  }
+
   private initTerminal() {
     const container = this.shadowRoot?.querySelector(".terminal-container") as HTMLElement | null;
     if (!container) {
@@ -165,21 +186,13 @@ export class TerminalViewer extends LitElement {
     }
 
     if (!this.preview) {
-      // 非预览模式下尝试自适应容器宽度
-      try {
-        this.fitAddon.fit();
-      } catch {
-        // 忽略初始化时的 fit 错误
-      }
+      // 非预览模式下尝试自适应容器宽度（只调整列数，不改行数）
+      this.fitWidth();
 
-      // 监听容器大小变化以自适应
+      // 监听容器大小变化以自适应宽度
       this.resizeObserver = new ResizeObserver(() => {
         requestAnimationFrame(() => {
-          try {
-            this.fitAddon?.fit();
-          } catch {
-            // 忽略 resize 时的 fit 错误
-          }
+          this.fitWidth();
         });
       });
       this.resizeObserver.observe(container);
