@@ -234,17 +234,21 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     }
     const state = handleChatEvent(host as unknown as OpenClawApp, payload);
 
-    if (state === "final" || state === "error" || state === "aborted") {
+    if (state === "final" || state === "final-other" || state === "error" || state === "aborted") {
       // Don't reset tool stream immediately - keep showing tool cards
       // until history loads. resetToolStream will be called after loadChatHistory.
-      void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
+      if (state !== "final-other") {
+        void flushChatQueueForEvent(
+          host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
+        );
+      }
       if (isNewSessionCommand) {
         host.refreshSessionsAfterChat.delete(runId);
       }
       // Refresh sessions list when:
       // 1. Command triggered refresh (e.g., /new, /reset)
       // 2. Current session is not in the sessions list (new session was created)
-      if (state === "final") {
+      if (state === "final" || state === "final-other") {
         const sessions = (host as unknown as OpenClawApp).sessionsResult?.sessions ?? [];
         const currentSessionKey = (host as unknown as OpenClawApp).sessionKey;
         const sessionExists = sessions.some((s) => s.key === currentSessionKey);
@@ -252,6 +256,13 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
           void loadSessions(host as unknown as OpenClawApp);
         }
       }
+    }
+    // "final-other" = sub-agent/other run completed; only refresh history, keep
+    // the active run's stream state (chatRunId/chatStream) intact so the Stop
+    // button stays visible while the user's own run is still streaming.
+    if (state === "final-other") {
+      void loadChatHistory(host as unknown as OpenClawApp);
+      return;
     }
     if (state === "final") {
       // Load chat history and clear stream state after history is loaded

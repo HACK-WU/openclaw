@@ -313,10 +313,13 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   }
 
   // Final from another run (e.g. sub-agent announce): refresh history to show new message.
+  // Return "final-other" so the caller can refresh history without clearing the active
+  // run's stream state (chatRunId/chatStream). Clearing those would hide the Stop button
+  // while the user's own run is still streaming.
   // See https://github.com/openclaw/openclaw/issues/1909
   if (payload.runId && state.chatRunId && payload.runId !== state.chatRunId) {
     if (payload.state === "final") {
-      return "final";
+      return "final-other";
     }
     return null;
   }
