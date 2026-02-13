@@ -595,6 +595,7 @@ async function runExecProcess(opts: {
     exitSignal: undefined as NodeJS.Signals | number | null | undefined,
     truncated: false,
     backgrounded: false,
+    isPty: opts.usePty || undefined,
   } satisfies ProcessSession;
   addSession(session);
 

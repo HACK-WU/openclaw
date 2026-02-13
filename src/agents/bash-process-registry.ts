@@ -51,6 +51,7 @@ export interface ProcessSession {
   exited: boolean;
   truncated: boolean;
   backgrounded: boolean;
+  isPty?: boolean;
 }
 
 export interface FinishedSession {
@@ -67,6 +68,7 @@ export interface FinishedSession {
   tail: string;
   truncated: boolean;
   totalOutputChars: number;
+  isPty?: boolean;
 }
 
 const runningSessions = new Map<string, ProcessSession>();
@@ -208,6 +210,7 @@ function moveToFinished(session: ProcessSession, status: ProcessStatus) {
     tail: session.tail,
     truncated: session.truncated,
     totalOutputChars: session.totalOutputChars,
+    isPty: session.isPty,
   });
 }
 
