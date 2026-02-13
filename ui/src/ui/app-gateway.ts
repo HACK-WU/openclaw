@@ -16,7 +16,12 @@ import {
 import { handleAgentEvent, resetToolStream, type AgentEventPayload } from "./app-tool-stream.ts";
 import { loadAgents } from "./controllers/agents.ts";
 import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
-import { loadChatHistory, flushChatStream, clearChatStreamThrottle } from "./controllers/chat.ts";
+import {
+  loadChatHistory,
+  flushChatStream,
+  clearChatStreamThrottle,
+  updateChatStreamFromAssistantText,
+} from "./controllers/chat.ts";
 import { handleChatEvent, type ChatEventPayload } from "./controllers/chat.ts";
 import { loadDevices } from "./controllers/devices.ts";
 import {
@@ -181,10 +186,22 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     if (host.onboarding) {
       return;
     }
-    handleAgentEvent(
-      host as unknown as Parameters<typeof handleAgentEvent>[0],
-      evt.payload as AgentEventPayload | undefined,
-    );
+    const agentPayload = evt.payload as AgentEventPayload | undefined;
+    handleAgentEvent(host as unknown as Parameters<typeof handleAgentEvent>[0], agentPayload);
+    // Use assistant stream text to keep chatStream up-to-date.
+    // The server throttles chat delta events (150ms leading-edge, no trailing),
+    // so most intermediate text is lost. Agent events carry the cumulative text
+    // for the current segment without throttling — use them to fill the gap.
+    if (agentPayload?.stream === "assistant" && typeof agentPayload.data?.text === "string") {
+      const app = host as unknown as OpenClawApp;
+      if (app.chatRunId) {
+        const sessionKey =
+          typeof agentPayload.sessionKey === "string" ? agentPayload.sessionKey : undefined;
+        if (!sessionKey || sessionKey === app.sessionKey) {
+          updateChatStreamFromAssistantText(app, agentPayload.data.text);
+        }
+      }
+    }
     return;
   }
 

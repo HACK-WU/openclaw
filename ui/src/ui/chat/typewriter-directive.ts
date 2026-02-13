@@ -6,35 +6,38 @@ import { renderMarkdownUncached } from "../markdown.ts";
 /**
  * Minimum interval between character reveals (ms).
  * Lower = faster typing, Higher = slower more visible typing.
- * 30ms ≈ 33 chars/sec (smooth but visible)
+ * 16ms ≈ 60 chars/sec (smooth but visible, matches 60fps)
  */
-const TYPEWRITER_INTERVAL_MS = 30;
+const TYPEWRITER_INTERVAL_MS = 16;
 
 /**
  * Characters to reveal per tick.
  * Keep at 1 for most natural, visible character-by-character effect.
  * Can increase to 2-3 for slightly faster but still smooth animation.
+ * Increased to 2 to reduce animation time while maintaining visual effect.
  */
-const CHARS_PER_TICK = 1;
+const CHARS_PER_TICK = 2;
 
 /**
  * When the unrevealed text exceeds this threshold,
  * increase reveal speed to prevent falling too far behind LLM streaming.
+ * Lowered to catch up sooner when text is streaming quickly.
  */
-const CATCH_UP_THRESHOLD = 100;
+const CATCH_UP_THRESHOLD = 50;
 
 /**
  * Multiplier applied to CHARS_PER_TICK when catching up.
- * Keep low to maintain visible typing effect even during catch-up.
+ * Increased to catch up faster when falling behind streaming text.
  */
-const CATCH_UP_MULTIPLIER = 2;
+const CATCH_UP_MULTIPLIER = 4;
 
 /**
  * Minimum interval (ms) between expensive Markdown re-renders.
  * During the animation loop we use cheap plain-text rendering;
  * Markdown is only parsed on content changes or when the animation completes.
+ * Increased to avoid blocking the typewriter animation with heavy Markdown parsing.
  */
-const MD_RENDER_INTERVAL_MS = 300;
+const MD_RENDER_INTERVAL_MS = 2000;
 
 /**
  * Escape HTML special characters for safe rendering as plain text.
@@ -196,7 +199,9 @@ class TypewriterDirective extends AsyncDirective {
   }
 
   private _flush() {
-    if (!this._element) return;
+    if (!this._element) {
+      return;
+    }
 
     const now = performance.now();
     const isAnimating = this._revealed < this._target.length;

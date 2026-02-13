@@ -110,6 +110,25 @@ export function flushChatStream(state: ChatState) {
 }
 
 /**
+ * Update chatStream from an agent `stream=assistant` event.
+ * The server throttles `chat` delta events (150ms leading-edge only, no trailing),
+ * so intermediate text is often lost. Agent events carry the cumulative text
+ * for the current segment and arrive without throttling. Use them to fill the gap.
+ *
+ * Only updates when the new text is longer than the current buffer to avoid
+ * regressing after tool-call boundaries where baselines are involved.
+ */
+export function updateChatStreamFromAssistantText(state: ChatState, text: string) {
+  const current = state.chatStream ?? "";
+  if (!current || text.length >= current.length) {
+    const ts = getThrottleState(state.sessionKey);
+    ts.buffer = text;
+    // Agent events don't carry segment info; keep existing segments unchanged.
+    scheduleChatStreamSync(state, ts);
+  }
+}
+
+/**
  * Clear throttle state for a session (e.g., on disconnect or session switch).
  */
 export function clearChatStreamThrottle(sessionKey: string) {
