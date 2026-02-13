@@ -23,6 +23,7 @@ export type ToolStreamEntry = {
   startedAt: number;
   updatedAt: number;
   message: Record<string, unknown>;
+  isPty?: boolean;
 };
 
 type ToolStreamHost = {
@@ -168,12 +169,32 @@ function formatToolOutput(value: unknown): string | null {
   return `${truncated.text}\n\n… truncated (${truncated.total} chars, showing first ${truncated.text.length}).`;
 }
 
+function extractPtyFromResult(value: unknown): boolean | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const details = record.details;
+  if (!details || typeof details !== "object") {
+    return undefined;
+  }
+  const d = details as Record<string, unknown>;
+  return d.pty === true ? true : undefined;
+}
+
 function buildToolStreamMessage(entry: ToolStreamEntry): Record<string, unknown> {
   const content: Array<Record<string, unknown>> = [];
   content.push({
     type: "toolcall",
     name: entry.name,
-    arguments: entry.args ?? {},
+    arguments: entry.isPty
+      ? {
+          ...(typeof entry.args === "object" && entry.args
+            ? (entry.args as Record<string, unknown>)
+            : {}),
+          pty: true,
+        }
+      : (entry.args ?? {}),
   });
   if (entry.output) {
     content.push({
@@ -421,6 +442,7 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       : phase === "result"
         ? formatToolOutput(data.result)
         : undefined;
+  const isPty = phase === "result" ? extractPtyFromResult(data.result) : undefined;
 
   const now = Date.now();
   let entry = host.toolStreamById.get(toolCallId);
@@ -435,6 +457,7 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       startedAt: typeof payload.ts === "number" ? payload.ts : now,
       updatedAt: now,
       message: {},
+      isPty,
     };
     host.toolStreamById.set(toolCallId, entry);
     host.toolStreamOrder.push(toolCallId);
@@ -445,6 +468,9 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
     }
     if (output !== undefined) {
       entry.output = output || undefined;
+    }
+    if (isPty !== undefined) {
+      entry.isPty = isPty;
     }
     entry.updatedAt = now;
   }

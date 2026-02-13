@@ -241,6 +241,8 @@ function extractToolText(item: Record<string, unknown>): string | undefined {
 /** Bash command tool names */
 const BASH_TOOL_NAMES = new Set([
   "bash",
+  "exec",
+  "process",
   "execute_bash",
   "run_bash",
   "shell",

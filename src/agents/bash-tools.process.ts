@@ -317,6 +317,7 @@ export function createProcessTool(
                   exitCode: scopedFinished.exitCode ?? undefined,
                   aggregated: scopedFinished.aggregated,
                   name: deriveSessionName(scopedFinished.command),
+                  pty: scopedFinished.isPty || undefined,
                 },
               };
             }
@@ -415,6 +416,7 @@ export function createProcessTool(
                 totalChars,
                 truncated: scopedSession.truncated,
                 name: deriveSessionName(scopedSession.command),
+                pty: scopedSession.isPty || undefined,
               },
             };
           }
@@ -441,6 +443,7 @@ export function createProcessTool(
                 exitCode: scopedFinished.exitCode ?? undefined,
                 exitSignal: scopedFinished.exitSignal ?? undefined,
                 name: deriveSessionName(scopedFinished.command),
+                pty: scopedFinished.isPty || undefined,
               },
             };
           }
