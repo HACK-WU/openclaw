@@ -209,12 +209,21 @@ export async function handleSendChat(
   });
 }
 
-export async function refreshChat(host: ChatHost, opts?: { scheduleScroll?: boolean }) {
-  await Promise.all([
-    loadChatHistory(host as unknown as OpenClawApp),
+export async function refreshChat(
+  host: ChatHost,
+  opts?: { scheduleScroll?: boolean; skipHistory?: boolean },
+) {
+  const tasks: Promise<void>[] = [
     loadSessions(host as unknown as OpenClawApp),
     refreshChatAvatar(host),
-  ]);
+  ];
+  // When skipHistory is set (e.g. during active streaming), skip loading
+  // chat history to avoid duplication between persisted messages and the
+  // live stream / tool-stream content.
+  if (!opts?.skipHistory) {
+    tasks.unshift(loadChatHistory(host as unknown as OpenClawApp));
+  }
+  await Promise.all(tasks);
   if (opts?.scheduleScroll !== false) {
     scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
   }
