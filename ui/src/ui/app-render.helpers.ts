@@ -132,13 +132,22 @@ export function renderChatControls(state: AppViewState) {
         ?disabled=${state.chatLoading || !state.connected}
         @click=${async () => {
           const app = state as unknown as OpenClawApp;
+          const isStreaming = Boolean(app.chatRunId);
           app.chatManualRefreshInFlight = true;
           app.chatNewMessagesBelow = false;
           await app.updateComplete;
-          app.resetToolStream();
+          // Don't reset tool stream during active streaming — the live tool
+          // cards are the canonical source and clearing them causes flicker
+          // plus duplication once they re-accumulate from agent events.
+          if (!isStreaming) {
+            app.resetToolStream();
+          }
           try {
             await refreshChat(state as unknown as Parameters<typeof refreshChat>[0], {
               scheduleScroll: false,
+              // Skip loading chat history during active streaming to prevent
+              // duplication between persisted history and live stream content.
+              skipHistory: isStreaming,
             });
             app.scrollToBottom({ smooth: true });
           } finally {
