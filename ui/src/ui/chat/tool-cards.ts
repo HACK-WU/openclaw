@@ -79,9 +79,24 @@ export function extractToolCards(message: unknown): ToolCard[] {
       (typeof m.tool_name === "string" && m.tool_name) ||
       "tool";
     const text = extractTextCached(message) ?? undefined;
-    // 对于独立的 tool result 消息，通过启发式检测“终端控制码样式”的输出来判断
+    // 对于独立的 tool result 消息，通过启发式检测"终端控制码样式"的输出来判断
     const isPty = hasPtyCall || (text ? isTerminalLikeOutput(text) : false);
     cards.push({ kind: "result", name, text, isPty });
+  }
+
+  // If a PTY call was found but no result card exists yet (output not arrived),
+  // create a placeholder PTY card so the terminal shows "Waiting for output..."
+  if (hasPtyCall && !cards.some((c) => c.kind === "result" && c.isPty)) {
+    const ptyItem = content.find((item) => {
+      const kind = (typeof item.type === "string" ? item.type : "").toLowerCase();
+      return (
+        (["toolcall", "tool_call", "tooluse", "tool_use"].includes(kind) ||
+          (typeof item.name === "string" && item.arguments != null)) &&
+        isPtyFromArgs(coerceArgs(item.arguments ?? item.args))
+      );
+    });
+    const ptyName = typeof ptyItem?.name === "string" ? ptyItem.name : "exec";
+    cards.push({ kind: "result", name: ptyName, text: undefined, isPty: true });
   }
 
   return cards;
@@ -309,9 +324,13 @@ export function classifyToolCards(cards: ToolCard[]): ClassifiedToolCards {
  */
 function toggleCardExpand(e: Event) {
   const header = (e.target as HTMLElement).closest(".chat-tool-card__header");
-  if (!header) return;
-  const card = header.closest(".chat-tool-card") as HTMLElement | null;
-  if (!card) return;
+  if (!header) {
+    return;
+  }
+  const card = header.closest(".chat-tool-card");
+  if (!card) {
+    return;
+  }
 
   const wasExpanded = card.classList.contains("chat-tool-card--expanded");
   card.classList.toggle("chat-tool-card--expanded");

@@ -499,7 +499,7 @@ export function createAgentEventHandler({
       // messages to messaging surfaces (Telegram, Discord, etc.).
       const recipients = toolEventRecipients.get(evt.runId);
       if (recipients && recipients.size > 0) {
-        broadcastToConnIds("agent", toolPayload, recipients);
+        broadcastToConnIds("agent", agentPayload, recipients);
       }
     } else {
       broadcast("agent", agentPayload);
