@@ -66,9 +66,7 @@ export function handleConnected(host: LifecycleHost) {
   host.storageHandler = (e: StorageEvent) => {
     if (e.key === SETTINGS_KEY && host.connected && host.tab === "chat") {
       // Reload sessions list when settings change in another tab
-      void loadSessions(host as unknown as Parameters<typeof loadSessions>[0], {
-        activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
-      });
+      void loadSessions(host as unknown as Parameters<typeof loadSessions>[0]);
     }
   };
   window.addEventListener("storage", host.storageHandler);

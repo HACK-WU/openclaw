@@ -30,7 +30,8 @@ export type ChatHost = {
   sessionSwitching?: boolean;
 };
 
-export const CHAT_SESSIONS_ACTIVE_MINUTES = 120;
+// Note: This constant was previously used to limit sessions loaded in chat view.
+// Now all session loading uses the same default (no time limit) for consistency.
 
 export function isChatBusy(host: ChatHost) {
   return host.chatSending || Boolean(host.chatRunId);
@@ -211,9 +212,7 @@ export async function handleSendChat(
 export async function refreshChat(host: ChatHost, opts?: { scheduleScroll?: boolean }) {
   await Promise.all([
     loadChatHistory(host as unknown as OpenClawApp),
-    loadSessions(host as unknown as OpenClawApp, {
-      activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
-    }),
+    loadSessions(host as unknown as OpenClawApp),
     refreshChatAvatar(host),
   ]);
   if (opts?.scheduleScroll !== false) {
