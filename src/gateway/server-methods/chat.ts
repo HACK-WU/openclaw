@@ -10,6 +10,7 @@ import { dispatchInboundMessage } from "../../auto-reply/dispatch.js";
 import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.js";
 import { createReplyPrefixOptions } from "../../channels/reply-prefix.js";
 import { resolveSessionFilePath } from "../../config/sessions.js";
+import { updateSessionStore } from "../../config/sessions/store.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
 import {
@@ -186,6 +187,8 @@ function broadcastChatFinal(params: {
   };
   params.context.broadcast("chat", payload);
   params.context.nodeSendToSession(params.sessionKey, "chat", payload);
+  // Clear activeRunId from session store so UI doesn't show stale Stop button
+  void clearSessionActiveRun(params.sessionKey);
 }
 
 function broadcastChatError(params: {
@@ -204,6 +207,46 @@ function broadcastChatError(params: {
   };
   params.context.broadcast("chat", payload);
   params.context.nodeSendToSession(params.sessionKey, "chat", payload);
+  // Clear activeRunId from session store so UI doesn't show stale Stop button
+  void clearSessionActiveRun(params.sessionKey);
+}
+
+/**
+ * Set the active run ID for a session (used to restore Stop button state on UI refresh).
+ */
+async function setSessionActiveRun(sessionKey: string, runId: string, storePath: string) {
+  try {
+    await updateSessionStore(storePath, (store) => {
+      const entry = store[sessionKey];
+      if (entry) {
+        entry.activeRunId = runId;
+        entry.activeRunStartedAt = Date.now();
+      }
+    });
+  } catch {
+    // Best-effort update; don't fail the run if this doesn't persist
+  }
+}
+
+/**
+ * Clear the active run ID for a session (called when run completes/errors/aborts).
+ */
+async function clearSessionActiveRun(sessionKey: string) {
+  try {
+    const { storePath } = loadSessionEntry(sessionKey);
+    if (!storePath) {
+      return;
+    }
+    await updateSessionStore(storePath, (store) => {
+      const entry = store[sessionKey];
+      if (entry) {
+        entry.activeRunId = undefined;
+        entry.activeRunStartedAt = undefined;
+      }
+    });
+  } catch {
+    // Best-effort update; don't fail if this doesn't persist
+  }
 }
 
 export const chatHandlers: GatewayRequestHandlers = {
@@ -252,12 +295,30 @@ export const chatHandlers: GatewayRequestHandlers = {
       }
     }
     const verboseLevel = entry?.verboseLevel ?? cfg.agents?.defaults?.verboseDefault;
+
+    // Include active run info if present and still in-progress
+    // This allows UI to restore Stop button state on refresh
+    let activeRunId: string | undefined;
+    let activeRunStartedAt: number | undefined;
+    if (entry?.activeRunId) {
+      const activeEntry = context.chatAbortControllers.get(entry.activeRunId);
+      if (activeEntry) {
+        // Run is still in progress
+        activeRunId = entry.activeRunId;
+        activeRunStartedAt = entry.activeRunStartedAt;
+      }
+      // If run is not in chatAbortControllers, it has completed/aborted
+      // The activeRunId in store will be cleaned up by broadcastChatFinal/etc.
+    }
+
     respond(true, {
       sessionKey,
       sessionId,
       messages: capped,
       thinkingLevel,
       verboseLevel,
+      activeRunId,
+      activeRunStartedAt,
     });
   },
   "chat.abort": ({ params, respond, context }) => {
@@ -286,6 +347,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       agentRunSeq: context.agentRunSeq,
       broadcast: context.broadcast,
       nodeSendToSession: context.nodeSendToSession,
+      clearActiveRunId: clearSessionActiveRun,
     };
 
     if (!runId) {
@@ -392,7 +454,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       }
     }
     const rawSessionKey = p.sessionKey;
-    const { cfg, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
+    const { cfg, storePath, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
     const timeoutMs = resolveAgentTimeoutMs({
       cfg,
       overrideMs: p.timeoutMs,
@@ -427,6 +489,7 @@ export const chatHandlers: GatewayRequestHandlers = {
           agentRunSeq: context.agentRunSeq,
           broadcast: context.broadcast,
           nodeSendToSession: context.nodeSendToSession,
+          clearActiveRunId: clearSessionActiveRun,
         },
         { sessionKey: rawSessionKey, stopReason: "stop" },
       );
@@ -465,6 +528,11 @@ export const chatHandlers: GatewayRequestHandlers = {
         status: "started" as const,
       };
       respond(true, ackPayload, undefined, { runId: clientRunId });
+
+      // Save activeRunId to session store for UI state restoration on refresh
+      if (storePath) {
+        void setSessionActiveRun(sessionKey, clientRunId, storePath);
+      }
 
       const trimmedMessage = parsedMessage.trim();
       const injectThinking = Boolean(

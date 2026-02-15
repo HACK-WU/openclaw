@@ -168,15 +168,27 @@ export async function loadChatHistory(state: ChatState) {
   state.chatLoading = true;
   state.lastError = null;
   try {
-    const res = await state.client.request<{ messages?: Array<unknown>; thinkingLevel?: string }>(
-      "chat.history",
-      {
-        sessionKey: state.sessionKey,
-        limit: 200,
-      },
-    );
+    const res = await state.client.request<{
+      messages?: Array<unknown>;
+      thinkingLevel?: string;
+      activeRunId?: string;
+      activeRunStartedAt?: number;
+    }>("chat.history", {
+      sessionKey: state.sessionKey,
+      limit: 200,
+    });
     state.chatMessages = Array.isArray(res.messages) ? res.messages : [];
     state.chatThinkingLevel = res.thinkingLevel ?? null;
+    // Restore active run state for Stop button visibility after refresh
+    // Only restore if we don't already have an active run
+    if (res.activeRunId && !state.chatRunId) {
+      state.chatRunId = res.activeRunId;
+      state.chatStreamStartedAt = res.activeRunStartedAt ?? null;
+      // Initialize empty stream to show streaming UI
+      if (!state.chatStream) {
+        state.chatStream = "";
+      }
+    }
   } catch (err) {
     state.lastError = String(err);
   } finally {

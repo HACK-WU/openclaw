@@ -44,6 +44,8 @@ export type ChatAbortOps = {
   agentRunSeq: Map<string, number>;
   broadcast: (event: string, payload: unknown, opts?: { dropIfSlow?: boolean }) => void;
   nodeSendToSession: (sessionKey: string, event: string, payload: unknown) => void;
+  /** Clear activeRunId from session store (optional, for UI state restoration) */
+  clearActiveRunId?: (sessionKey: string) => Promise<void> | void;
 };
 
 function broadcastChatAborted(
@@ -64,6 +66,10 @@ function broadcastChatAborted(
   };
   ops.broadcast("chat", payload);
   ops.nodeSendToSession(sessionKey, "chat", payload);
+  // Clear activeRunId from session store so UI doesn't show stale Stop button
+  if (ops.clearActiveRunId) {
+    void ops.clearActiveRunId(sessionKey);
+  }
 }
 
 export function abortChatRunById(

@@ -99,6 +99,13 @@ export type SessionEntry = {
   lastThreadId?: string | number;
   skillsSnapshot?: SessionSkillSnapshot;
   systemPromptReport?: SessionSystemPromptReport;
+  /**
+   * Active run ID for this session (if any). Used to restore Stop button state
+   * when the UI refreshes or switches sessions while a run is in progress.
+   */
+  activeRunId?: string;
+  /** Timestamp (ms) when the active run started. */
+  activeRunStartedAt?: number;
 };
 
 export function mergeSessionEntry(
