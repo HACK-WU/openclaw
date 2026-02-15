@@ -9,6 +9,7 @@ import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.j
 import type { MsgContext } from "../../auto-reply/templating.js";
 import { createReplyPrefixOptions } from "../../channels/reply-prefix.js";
 import { resolveSessionFilePath } from "../../config/sessions.js";
+import { updateSessionStore } from "../../config/sessions/store.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import {
   stripInlineDirectiveTagsForDisplay,
@@ -590,12 +591,30 @@ export const chatHandlers: GatewayRequestHandlers = {
       }
     }
     const verboseLevel = entry?.verboseLevel ?? cfg.agents?.defaults?.verboseDefault;
+
+    // Include active run info if present and still in-progress
+    // This allows UI to restore Stop button state on refresh
+    let activeRunId: string | undefined;
+    let activeRunStartedAt: number | undefined;
+    if (entry?.activeRunId) {
+      const activeEntry = context.chatAbortControllers.get(entry.activeRunId);
+      if (activeEntry) {
+        // Run is still in progress
+        activeRunId = entry.activeRunId;
+        activeRunStartedAt = entry.activeRunStartedAt;
+      }
+      // If run is not in chatAbortControllers, it has completed/aborted
+      // The activeRunId in store will be cleaned up by broadcastChatFinal/etc.
+    }
+
     respond(true, {
       sessionKey,
       sessionId,
       messages: bounded.messages,
       thinkingLevel,
       verboseLevel,
+      activeRunId,
+      activeRunStartedAt,
     });
   },
   "chat.abort": ({ params, respond, context }) => {
@@ -732,7 +751,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       }
     }
     const rawSessionKey = p.sessionKey;
-    const { cfg, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
+    const { cfg, storePath, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
     const timeoutMs = resolveAgentTimeoutMs({
       cfg,
       overrideMs: p.timeoutMs,
@@ -799,6 +818,11 @@ export const chatHandlers: GatewayRequestHandlers = {
         status: "started" as const,
       };
       respond(true, ackPayload, undefined, { runId: clientRunId });
+
+      // Save activeRunId to session store for UI state restoration on refresh
+      if (storePath) {
+        void setSessionActiveRun(sessionKey, clientRunId, storePath);
+      }
 
       const trimmedMessage = parsedMessage.trim();
       const injectThinking = Boolean(
