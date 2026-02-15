@@ -121,14 +121,15 @@ export function renderStreamingGroup(
 
   if (!hasSegments) {
     // Single segment or no segments: render as one bubble
+    // Tool cards rendered after the streaming bubble so they appear below
     return html`
       <div class="chat-group assistant">
         ${renderAvatar("assistant", assistant)}
         <div class="chat-group-messages">
-          ${toolCardsHtml}
           <div class="chat-bubble streaming fade-in">
             <div class="chat-text chat-text-streaming" ${typewriter(text)}></div>
           </div>
+          ${toolCardsHtml}
           <div class="chat-group-footer">
             <span class="chat-sender-name">${name}</span>
             <span class="chat-group-timestamp">${timestamp}</span>
@@ -139,7 +140,7 @@ export function renderStreamingGroup(
   }
 
   // Multiple segments: completed segments as static bubbles,
-  // tool cards after them, then the active segment with typewriter.
+  // then the active segment with typewriter, then tool cards below.
   const completedSegments = segments.slice(0, -1);
   const activeSegment = segments[segments.length - 1];
 
@@ -154,10 +155,10 @@ export function renderStreamingGroup(
             </div>
           `,
         )}
-        ${toolCardsHtml}
         <div class="chat-bubble streaming fade-in">
           <div class="chat-text chat-text-streaming" ${typewriter(activeSegment)}></div>
         </div>
+        ${toolCardsHtml}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${name}</span>
           <span class="chat-group-timestamp">${timestamp}</span>
@@ -376,9 +377,15 @@ function renderGroupedMessage(
 /** 从 tool result 消息中提取工具名称 */
 function extractToolName(message: unknown): string {
   const m = message as Record<string, unknown>;
-  if (typeof m.toolName === "string") return m.toolName;
-  if (typeof m.tool_name === "string") return m.tool_name;
-  if (typeof m.name === "string") return m.name;
+  if (typeof m.toolName === "string") {
+    return m.toolName;
+  }
+  if (typeof m.tool_name === "string") {
+    return m.tool_name;
+  }
+  if (typeof m.name === "string") {
+    return m.name;
+  }
   return "tool";
 }
 
