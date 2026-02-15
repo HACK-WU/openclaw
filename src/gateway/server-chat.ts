@@ -287,6 +287,8 @@ export type AgentEventHandlerOptions = {
   resolveSessionKeyForRun: (runId: string) => string | undefined;
   clearAgentRunContext: (runId: string) => void;
   toolEventRecipients: ToolEventRecipientRegistry;
+  /** Clear activeRunId from session store when an agent run completes/errors. */
+  clearActiveRunId?: (sessionKey: string) => Promise<void> | void;
 };
 
 export function createAgentEventHandler({
@@ -298,6 +300,7 @@ export function createAgentEventHandler({
   resolveSessionKeyForRun,
   clearAgentRunContext,
   toolEventRecipients,
+  clearActiveRunId,
 }: AgentEventHandlerOptions) {
   const emitChatDelta = (
     sessionKey: string,
@@ -429,6 +432,10 @@ export function createAgentEventHandler({
       };
       broadcast("chat", payload);
       nodeSendToSession(sessionKey, "chat", payload);
+      // Clear activeRunId from session store so UI doesn't show stale Stop button
+      if (clearActiveRunId) {
+        void clearActiveRunId(sessionKey);
+      }
       return;
     }
     const payload = {
@@ -440,6 +447,10 @@ export function createAgentEventHandler({
     };
     broadcast("chat", payload);
     nodeSendToSession(sessionKey, "chat", payload);
+    // Clear activeRunId from session store so UI doesn't show stale Stop button
+    if (clearActiveRunId) {
+      void clearActiveRunId(sessionKey);
+    }
   };
 
   const resolveToolVerboseLevel = (runId: string, sessionKey?: string) => {
