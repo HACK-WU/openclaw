@@ -273,6 +273,8 @@ function getToolCategory(card: ToolCard): ToolCardCategory {
  * Classify tool cards into categories for grouped rendering.
  * PTY terminals are deduplicated by name — only the latest text is kept
  * so the same process doesn't produce multiple terminal cards.
+ * General and bash cards are NOT deduplicated — each call is an independent
+ * operation and must be listed individually.
  */
 export function classifyToolCards(cards: ToolCard[]): ClassifiedToolCards {
   const result: ClassifiedToolCards = {
@@ -281,7 +283,7 @@ export function classifyToolCards(cards: ToolCard[]): ClassifiedToolCards {
     ptyTerminals: [],
   };
 
-  // Dedup PTY cards by name: keep one card per name, merge text (latest wins)
+  // Only PTY cards are deduplicated by name (same terminal session sends incremental updates)
   const ptyByName = new Map<string, ToolCard>();
 
   for (const card of cards) {
@@ -298,6 +300,10 @@ export function classifyToolCards(cards: ToolCard[]): ClassifiedToolCards {
           // Merge args if the new card has them
           if (card.args && !existing.args) {
             existing.args = card.args;
+          }
+          // If new card is a result, update kind to reflect completion
+          if (card.kind === "result") {
+            existing.kind = "result";
           }
         } else {
           // Clone to avoid mutating the original
@@ -316,6 +322,21 @@ export function classifyToolCards(cards: ToolCard[]): ClassifiedToolCards {
   result.ptyTerminals = [...ptyByName.values()];
 
   return result;
+}
+
+/**
+ * Find the args from the last card that has them (scanning backwards).
+ * Result cards don't carry args; the corresponding call card does.
+ * This allows collapsed summaries to show parameter details even when
+ * the last card in the group is a result.
+ */
+function findLastArgs(cards: ToolCard[]): unknown {
+  for (let i = cards.length - 1; i >= 0; i--) {
+    if (cards[i].args) {
+      return cards[i].args;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -387,17 +408,28 @@ export function renderToolGroupCard(cards: ToolCard[], onOpenSidebar?: (content:
       ? resolveToolDisplay({ name: cards[0].name, args: cards[0].args }).label
       : `${cards.length} Tools`;
 
-  // Collapsed summary: show the last tool's name + detail
+  // Collapsed summary: show the last tool's name + detail + status.
+  // Result cards don't carry args, so find the nearest call card for detail.
   const lastCard = cards[cards.length - 1];
-  const lastDisplay = resolveToolDisplay({ name: lastCard.name, args: lastCard.args });
+  const summaryArgs = lastCard.args ?? findLastArgs(cards);
+  const lastDisplay = resolveToolDisplay({ name: lastCard.name, args: summaryArgs });
   const lastDetail = formatToolDetail(lastDisplay);
-  const summaryText = lastDetail ? `${lastDisplay.label}: ${lastDetail}` : lastDisplay.label;
+  // Status: "result" kind means tool completed (with or without output)
+  const isCompleted = lastCard.kind === "result";
+  const statusIndicator = isCompleted
+    ? html`
+        <span class="chat-tool-card__summary-status">✓</span>
+      `
+    : html`
+        <span class="chat-tool-card__summary-status chat-tool-card__summary-status--running">●</span>
+      `;
 
   return html`
     <div class="chat-tool-card chat-tool-card--group">
       ${renderCardHeader(title, "wrench")}
       <div class="chat-tool-card__collapsed-summary">
-        <span class="mono">${summaryText}</span>
+        <span class="mono">${lastDisplay.label}${lastDetail ? `: ${lastDetail}` : ""}</span>
+        ${statusIndicator}
       </div>
       <div class="chat-tool-card__body">
         <div class="chat-tool-card__body-inner">
@@ -469,17 +501,28 @@ export function renderBashCommandCard(
       ? resolveToolDisplay({ name: cards[0].name, args: cards[0].args }).label
       : `${cards.length} Commands`;
 
-  // Collapsed summary: show the last command's name + detail
+  // Collapsed summary: show the last command's name + detail + status.
+  // Result cards don't carry args, so find the nearest call card for detail.
   const lastCard = cards[cards.length - 1];
-  const lastDisplay = resolveToolDisplay({ name: lastCard.name, args: lastCard.args });
+  const summaryArgs = lastCard.args ?? findLastArgs(cards);
+  const lastDisplay = resolveToolDisplay({ name: lastCard.name, args: summaryArgs });
   const lastDetail = formatToolDetail(lastDisplay);
-  const summaryText = lastDetail ? `${lastDisplay.label}: ${lastDetail}` : lastDisplay.label;
+  // Status: "result" kind means command completed (with or without output)
+  const isCompleted = lastCard.kind === "result";
+  const statusIndicator = isCompleted
+    ? html`
+        <span class="chat-tool-card__summary-status">✓</span>
+      `
+    : html`
+        <span class="chat-tool-card__summary-status chat-tool-card__summary-status--running">●</span>
+      `;
 
   return html`
     <div class="chat-tool-card chat-tool-card--bash">
       ${renderCardHeader(title, "monitor")}
       <div class="chat-tool-card__collapsed-summary">
-        <span class="mono">${summaryText}</span>
+        <span class="mono">${lastDisplay.label}${lastDetail ? `: ${lastDetail}` : ""}</span>
+        ${statusIndicator}
       </div>
       <div class="chat-tool-card__body">
         <div class="chat-tool-card__body-inner">
@@ -540,12 +583,52 @@ function renderBashListItem(card: ToolCard, onOpenSidebar?: (content: string) =>
 }
 
 /**
+ * Extract a short preview of the command from PTY output or args.
+ * For PTY cards, try to show the command being executed.
+ */
+function extractPtyCommandPreview(card: ToolCard): string | undefined {
+  // First, try to get command from args
+  if (card.args && typeof card.args === "object") {
+    const args = card.args as Record<string, unknown>;
+    if (typeof args.command === "string") {
+      return args.command.trim().split("\n")[0]?.slice(0, 60);
+    }
+  }
+  // Fallback: try to extract from text output (first meaningful line)
+  if (card.text?.trim()) {
+    const lines = card.text.trim().split("\n");
+    for (const line of lines) {
+      const cleaned = stripAnsiEscapes(line).trim();
+      // Skip empty lines and common prompt patterns
+      if (cleaned && !cleaned.startsWith("$") && cleaned.length > 2) {
+        return cleaned.slice(0, 60);
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
  * Render a PTY terminal card (real-time terminal with live updates).
  * Defaults to collapsed; click header to expand/collapse via DOM toggle.
+ * Shows collapsed summary with command preview and status.
  */
 export function renderPtyTerminalCard(card: ToolCard, onOpenSidebar?: (content: string) => void) {
   const display = resolveToolDisplay({ name: card.name, args: card.args });
   const hasText = Boolean(card.text?.trim());
+  // Status: "result" kind means terminal session completed
+  const isCompleted = card.kind === "result";
+
+  // Extract command preview for collapsed state
+  const commandPreview = extractPtyCommandPreview(card);
+  // Running (call in progress) -> pending dots, Completed (result arrived) -> checkmark
+  const statusIndicator = isCompleted
+    ? html`
+        <span class="chat-tool-card__summary-status">✓</span>
+      `
+    : html`
+        <span class="chat-tool-card__summary-status chat-tool-card__summary-status--running">●</span>
+      `;
 
   const handleSidebarClick =
     onOpenSidebar && hasText
@@ -558,6 +641,10 @@ export function renderPtyTerminalCard(card: ToolCard, onOpenSidebar?: (content: 
   return html`
     <div class="chat-tool-card chat-tool-card--pty">
       ${renderCardHeader(display.label, "monitor", "Terminal")}
+      <div class="chat-tool-card__collapsed-summary">
+        <span class="mono">${commandPreview ?? (isCompleted ? "Completed" : "Running...")}</span>
+        ${statusIndicator}
+      </div>
       <div class="chat-tool-card__body">
         <div class="chat-tool-card__body-inner">
           ${
