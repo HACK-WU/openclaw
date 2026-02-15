@@ -55,6 +55,7 @@ import { applyGatewayLaneConcurrency } from "./server-lanes.js";
 import { startGatewayMaintenanceTimers } from "./server-maintenance.js";
 import { GATEWAY_EVENTS, listGatewayMethods } from "./server-methods-list.js";
 import { coreGatewayHandlers } from "./server-methods.js";
+import { clearSessionActiveRun } from "./server-methods/chat.js";
 import { createExecApprovalHandlers } from "./server-methods/exec-approval.js";
 import { safeParseJson } from "./server-methods/nodes.helpers.js";
 import { hasConnectedMobileNode } from "./server-mobile-nodes.js";
@@ -439,6 +440,7 @@ export async function startGatewayServer(
     removeChatRun,
     agentRunSeq,
     nodeSendToSession,
+    clearActiveRunId: clearSessionActiveRun,
   });
 
   const agentUnsub = onAgentEvent(
@@ -451,6 +453,7 @@ export async function startGatewayServer(
       resolveSessionKeyForRun,
       clearAgentRunContext,
       toolEventRecipients,
+      clearActiveRunId: clearSessionActiveRun,
     }),
   );
 

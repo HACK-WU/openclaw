@@ -213,6 +213,9 @@ function broadcastChatError(params: {
 
 /**
  * Set the active run ID for a session (used to restore Stop button state on UI refresh).
+ * Only updates existing session entries; new sessions (first message) won't have an entry
+ * yet — the entry is created by updateSessionStoreAfterAgentRun after the run completes,
+ * and subsequent runs will benefit from this restoration.
  */
 async function setSessionActiveRun(sessionKey: string, runId: string, storePath: string) {
   try {
@@ -222,6 +225,9 @@ async function setSessionActiveRun(sessionKey: string, runId: string, storePath:
         entry.activeRunId = runId;
         entry.activeRunStartedAt = Date.now();
       }
+      // If entry doesn't exist (brand-new session), skip — creating a minimal
+      // entry here would set an invalid sessionId (sessionKey contains ':') and
+      // interfere with the agent's normal session initialisation.
     });
   } catch {
     // Best-effort update; don't fail the run if this doesn't persist
@@ -231,14 +237,11 @@ async function setSessionActiveRun(sessionKey: string, runId: string, storePath:
 /**
  * Clear the active run ID for a session (called when run completes/errors/aborts).
  */
-async function clearSessionActiveRun(sessionKey: string) {
+export async function clearSessionActiveRun(sessionKey: string) {
   try {
-    const { storePath } = loadSessionEntry(sessionKey);
-    if (!storePath) {
-      return;
-    }
+    const { storePath, canonicalKey } = loadSessionEntry(sessionKey);
     await updateSessionStore(storePath, (store) => {
-      const entry = store[sessionKey];
+      const entry = store[canonicalKey];
       if (entry) {
         entry.activeRunId = undefined;
         entry.activeRunStartedAt = undefined;

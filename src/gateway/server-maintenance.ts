@@ -37,6 +37,8 @@ export function startGatewayMaintenanceTimers(params: {
   ) => ChatRunEntry | undefined;
   agentRunSeq: Map<string, number>;
   nodeSendToSession: (sessionKey: string, event: string, payload: unknown) => void;
+  /** Clear activeRunId from session store when a run is aborted by timeout. */
+  clearActiveRunId?: (sessionKey: string) => Promise<void> | void;
 }): {
   tickInterval: ReturnType<typeof setInterval>;
   healthInterval: ReturnType<typeof setInterval>;
@@ -100,6 +102,7 @@ export function startGatewayMaintenanceTimers(params: {
           agentRunSeq: params.agentRunSeq,
           broadcast: params.broadcast,
           nodeSendToSession: params.nodeSendToSession,
+          clearActiveRunId: params.clearActiveRunId,
         },
         { runId, sessionKey: entry.sessionKey, stopReason: "timeout" },
       );
