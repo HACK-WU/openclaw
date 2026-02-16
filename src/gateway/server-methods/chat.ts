@@ -1,4 +1,5 @@
 import { CURRENT_SESSION_VERSION, SessionManager } from "@mariozechner/pi-coding-agent";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { MsgContext } from "../../auto-reply/templating.js";
@@ -213,21 +214,24 @@ function broadcastChatError(params: {
 
 /**
  * Set the active run ID for a session (used to restore Stop button state on UI refresh).
- * Only updates existing session entries; new sessions (first message) won't have an entry
- * yet — the entry is created by updateSessionStoreAfterAgentRun after the run completes,
- * and subsequent runs will benefit from this restoration.
+ * Creates a minimal entry with a valid sessionId if the session doesn't exist yet.
  */
 async function setSessionActiveRun(sessionKey: string, runId: string, storePath: string) {
   try {
     await updateSessionStore(storePath, (store) => {
-      const entry = store[sessionKey];
-      if (entry) {
-        entry.activeRunId = runId;
-        entry.activeRunStartedAt = Date.now();
+      let entry = store[sessionKey];
+      if (!entry) {
+        // New session: create a minimal entry with a valid UUID sessionId.
+        // This allows the Stop button to be restored on UI refresh even for brand-new sessions.
+        // The sessionId will be preserved when updateSessionStoreAfterAgentRun creates the full entry.
+        entry = {
+          sessionId: randomUUID(),
+          updatedAt: Date.now(),
+        };
+        store[sessionKey] = entry;
       }
-      // If entry doesn't exist (brand-new session), skip — creating a minimal
-      // entry here would set an invalid sessionId (sessionKey contains ':') and
-      // interfere with the agent's normal session initialisation.
+      entry.activeRunId = runId;
+      entry.activeRunStartedAt = Date.now();
     });
   } catch {
     // Best-effort update; don't fail the run if this doesn't persist
