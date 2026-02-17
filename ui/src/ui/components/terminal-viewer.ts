@@ -13,6 +13,8 @@ const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 30;
 const MIN_ROWS = 4;
 const PREVIEW_ROWS = 6;
+/** Maximum lines to keep in terminal scrollback buffer */
+const DEFAULT_SCROLLBACK_LINES = 10000;
 
 @customElement("terminal-viewer")
 export class TerminalViewer extends LitElement {
@@ -151,7 +153,7 @@ export class TerminalViewer extends LitElement {
       fontSize: 12,
       fontFamily: "'Fira Code', 'Cascadia Code', Menlo, Monaco, 'Courier New', monospace",
       lineHeight: 1.2,
-      scrollback: this.preview ? 0 : 5000,
+      scrollback: this.preview ? 0 : DEFAULT_SCROLLBACK_LINES,
       convertEol: true,
       theme: {
         background: "#1e1e2e",
@@ -181,9 +183,11 @@ export class TerminalViewer extends LitElement {
     this.term.loadAddon(this.fitAddon);
     this.term.open(container);
 
-    if (this.content) {
-      this.term.write(this.content);
-    }
+    // Don't write content here - let updated() handle it.
+    // Writing here causes duplicate content because updated() will also trigger.
+    // Just track that terminal is initialized.
+    this._writtenLength = 0;
+    this._lastContent = "";
 
     if (!this.preview) {
       // 非预览模式下尝试自适应容器宽度（只调整列数，不改行数）
