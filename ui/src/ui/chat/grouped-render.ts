@@ -198,17 +198,9 @@ export function renderMessageGroup(
   for (const item of group.messages) {
     const cards = extractToolCards(item.message);
     allToolCards.push(...cards);
-    // For tool result messages without extracted cards, synthesize one from text
-    if (cards.length === 0 && isToolResultMessage(item.message)) {
-      const text = extractTextCached(item.message)?.trim() || undefined;
-      if (text) {
-        allToolCards.push({
-          kind: "result",
-          name: extractToolName(item.message),
-          text,
-        });
-      }
-    }
+    // Note: extractToolCards already handles tool result messages and extracts
+    // sessionId from details, so we don't need to synthesize additional cards here.
+    // This prevents duplicate terminal cards for the same session.
   }
   const classified = allToolCards.length > 0 ? classifyToolCards(allToolCards) : null;
 
@@ -374,27 +366,12 @@ function renderGroupedMessage(
   `;
 }
 
-/** 从 tool result 消息中提取工具名称 */
-function extractToolName(message: unknown): string {
-  const m = message as Record<string, unknown>;
-  if (typeof m.toolName === "string") {
-    return m.toolName;
-  }
-  if (typeof m.tool_name === "string") {
-    return m.tool_name;
-  }
-  if (typeof m.name === "string") {
-    return m.name;
-  }
-  return "tool";
-}
-
 /**
  * Render classified tool cards inline with the new card types:
  * - General tools → merged into one collapsible group card
  * - Bash commands → merged into one collapsible command card
  * - PTY terminals → each gets its own collapsible terminal card with live xterm
- *   (deduplicated by name in classifyToolCards; PTY tool_calls are skipped
+ *   (deduplicated by sessionId in classifyToolCards; PTY tool_calls are skipped
  *    so the terminal only renders once from the tool_result)
  *
  * All cards default to collapsed; click header to expand via DOM class toggle.

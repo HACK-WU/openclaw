@@ -68,9 +68,11 @@ export function extractToolCards(message: unknown): ToolCard[] {
     }
     const text = extractToolText(item);
     const name = typeof item.name === "string" ? item.name : "tool";
+    // Extract args from the result item (some formats include details/params)
+    const args = coerceArgs(item.arguments ?? item.args ?? item.details);
     // isPty: 优先从 call 卡片继承，否则启发式检测“终端控制码样式”的输出
     const isPty = hasPtyCall || (text ? isTerminalLikeOutput(text) : false);
-    cards.push({ kind: "result", name, text, isPty });
+    cards.push({ kind: "result", name, text, args, isPty });
   }
 
   if (isToolResultMessage(message) && !cards.some((card) => card.kind === "result")) {
@@ -79,9 +81,11 @@ export function extractToolCards(message: unknown): ToolCard[] {
       (typeof m.tool_name === "string" && m.tool_name) ||
       "tool";
     const text = extractTextCached(message) ?? undefined;
+    // Extract args/details from the message
+    const args = coerceArgs(m.arguments ?? m.args ?? m.details);
     // 对于独立的 tool result 消息，通过启发式检测"终端控制码样式"的输出来判断
     const isPty = hasPtyCall || (text ? isTerminalLikeOutput(text) : false);
-    cards.push({ kind: "result", name, text, isPty });
+    cards.push({ kind: "result", name, text, args, isPty });
   }
 
   // If a PTY call was found but no result card exists yet (output not arrived),
@@ -271,10 +275,13 @@ function getToolCategory(card: ToolCard): ToolCardCategory {
 
 /**
  * Classify tool cards into categories for grouped rendering.
- * PTY terminals are deduplicated by name — only the latest text is kept
- * so the same process doesn't produce multiple terminal cards.
- * General and bash cards are NOT deduplicated — each call is an independent
- * operation and must be listed individually.
+ *
+ * STRATEGY CHANGE: All PTY outputs are merged into a SINGLE terminal view.
+ * Previously we tried to deduplicate by sessionId, but that caused multiple
+ * terminal cards when the same session had multiple operations (exec + process).
+ *
+ * Now: ALL PTY cards (from exec, process, or any bash tool with pty=true)
+ * are merged into one terminal. This ensures a unified terminal experience.
  */
 export function classifyToolCards(cards: ToolCard[]): ClassifiedToolCards {
   const result: ClassifiedToolCards = {
@@ -283,31 +290,29 @@ export function classifyToolCards(cards: ToolCard[]): ClassifiedToolCards {
     ptyTerminals: [],
   };
 
-  // Only PTY cards are deduplicated by name (same terminal session sends incremental updates)
-  const ptyByName = new Map<string, ToolCard>();
+  // Collect all PTY cards - they will be merged into one terminal
+  let mergedPtyCard: ToolCard | null = null;
 
   for (const card of cards) {
     const category = getToolCategory(card);
     switch (category) {
       case "pty": {
-        const key = card.name.toLowerCase();
-        const existing = ptyByName.get(key);
-        if (existing) {
+        // Merge all PTY cards into one
+        if (!mergedPtyCard) {
+          mergedPtyCard = { ...card };
+        } else {
           // Merge: prefer the card that has text, or the latest one
           if (card.text?.trim()) {
-            existing.text = card.text;
+            mergedPtyCard.text = card.text;
           }
           // Merge args if the new card has them
-          if (card.args && !existing.args) {
-            existing.args = card.args;
+          if (card.args && !mergedPtyCard.args) {
+            mergedPtyCard.args = card.args;
           }
           // If new card is a result, update kind to reflect completion
           if (card.kind === "result") {
-            existing.kind = "result";
+            mergedPtyCard.kind = "result";
           }
-        } else {
-          // Clone to avoid mutating the original
-          ptyByName.set(key, { ...card });
         }
         break;
       }
@@ -319,7 +324,10 @@ export function classifyToolCards(cards: ToolCard[]): ClassifiedToolCards {
     }
   }
 
-  result.ptyTerminals = [...ptyByName.values()];
+  // Add the single merged PTY terminal
+  if (mergedPtyCard) {
+    result.ptyTerminals.push(mergedPtyCard);
+  }
 
   return result;
 }
