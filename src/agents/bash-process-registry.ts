@@ -5,6 +5,10 @@ const DEFAULT_JOB_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const MIN_JOB_TTL_MS = 60 * 1000; // 1 minute
 const MAX_JOB_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
 const DEFAULT_PENDING_OUTPUT_CHARS = 30_000;
+/** Maximum lines to keep in terminal output (for PTY sessions) */
+const DEFAULT_MAX_TERMINAL_LINES = 5000;
+/** Truncation banner shown when terminal output is trimmed */
+const TRUNCATION_BANNER = "\x1b[33m... (earlier output truncated)\x1b[0m\n";
 
 function clampTtl(value: number | undefined) {
   if (!value || Number.isNaN(value)) {
@@ -39,6 +43,8 @@ export interface ProcessSession {
   cwd?: string;
   maxOutputChars: number;
   pendingMaxOutputChars?: number;
+  /** Maximum lines to keep for PTY terminal output */
+  maxLines?: number;
   totalOutputChars: number;
   pendingStdout: string[];
   pendingStderr: string[];
@@ -50,6 +56,8 @@ export interface ProcessSession {
   exitSignal?: NodeJS.Signals | number | null;
   exited: boolean;
   truncated: boolean;
+  /** Whether terminal output was truncated by line count */
+  truncatedByLines?: boolean;
   backgrounded: boolean;
   isPty?: boolean;
 }
@@ -67,6 +75,8 @@ export interface FinishedSession {
   aggregated: string;
   tail: string;
   truncated: boolean;
+  /** Whether terminal output was truncated by line count */
+  truncatedByLines?: boolean;
   totalOutputChars: number;
   isPty?: boolean;
 }
@@ -129,6 +139,15 @@ export function appendOutput(session: ProcessSession, stream: "stdout" | "stderr
   session.truncated =
     session.truncated || aggregated.length < session.aggregated.length + chunk.length;
   session.aggregated = aggregated;
+  // For PTY sessions, also trim by line count to keep terminal output manageable
+  if (session.isPty) {
+    const maxLines = session.maxLines ?? DEFAULT_MAX_TERMINAL_LINES;
+    const trimmedByLines = trimByLines(session.aggregated, maxLines);
+    if (trimmedByLines !== session.aggregated) {
+      session.truncatedByLines = true;
+      session.aggregated = trimmedByLines;
+    }
+  }
   session.tail = tail(session.aggregated, 2000);
 }
 
@@ -209,6 +228,7 @@ function moveToFinished(session: ProcessSession, status: ProcessStatus) {
     aggregated: session.aggregated,
     tail: session.tail,
     truncated: session.truncated,
+    truncatedByLines: session.truncatedByLines,
     totalOutputChars: session.totalOutputChars,
     isPty: session.isPty,
   });
@@ -256,6 +276,62 @@ export function trimWithCap(text: string, max: number) {
     return text;
   }
   return text.slice(text.length - max);
+}
+
+/**
+ * Trim terminal output by line count, keeping the last N lines.
+ * Appends a truncation banner at the start if content was trimmed.
+ * @param text - The terminal output text
+ * @param maxLines - Maximum number of lines to keep
+ * @returns Trimmed text with optional truncation banner
+ */
+export function trimByLines(text: string, maxLines: number): string {
+  if (!text) {
+    return text;
+  }
+  // Fast path: count newlines without creating array
+  let newlineCount = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "\n") {
+      newlineCount++;
+    }
+  }
+  // If within limits, return as-is
+  if (newlineCount <= maxLines) {
+    return text;
+  }
+  // Find the starting position of the (newlineCount - maxLines + 1)th newline
+  // This gives us the start of the portion to keep
+  const skipLines = newlineCount - maxLines;
+  let foundNewlines = 0;
+  let cutPosition = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "\n") {
+      foundNewlines++;
+      if (foundNewlines === skipLines) {
+        cutPosition = i + 1; // Start after this newline
+        break;
+      }
+    }
+  }
+  // Return truncated content with banner
+  return TRUNCATION_BANNER + text.slice(cutPosition);
+}
+
+/**
+ * Count lines in text efficiently without creating arrays.
+ */
+export function countLines(text: string): number {
+  if (!text) {
+    return 0;
+  }
+  let count = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "\n") {
+      count++;
+    }
+  }
+  return count;
 }
 
 export function listRunningSessions() {
