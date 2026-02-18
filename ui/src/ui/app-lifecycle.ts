@@ -75,8 +75,11 @@ function syncSidebarWithLatestPty(host: LifecycleHost) {
     return;
   }
 
-  // Update sidebar with latest PTY content
-  host.sidebarContent = PTY_SIDEBAR_PREFIX + mergedText;
+  // Only update if content has actually changed (prevent infinite loop)
+  const newContent = PTY_SIDEBAR_PREFIX + mergedText;
+  if (host.sidebarContent !== newContent) {
+    host.sidebarContent = newContent;
+  }
 }
 
 type LifecycleHost = {
