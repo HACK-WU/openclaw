@@ -123,10 +123,33 @@ export function appendOutput(session: ProcessSession, stream: "stdout" | "stderr
     session.pendingMaxOutputChars ?? DEFAULT_PENDING_OUTPUT_CHARS,
     session.maxOutputChars,
   );
+
+  // DEBUG: Log before appending
+  console.log("[ProcessRegistry] Append output:", {
+    sessionId: session.id,
+    isPty: session.isPty,
+    stream,
+    chunkLength: chunk.length,
+    totalOutputCharsBefore: session.totalOutputChars,
+    aggregatedLengthBefore: session.aggregated.length,
+    pendingBufferLength: buffer.length,
+    pendingCharsBefore: bufferChars,
+    maxOutputChars: session.maxOutputChars,
+    pendingMaxOutputChars: session.pendingMaxOutputChars ?? DEFAULT_PENDING_OUTPUT_CHARS,
+    pendingCap,
+    maxLines: session.maxLines ?? DEFAULT_MAX_TERMINAL_LINES,
+  });
+
   buffer.push(chunk);
   let pendingChars = bufferChars + chunk.length;
   if (pendingChars > pendingCap) {
     session.truncated = true;
+    console.warn("[ProcessRegistry] Pending buffer exceeded cap, truncating:", {
+      sessionId: session.id,
+      pendingChars,
+      pendingCap,
+      truncatedBy: "pending_buffer",
+    });
     pendingChars = capPendingBuffer(buffer, pendingChars, pendingCap);
   }
   if (stream === "stdout") {
@@ -135,20 +158,67 @@ export function appendOutput(session: ProcessSession, stream: "stdout" | "stderr
     session.pendingStderrChars = pendingChars;
   }
   session.totalOutputChars += chunk.length;
+
+  // Track if aggregation will be truncated
+  const aggregatedBefore = session.aggregated;
   const aggregated = trimWithCap(session.aggregated + chunk, session.maxOutputChars);
   session.truncated =
     session.truncated || aggregated.length < session.aggregated.length + chunk.length;
+
+  if (aggregated.length < aggregatedBefore.length + chunk.length) {
+    console.warn("[ProcessRegistry] Aggregated output truncated by maxOutputChars:", {
+      sessionId: session.id,
+      originalLength: aggregatedBefore.length + chunk.length,
+      truncatedLength: aggregated.length,
+      removedChars: aggregatedBefore.length + chunk.length - aggregated.length,
+      maxOutputChars: session.maxOutputChars,
+      truncatedBy: "max_output_chars",
+    });
+  }
+
   session.aggregated = aggregated;
+
   // For PTY sessions, also trim by line count to keep terminal output manageable
   if (session.isPty) {
     const maxLines = session.maxLines ?? DEFAULT_MAX_TERMINAL_LINES;
     const trimmedByLines = trimByLines(session.aggregated, maxLines);
     if (trimmedByLines !== session.aggregated) {
       session.truncatedByLines = true;
+      const linesRemoved = countLines(session.aggregated) - countLines(trimmedByLines);
+      console.warn("[ProcessRegistry] PTY output truncated by line count:", {
+        sessionId: session.id,
+        originalLines: countLines(session.aggregated),
+        truncatedLines: countLines(trimmedByLines),
+        linesRemoved,
+        maxLines,
+        truncatedBy: "line_count",
+      });
       session.aggregated = trimmedByLines;
     }
   }
+
+  // Track tail truncation
+  const tailBefore = session.tail;
   session.tail = tail(session.aggregated, 2000);
+  if (tailBefore !== session.tail && session.aggregated.length > 2000) {
+    console.log("[ProcessRegistry] Tail preview updated (last 2000 chars):", {
+      sessionId: session.id,
+      aggregatedLength: session.aggregated.length,
+      tailLength: session.tail.length,
+    });
+  }
+
+  // DEBUG: Log final state
+  console.log("[ProcessRegistry] Output appended result:", {
+    sessionId: session.id,
+    totalOutputCharsAfter: session.totalOutputChars,
+    aggregatedLengthAfter: session.aggregated.length,
+    pendingStdoutChars: session.pendingStdoutChars,
+    pendingStderrChars: session.pendingStderrChars,
+    truncated: session.truncated,
+    truncatedByLines: session.truncatedByLines,
+    finalTailLength: session.tail.length,
+  });
 }
 
 export function drainSession(session: ProcessSession) {
