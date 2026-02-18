@@ -1,4 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { logVerboseConsole } from "../globals.js";
 import { createSessionSlug as createSessionSlugId } from "./session-slug.js";
 
 const DEFAULT_JOB_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -125,31 +126,45 @@ export function appendOutput(session: ProcessSession, stream: "stdout" | "stderr
   );
 
   // DEBUG: Log before appending
-  console.log("[ProcessRegistry] Append output:", {
-    sessionId: session.id,
-    isPty: session.isPty,
-    stream,
-    chunkLength: chunk.length,
-    totalOutputCharsBefore: session.totalOutputChars,
-    aggregatedLengthBefore: session.aggregated.length,
-    pendingBufferLength: buffer.length,
-    pendingCharsBefore: bufferChars,
-    maxOutputChars: session.maxOutputChars,
-    pendingMaxOutputChars: session.pendingMaxOutputChars ?? DEFAULT_PENDING_OUTPUT_CHARS,
-    pendingCap,
-    maxLines: session.maxLines ?? DEFAULT_MAX_TERMINAL_LINES,
-  });
+  logVerboseConsole(
+    "[ProcessRegistry] Append output: " +
+      JSON.stringify(
+        {
+          sessionId: session.id,
+          isPty: session.isPty,
+          stream,
+          chunkLength: chunk.length,
+          totalOutputCharsBefore: session.totalOutputChars,
+          aggregatedLengthBefore: session.aggregated.length,
+          pendingBufferLength: buffer.length,
+          pendingCharsBefore: bufferChars,
+          maxOutputChars: session.maxOutputChars,
+          pendingMaxOutputChars: session.pendingMaxOutputChars ?? DEFAULT_PENDING_OUTPUT_CHARS,
+          pendingCap,
+          maxLines: session.maxLines ?? DEFAULT_MAX_TERMINAL_LINES,
+        },
+        null,
+        2,
+      ),
+  );
 
   buffer.push(chunk);
   let pendingChars = bufferChars + chunk.length;
   if (pendingChars > pendingCap) {
     session.truncated = true;
-    console.warn("[ProcessRegistry] Pending buffer exceeded cap, truncating:", {
-      sessionId: session.id,
-      pendingChars,
-      pendingCap,
-      truncatedBy: "pending_buffer",
-    });
+    logVerboseConsole(
+      "[ProcessRegistry] Pending buffer exceeded cap, truncating: " +
+        JSON.stringify(
+          {
+            sessionId: session.id,
+            pendingChars,
+            pendingCap,
+            truncatedBy: "pending_buffer",
+          },
+          null,
+          2,
+        ),
+    );
     pendingChars = capPendingBuffer(buffer, pendingChars, pendingCap);
   }
   if (stream === "stdout") {
@@ -166,14 +181,21 @@ export function appendOutput(session: ProcessSession, stream: "stdout" | "stderr
     session.truncated || aggregated.length < session.aggregated.length + chunk.length;
 
   if (aggregated.length < aggregatedBefore.length + chunk.length) {
-    console.warn("[ProcessRegistry] Aggregated output truncated by maxOutputChars:", {
-      sessionId: session.id,
-      originalLength: aggregatedBefore.length + chunk.length,
-      truncatedLength: aggregated.length,
-      removedChars: aggregatedBefore.length + chunk.length - aggregated.length,
-      maxOutputChars: session.maxOutputChars,
-      truncatedBy: "max_output_chars",
-    });
+    logVerboseConsole(
+      "[ProcessRegistry] Aggregated output truncated by maxOutputChars: " +
+        JSON.stringify(
+          {
+            sessionId: session.id,
+            originalLength: aggregatedBefore.length + chunk.length,
+            truncatedLength: aggregated.length,
+            removedChars: aggregatedBefore.length + chunk.length - aggregated.length,
+            maxOutputChars: session.maxOutputChars,
+            truncatedBy: "max_output_chars",
+          },
+          null,
+          2,
+        ),
+    );
   }
 
   session.aggregated = aggregated;
@@ -185,14 +207,21 @@ export function appendOutput(session: ProcessSession, stream: "stdout" | "stderr
     if (trimmedByLines !== session.aggregated) {
       session.truncatedByLines = true;
       const linesRemoved = countLines(session.aggregated) - countLines(trimmedByLines);
-      console.warn("[ProcessRegistry] PTY output truncated by line count:", {
-        sessionId: session.id,
-        originalLines: countLines(session.aggregated),
-        truncatedLines: countLines(trimmedByLines),
-        linesRemoved,
-        maxLines,
-        truncatedBy: "line_count",
-      });
+      logVerboseConsole(
+        "[ProcessRegistry] PTY output truncated by line count: " +
+          JSON.stringify(
+            {
+              sessionId: session.id,
+              originalLines: countLines(session.aggregated),
+              truncatedLines: countLines(trimmedByLines),
+              linesRemoved,
+              maxLines,
+              truncatedBy: "line_count",
+            },
+            null,
+            2,
+          ),
+      );
       session.aggregated = trimmedByLines;
     }
   }
@@ -201,24 +230,38 @@ export function appendOutput(session: ProcessSession, stream: "stdout" | "stderr
   const tailBefore = session.tail;
   session.tail = tail(session.aggregated, 2000);
   if (tailBefore !== session.tail && session.aggregated.length > 2000) {
-    console.log("[ProcessRegistry] Tail preview updated (last 2000 chars):", {
-      sessionId: session.id,
-      aggregatedLength: session.aggregated.length,
-      tailLength: session.tail.length,
-    });
+    logVerboseConsole(
+      "[ProcessRegistry] Tail preview updated (last 2000 chars): " +
+        JSON.stringify(
+          {
+            sessionId: session.id,
+            aggregatedLength: session.aggregated.length,
+            tailLength: session.tail.length,
+          },
+          null,
+          2,
+        ),
+    );
   }
 
   // DEBUG: Log final state
-  console.log("[ProcessRegistry] Output appended result:", {
-    sessionId: session.id,
-    totalOutputCharsAfter: session.totalOutputChars,
-    aggregatedLengthAfter: session.aggregated.length,
-    pendingStdoutChars: session.pendingStdoutChars,
-    pendingStderrChars: session.pendingStderrChars,
-    truncated: session.truncated,
-    truncatedByLines: session.truncatedByLines,
-    finalTailLength: session.tail.length,
-  });
+  logVerboseConsole(
+    "[ProcessRegistry] Output appended result: " +
+      JSON.stringify(
+        {
+          sessionId: session.id,
+          totalOutputCharsAfter: session.totalOutputChars,
+          aggregatedLengthAfter: session.aggregated.length,
+          pendingStdoutChars: session.pendingStdoutChars,
+          pendingStderrChars: session.pendingStderrChars,
+          truncated: session.truncated,
+          truncatedByLines: session.truncatedByLines,
+          finalTailLength: session.tail.length,
+        },
+        null,
+        2,
+      ),
+  );
 }
 
 export function drainSession(session: ProcessSession) {
