@@ -659,6 +659,18 @@ export class OpenClawApp extends LitElement {
       window.clearTimeout(this.sidebarCloseTimer);
       this.sidebarCloseTimer = null;
     }
+
+    // If sidebar is already open with the same PTY content, don't update
+    // This preserves the terminal instance and its state
+    const isCurrentPty = this.sidebarContent?.startsWith("__PTY_OUTPUT__");
+    const isNewPty = content.startsWith("__PTY_OUTPUT__");
+
+    if (isCurrentPty && isNewPty && this.sidebarContent === content) {
+      // Same PTY content - just reopen sidebar without updating content
+      this.sidebarOpen = true;
+      return;
+    }
+
     this.sidebarContent = content;
     this.sidebarError = null;
     this.sidebarOpen = true;
@@ -666,7 +678,8 @@ export class OpenClawApp extends LitElement {
 
   handleCloseSidebar() {
     this.sidebarOpen = false;
-    // Clear content after transition
+    // Keep sidebarContent to preserve terminal instance state
+    // Content will be cleared after transition completes
     if (this.sidebarCloseTimer != null) {
       window.clearTimeout(this.sidebarCloseTimer);
     }
@@ -674,8 +687,9 @@ export class OpenClawApp extends LitElement {
       if (this.sidebarOpen) {
         return;
       }
-      this.sidebarContent = null;
-      this.sidebarError = null;
+      // Don't clear content - keep terminal instance alive for singleton pattern
+      // this.sidebarContent = null;
+      // this.sidebarError = null;
       this.sidebarCloseTimer = null;
     }, 200);
   }
