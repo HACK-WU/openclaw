@@ -25,6 +25,55 @@ import type { Tab } from "./navigation.ts";
  */
 const CHAT_HEARTBEAT_INTERVAL_MS = 10_000;
 
+/**
+ * Sync sidebar content with the latest PTY output from toolMessages.
+ * Only updates if sidebar is open and currently showing PTY content.
+ */
+function syncSidebarWithLatestPty(host: LifecycleHost) {
+  if (!host.sidebarOpen || host.sidebarContent == null) {
+    return;
+  }
+
+  // Check if current sidebar content is PTY
+  const isCurrentPty = host.sidebarContent.startsWith(PTY_SIDEBAR_PREFIX);
+  if (!isCurrentPty) {
+    return;
+  }
+
+  // Extract the latest PTY content from toolMessages
+  const allCards: ToolCard[] = [];
+  for (const msg of host.chatToolMessages) {
+    const cards = extractToolCards(msg);
+    allCards.push(...cards);
+  }
+
+  if (allCards.length === 0) {
+    return;
+  }
+
+  const classified = classifyToolCards(allCards);
+  const ptyCards = classified.ptyTerminals;
+
+  if (ptyCards.length === 0) {
+    return;
+  }
+
+  // Merge all PTY cards to get the latest complete output
+  let mergedText = "";
+  for (const card of ptyCards) {
+    if (card.text && card.text.trim()) {
+      mergedText = card.text;
+    }
+  }
+
+  if (!mergedText) {
+    return;
+  }
+
+  // Update sidebar with latest PTY content
+  host.sidebarContent = PTY_SIDEBAR_PREFIX + mergedText;
+}
+
 type LifecycleHost = {
   basePath: string;
   client?: { stop: () => void } | null;
@@ -51,6 +100,8 @@ type LifecycleHost = {
   topbarObserver: ResizeObserver | null;
   chatHeartbeatInterval: ReturnType<typeof setInterval> | null;
   client: unknown;
+  sidebarOpen: boolean;
+  sidebarContent: string | null;
 };
 
 export function handleConnected(host: LifecycleHost) {
@@ -156,6 +207,12 @@ export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unk
       forcedByTab || forcedByLoad || !host.chatHasAutoScrolled,
     );
   }
+
+  // Auto-sync sidebar content when PTY output updates
+  if (host.sidebarOpen && host.sidebarContent != null && changed.has("chatToolMessages")) {
+    syncSidebarWithLatestPty(host);
+  }
+
   if (
     host.tab === "logs" &&
     (changed.has("logsEntries") || changed.has("logsAutoFollow") || changed.has("tab"))
