@@ -153,6 +153,11 @@
   min-width: 0;
 }
 
+/* PTY terminal card when expanded: use 2/3 of the default height for better visibility */
+.chat-tool-card--pty.chat-tool-card--expanded .chat-tool-card__body-inner--pty-expanded {
+  max-height: calc(260px * 2 / 3);
+}
+
 /* Collapsed summary line below header (visible only when NOT expanded) */
 .chat-tool-card__collapsed-summary {
   padding: 0 12px 10px;
