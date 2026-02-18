@@ -618,8 +618,8 @@ function extractPtyCommandPreview(card: ToolCard): string | undefined {
 
 /**
  * Render a PTY terminal card (real-time terminal with live updates).
- * Defaults to collapsed; click header to expand/collapse via DOM toggle.
- * Shows collapsed summary with command preview and status.
+ * Defaults to expanded; click header to collapse/expand via DOM toggle.
+ * Shows command preview in collapsed state.
  */
 export function renderPtyTerminalCard(card: ToolCard, onOpenSidebar?: (content: string) => void) {
   const display = resolveToolDisplay({ name: card.name, args: card.args });
@@ -647,14 +647,14 @@ export function renderPtyTerminalCard(card: ToolCard, onOpenSidebar?: (content: 
       : undefined;
 
   return html`
-    <div class="chat-tool-card chat-tool-card--pty">
+    <div class="chat-tool-card chat-tool-card--pty chat-tool-card--expanded">
       ${renderCardHeader(display.label, "monitor", "Terminal")}
       <div class="chat-tool-card__collapsed-summary">
         <span class="mono">${commandPreview ?? (isCompleted ? "Completed" : "Running...")}</span>
         ${statusIndicator}
       </div>
       <div class="chat-tool-card__body">
-        <div class="chat-tool-card__body-inner">
+        <div class="chat-tool-card__body-inner chat-tool-card__body-inner--pty-expanded">
           ${
             hasText
               ? html`<terminal-viewer .content=${card.text!} ?live=${true}></terminal-viewer>`
