@@ -1,15 +1,16 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { logVerboseConsole } from "../globals.js";
+import fs from "node:fs";
+import { VirtualTerminal } from "./ansi-parser.js";
 import { createSessionSlug as createSessionSlugId } from "./session-slug.js";
 
 const DEFAULT_JOB_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const MIN_JOB_TTL_MS = 60 * 1000; // 1 minute
 const MAX_JOB_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
 const DEFAULT_PENDING_OUTPUT_CHARS = 30_000;
-/** Maximum lines to keep in terminal output (for PTY sessions) */
-const DEFAULT_MAX_TERMINAL_LINES = 5000;
 /** Truncation banner shown when terminal output is trimmed */
 const TRUNCATION_BANNER = "\x1b[33m... (earlier output truncated)\x1b[0m\n";
+/** Debug file path for PTY rendered output (what frontend sees) */
+const PTY_RENDERED_FILE = "/tmp/test-pty-codebuddy-rendered.txt";
 
 function clampTtl(value: number | undefined) {
   if (!value || Number.isNaN(value)) {
@@ -61,6 +62,8 @@ export interface ProcessSession {
   truncatedByLines?: boolean;
   backgrounded: boolean;
   isPty?: boolean;
+  /** Virtual terminal buffer for PTY mode (ANSI parsing) */
+  virtualTerminal?: import("./ansi-parser.js").VirtualTerminal;
 }
 
 export interface FinishedSession {
@@ -125,46 +128,10 @@ export function appendOutput(session: ProcessSession, stream: "stdout" | "stderr
     session.maxOutputChars,
   );
 
-  // DEBUG: Log before appending
-  logVerboseConsole(
-    "[ProcessRegistry] Append output: " +
-      JSON.stringify(
-        {
-          sessionId: session.id,
-          isPty: session.isPty,
-          stream,
-          chunkLength: chunk.length,
-          totalOutputCharsBefore: session.totalOutputChars,
-          aggregatedLengthBefore: session.aggregated.length,
-          pendingBufferLength: buffer.length,
-          pendingCharsBefore: bufferChars,
-          maxOutputChars: session.maxOutputChars,
-          pendingMaxOutputChars: session.pendingMaxOutputChars ?? DEFAULT_PENDING_OUTPUT_CHARS,
-          pendingCap,
-          maxLines: session.maxLines ?? DEFAULT_MAX_TERMINAL_LINES,
-        },
-        null,
-        2,
-      ),
-  );
-
   buffer.push(chunk);
   let pendingChars = bufferChars + chunk.length;
   if (pendingChars > pendingCap) {
     session.truncated = true;
-    logVerboseConsole(
-      "[ProcessRegistry] Pending buffer exceeded cap, truncating: " +
-        JSON.stringify(
-          {
-            sessionId: session.id,
-            pendingChars,
-            pendingCap,
-            truncatedBy: "pending_buffer",
-          },
-          null,
-          2,
-        ),
-    );
     pendingChars = capPendingBuffer(buffer, pendingChars, pendingCap);
   }
   if (stream === "stdout") {
@@ -174,94 +141,38 @@ export function appendOutput(session: ProcessSession, stream: "stdout" | "stderr
   }
   session.totalOutputChars += chunk.length;
 
-  // Track if aggregation will be truncated
-  const aggregatedBefore = session.aggregated;
-  const aggregated = trimWithCap(session.aggregated + chunk, session.maxOutputChars);
-  session.truncated =
-    session.truncated || aggregated.length < session.aggregated.length + chunk.length;
-
-  if (aggregated.length < aggregatedBefore.length + chunk.length) {
-    logVerboseConsole(
-      "[ProcessRegistry] Aggregated output truncated by maxOutputChars: " +
-        JSON.stringify(
-          {
-            sessionId: session.id,
-            originalLength: aggregatedBefore.length + chunk.length,
-            truncatedLength: aggregated.length,
-            removedChars: aggregatedBefore.length + chunk.length - aggregated.length,
-            maxOutputChars: session.maxOutputChars,
-            truncatedBy: "max_output_chars",
-          },
-          null,
-          2,
-        ),
-    );
-  }
-
-  session.aggregated = aggregated;
-
-  // For PTY sessions, also trim by line count to keep terminal output manageable
+  // For PTY sessions, use ANSI parser to handle cursor movement and screen clearing
   if (session.isPty) {
-    const maxLines = session.maxLines ?? DEFAULT_MAX_TERMINAL_LINES;
-    const trimmedByLines = trimByLines(session.aggregated, maxLines);
-    if (trimmedByLines !== session.aggregated) {
-      session.truncatedByLines = true;
-      const linesRemoved = countLines(session.aggregated) - countLines(trimmedByLines);
-      logVerboseConsole(
-        "[ProcessRegistry] PTY output truncated by line count: " +
-          JSON.stringify(
-            {
-              sessionId: session.id,
-              originalLines: countLines(session.aggregated),
-              truncatedLines: countLines(trimmedByLines),
-              linesRemoved,
-              maxLines,
-              truncatedBy: "line_count",
-            },
-            null,
-            2,
-          ),
-      );
-      session.aggregated = trimmedByLines;
+    // Initialize virtual terminal on first output
+    if (!session.virtualTerminal) {
+      session.virtualTerminal = new VirtualTerminal(120, 100);
+      session.aggregated = "";
     }
+
+    // Write chunk to virtual terminal
+    session.virtualTerminal.write(chunk);
+    session.aggregated = session.virtualTerminal.getContent();
+
+    // After processing, write the FULL TUI snapshot to debug files
+    try {
+      // Rendered text (pure text, what frontend sees)
+      fs.writeFileSync(PTY_RENDERED_FILE, session.aggregated, "utf-8");
+      // Note: Raw ANSI data would require capturing before VirtualTerminal processing
+    } catch {
+      // Ignore file write errors to avoid breaking the main functionality
+    }
+  } else {
+    // Non-PTY: simple concatenation
+    const aggregated = trimWithCap(session.aggregated + chunk, session.maxOutputChars);
+    session.truncated =
+      session.truncated || aggregated.length < session.aggregated.length + chunk.length;
+    session.aggregated = aggregated;
   }
 
-  // Track tail truncation
-  const tailBefore = session.tail;
-  session.tail = tail(session.aggregated, 2000);
-  if (tailBefore !== session.tail && session.aggregated.length > 2000) {
-    logVerboseConsole(
-      "[ProcessRegistry] Tail preview updated (last 2000 chars): " +
-        JSON.stringify(
-          {
-            sessionId: session.id,
-            aggregatedLength: session.aggregated.length,
-            tailLength: session.tail.length,
-          },
-          null,
-          2,
-        ),
-    );
+  // Track tail truncation (non-PTY only)
+  if (!session.isPty) {
+    session.tail = tail(session.aggregated, 2000);
   }
-
-  // DEBUG: Log final state
-  logVerboseConsole(
-    "[ProcessRegistry] Output appended result: " +
-      JSON.stringify(
-        {
-          sessionId: session.id,
-          totalOutputCharsAfter: session.totalOutputChars,
-          aggregatedLengthAfter: session.aggregated.length,
-          pendingStdoutChars: session.pendingStdoutChars,
-          pendingStderrChars: session.pendingStderrChars,
-          truncated: session.truncated,
-          truncatedByLines: session.truncatedByLines,
-          finalTailLength: session.tail.length,
-        },
-        null,
-        2,
-      ),
-  );
 }
 
 export function drainSession(session: ProcessSession) {
