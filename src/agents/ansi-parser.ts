@@ -54,9 +54,25 @@ export class VirtualTerminal {
       } else if (char === ESC) {
         // 其他 ESC 序列（简化处理：跳过）
         i++;
-        while (i < data.length && data[i] >= "@" && data[i] <= "~") {
+        if (i >= data.length) {
+          break; // 数据不完整，跳出
+        }
+
+        // 处理各种 ESC 序列格式
+        if (data[i] === "[") {
+          i++; // 跳过 [
+        }
+        // 跳过参数字节 (0x30-0x3F)
+        while (i < data.length && data[i] >= "0" && data[i] <= "?") {
           i++;
-          break;
+        }
+        // 跳过中间字节 (0x20-0x2F)
+        while (i < data.length && data[i] >= " " && data[i] <= "/") {
+          i++;
+        }
+        // 跳过最终字节 (0x40-0x7E)
+        if (i < data.length && data[i] >= "@" && data[i] <= "~") {
+          i++;
         }
       } else if (char === "\r") {
         this.cursorX = 0;
@@ -161,6 +177,9 @@ export class VirtualTerminal {
         break;
       case "T": // Scroll Down
         this.scrollDown(params[0] || 1);
+        break;
+      case "m": // SGR (Set Graphics Rendition) - colors and styles
+        // Just ignore color/style commands for plain text output
         break;
     }
   }

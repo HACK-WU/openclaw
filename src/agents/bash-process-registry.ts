@@ -172,6 +172,9 @@ export function appendOutput(session: ProcessSession, stream: "stdout" | "stderr
   // Track tail truncation (non-PTY only)
   if (!session.isPty) {
     session.tail = tail(session.aggregated, 2000);
+  } else {
+    // For PTY, also track tail for emitUpdate, but use full aggregated content
+    session.tail = session.aggregated;
   }
 }
 
