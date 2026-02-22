@@ -38,6 +38,7 @@ import {
   markBackgrounded,
   markExited,
   tail,
+  waitForPendingWrites,
 } from "./bash-process-registry.js";
 import {
   buildDockerExecArgs,
@@ -248,6 +249,8 @@ export type ExecToolDetails =
       startedAt: number;
       cwd?: string;
       tail?: string;
+      /** PTY session flag - signals downstream to skip text truncation */
+      pty?: boolean;
     }
   | {
       status: "completed" | "failed";
@@ -596,6 +599,7 @@ async function runExecProcess(opts: {
     truncated: false,
     backgrounded: false,
     isPty: opts.usePty || undefined,
+    renderedContent: undefined as string | undefined,
   } satisfies ProcessSession;
   addSession(session);
 
@@ -618,19 +622,26 @@ async function runExecProcess(opts: {
     if (session.exited) {
       return;
     }
-    markExited(session, null, "SIGKILL", "failed");
-    maybeNotifyOnExit(session, "failed");
-    const aggregated = session.aggregated.trim();
-    const reason = `Command timed out after ${opts.timeoutSec} seconds`;
-    settle({
-      status: "failed",
-      exitCode: null,
-      exitSignal: "SIGKILL",
-      durationMs: Date.now() - startedAt,
-      aggregated,
-      timedOut: true,
-      reason: aggregated ? `${aggregated}\n\n${reason}` : reason,
-    });
+    // Use async IIFE to wait for pending PTY writes before finalizing
+    void (async () => {
+      if (session.isPty) {
+        await waitForPendingWrites(session);
+      }
+      markExited(session, null, "SIGKILL", "failed");
+      maybeNotifyOnExit(session, "failed");
+      // aggregated already contains rendered content for PTY (set in write callback)
+      const aggregated = session.aggregated.trim();
+      const reason = `Command timed out after ${opts.timeoutSec} seconds`;
+      settle({
+        status: "failed",
+        exitCode: null,
+        exitSignal: "SIGKILL",
+        durationMs: Date.now() - startedAt,
+        aggregated,
+        timedOut: true,
+        reason: aggregated ? `${aggregated}\n\n${reason}` : reason,
+      });
+    })();
   };
 
   const onTimeout = () => {
@@ -653,6 +664,8 @@ async function runExecProcess(opts: {
     if (!opts.onUpdate) {
       return;
     }
+    // For PTY: aggregated already contains pre-rendered content (no ANSI codes)
+    // For non-PTY: aggregated contains raw output
     const tailText = session.tail || session.aggregated;
     const warningText = opts.warnings.length ? `${opts.warnings.join("\n")}\n\n` : "";
     opts.onUpdate({
@@ -664,6 +677,7 @@ async function runExecProcess(opts: {
         startedAt,
         cwd: session.cwd,
         tail: session.tail,
+        pty: session.isPty || undefined,
       },
     });
   };
@@ -671,16 +685,18 @@ async function runExecProcess(opts: {
   const handleStdout = (data: string) => {
     const str = sanitizeBinaryOutput(data.toString());
     for (const chunk of chunkString(str)) {
-      appendOutput(session, "stdout", chunk);
-      emitUpdate();
+      appendOutput(session, "stdout", chunk, () => {
+        emitUpdate(); // Called after headless terminal processes data for PTY
+      });
     }
   };
 
   const handleStderr = (data: string) => {
     const str = sanitizeBinaryOutput(data.toString());
     for (const chunk of chunkString(str)) {
-      appendOutput(session, "stderr", chunk);
-      emitUpdate();
+      appendOutput(session, "stderr", chunk, () => {
+        emitUpdate();
+      });
     }
   };
 
@@ -703,7 +719,7 @@ async function runExecProcess(opts: {
 
   const promise = new Promise<ExecProcessOutcome>((resolve) => {
     resolveFn = resolve;
-    const handleExit = (code: number | null, exitSignal: NodeJS.Signals | number | null) => {
+    const handleExit = async (code: number | null, exitSignal: NodeJS.Signals | number | null) => {
       if (timeoutTimer) {
         clearTimeout(timeoutTimer);
       }
@@ -714,6 +730,13 @@ async function runExecProcess(opts: {
       const wasSignal = exitSignal != null;
       const isSuccess = code === 0 && !wasSignal && !timedOut;
       const status: "completed" | "failed" = isSuccess ? "completed" : "failed";
+
+      // For PTY: wait for all pending write() callbacks to complete before reading final content.
+      // This prevents race condition where markExited reads stale buffer content.
+      if (session.isPty) {
+        await waitForPendingWrites(session);
+      }
+
       markExited(session, code, exitSignal, status);
       maybeNotifyOnExit(session, status);
       if (!session.child && session.stdin) {
@@ -723,6 +746,7 @@ async function runExecProcess(opts: {
       if (settled) {
         return;
       }
+      // aggregated already contains rendered content for PTY (set in write callback)
       const aggregated = session.aggregated.trim();
       if (!isSuccess) {
         const reason = timedOut

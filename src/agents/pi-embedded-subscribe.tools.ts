@@ -69,6 +69,13 @@ export function sanitizeToolResult(result: unknown): unknown {
   if (!content) {
     return record;
   }
+  // PTY results carry details.pty=true — skip text truncation so the full
+  // ANSI output reaches the frontend terminal emulator intact.
+  const details = record.details;
+  const isPty =
+    details != null &&
+    typeof details === "object" &&
+    (details as Record<string, unknown>).pty === true;
   const sanitized = content.map((item) => {
     if (!item || typeof item !== "object") {
       return item;
@@ -76,7 +83,8 @@ export function sanitizeToolResult(result: unknown): unknown {
     const entry = item as Record<string, unknown>;
     const type = typeof entry.type === "string" ? entry.type : undefined;
     if (type === "text" && typeof entry.text === "string") {
-      return { ...entry, text: truncateToolText(entry.text) };
+      // Skip truncation for PTY output to preserve full ANSI content
+      return isPty ? entry : { ...entry, text: truncateToolText(entry.text) };
     }
     if (type === "image") {
       const data = typeof entry.data === "string" ? entry.data : undefined;
