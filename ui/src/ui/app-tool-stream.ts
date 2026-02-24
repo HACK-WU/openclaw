@@ -1,7 +1,7 @@
 import { truncateText } from "./format.ts";
 
 const TOOL_STREAM_LIMIT = 50;
-const TOOL_STREAM_THROTTLE_MS = 80;
+const TOOL_STREAM_THROTTLE_MS = 30; // PTY terminal refresh rate (lower = faster updates)
 const TOOL_OUTPUT_CHAR_LIMIT = 120_000;
 
 export type AgentEventPayload = {
