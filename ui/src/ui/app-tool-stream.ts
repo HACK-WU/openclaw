@@ -33,6 +33,11 @@ type ToolStreamHost = {
   toolStreamOrder: string[];
   chatToolMessages: Record<string, unknown>[];
   toolStreamSyncTimer: number | null;
+  /**
+   * PTY mode: update the stream started timestamp to prevent heartbeat timeout
+   * during long-running PTY commands.
+   */
+  chatStreamStartedAt?: number | null;
 };
 
 function toTrimmedString(value: unknown): string | null {
@@ -473,6 +478,12 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       entry.isPty = isPty;
     }
     entry.updatedAt = now;
+  }
+
+  // PTY mode: update chatStreamStartedAt to prevent heartbeat timeout
+  // during long-running PTY commands that don't produce chat events
+  if (entry.isPty && host.chatStreamStartedAt !== undefined) {
+    host.chatStreamStartedAt = now;
   }
 
   entry.message = buildToolStreamMessage(entry);
