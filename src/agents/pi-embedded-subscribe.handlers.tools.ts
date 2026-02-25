@@ -137,6 +137,18 @@ export async function handleToolExecutionStart(
   }
 }
 
+function isPtyResult(result: unknown): boolean {
+  if (!result || typeof result !== "object") {
+    return false;
+  }
+  const record = result as Record<string, unknown>;
+  const details = record.details;
+  if (!details || typeof details !== "object") {
+    return false;
+  }
+  return (details as Record<string, unknown>).pty === true;
+}
+
 export function handleToolExecutionUpdate(
   ctx: EmbeddedPiSubscribeContext,
   evt: AgentEvent & {
@@ -148,6 +160,32 @@ export function handleToolExecutionUpdate(
   const toolName = normalizeToolName(String(evt.toolName));
   const toolCallId = String(evt.toolCallId);
   const partial = evt.partialResult;
+
+  // For PTY mode: skip sending partialResult because the rendered content
+  // is sent via onUpdate callback (which uses @xterm/headless to process ANSI).
+  // Sending raw partialResult would show unprocessed ANSI escape codes in the UI.
+  if (isPtyResult(partial)) {
+    emitAgentEvent({
+      runId: ctx.params.runId,
+      stream: "tool",
+      data: {
+        phase: "update",
+        name: toolName,
+        toolCallId,
+        // Omit partialResult for PTY - content is delivered via onUpdate
+      },
+    });
+    void ctx.params.onAgentEvent?.({
+      stream: "tool",
+      data: {
+        phase: "update",
+        name: toolName,
+        toolCallId,
+      },
+    });
+    return;
+  }
+
   const sanitized = sanitizeToolResult(partial);
   emitAgentEvent({
     runId: ctx.params.runId,
