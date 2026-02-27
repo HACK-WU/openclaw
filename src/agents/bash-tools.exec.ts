@@ -258,6 +258,8 @@ export type ExecToolDetails =
       durationMs: number;
       aggregated: string;
       cwd?: string;
+      /** PTY session flag - signals downstream to skip text truncation */
+      pty?: boolean;
     }
   | {
       status: "approval-pending";
@@ -622,14 +624,12 @@ async function runExecProcess(opts: {
     if (session.exited) {
       return;
     }
-    // Use async IIFE to wait for pending PTY writes before finalizing
+    // Use async IIFE to wait for pending headless writes before finalizing
     void (async () => {
-      if (session.isPty) {
-        await waitForPendingWrites(session);
-      }
+      await waitForPendingWrites(session);
       markExited(session, null, "SIGKILL", "failed");
       maybeNotifyOnExit(session, "failed");
-      // aggregated already contains rendered content for PTY (set in write callback)
+      // aggregated always contains rendered content (set in headless write callback)
       const aggregated = session.aggregated.trim();
       const reason = `Command timed out after ${opts.timeoutSec} seconds`;
       settle({
@@ -664,8 +664,7 @@ async function runExecProcess(opts: {
     if (!opts.onUpdate) {
       return;
     }
-    // For PTY: aggregated already contains pre-rendered content (no ANSI codes)
-    // For non-PTY: aggregated contains raw output
+    // aggregated always contains pre-rendered content (no ANSI codes) from headless terminal
     const tailText = session.tail || session.aggregated;
     const warningText = opts.warnings.length ? `${opts.warnings.join("\n")}\n\n` : "";
     opts.onUpdate({
@@ -686,7 +685,7 @@ async function runExecProcess(opts: {
     const str = sanitizeBinaryOutput(data.toString());
     for (const chunk of chunkString(str)) {
       appendOutput(session, "stdout", chunk, () => {
-        emitUpdate(); // Called after headless terminal processes data for PTY
+        emitUpdate(); // Called after headless terminal processes data
       });
     }
   };
@@ -695,7 +694,7 @@ async function runExecProcess(opts: {
     const str = sanitizeBinaryOutput(data.toString());
     for (const chunk of chunkString(str)) {
       appendOutput(session, "stderr", chunk, () => {
-        emitUpdate();
+        emitUpdate(); // Called after headless terminal processes data
       });
     }
   };
@@ -731,11 +730,9 @@ async function runExecProcess(opts: {
       const isSuccess = code === 0 && !wasSignal && !timedOut;
       const status: "completed" | "failed" = isSuccess ? "completed" : "failed";
 
-      // For PTY: wait for all pending write() callbacks to complete before reading final content.
-      // This prevents race condition where markExited reads stale buffer content.
-      if (session.isPty) {
-        await waitForPendingWrites(session);
-      }
+      // Wait for all pending headless terminal write() callbacks to complete before
+      // reading final content. This prevents race condition where markExited reads stale buffer.
+      await waitForPendingWrites(session);
 
       markExited(session, code, exitSignal, status);
       maybeNotifyOnExit(session, status);
@@ -746,7 +743,7 @@ async function runExecProcess(opts: {
       if (settled) {
         return;
       }
-      // aggregated already contains rendered content for PTY (set in write callback)
+      // aggregated already contains rendered content (set in headless write callback)
       const aggregated = session.aggregated.trim();
       if (!isSuccess) {
         const reason = timedOut
@@ -796,19 +793,23 @@ async function runExecProcess(opts: {
         if (timeoutFinalizeTimer) {
           clearTimeout(timeoutFinalizeTimer);
         }
-        markExited(session, null, null, "failed");
-        maybeNotifyOnExit(session, "failed");
-        const aggregated = session.aggregated.trim();
-        const message = aggregated ? `${aggregated}\n\n${String(err)}` : String(err);
-        settle({
-          status: "failed",
-          exitCode: null,
-          exitSignal: null,
-          durationMs: Date.now() - startedAt,
-          aggregated,
-          timedOut,
-          reason: message,
-        });
+        // Wait for pending headless writes before reading final content
+        void (async () => {
+          await waitForPendingWrites(session);
+          markExited(session, null, null, "failed");
+          maybeNotifyOnExit(session, "failed");
+          const aggregated = session.aggregated.trim();
+          const message = aggregated ? `${aggregated}\n\n${String(err)}` : String(err);
+          settle({
+            status: "failed",
+            exitCode: null,
+            exitSignal: null,
+            durationMs: Date.now() - startedAt,
+            aggregated,
+            timedOut,
+            reason: message,
+          });
+        })();
       });
     }
   });
@@ -1585,6 +1586,7 @@ export function createExecTool(
               startedAt: run.startedAt,
               cwd: run.session.cwd,
               tail: run.session.tail,
+              pty: usePty || undefined,
             },
           });
 
@@ -1640,6 +1642,7 @@ export function createExecTool(
                 durationMs: outcome.durationMs,
                 aggregated: outcome.aggregated,
                 cwd: run.session.cwd,
+                pty: usePty || undefined,
               },
             });
           })
