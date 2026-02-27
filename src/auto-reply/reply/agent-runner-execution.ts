@@ -183,6 +183,17 @@ export async function runAgentTurnWithFallback(params: {
       const fallbackResult = await runWithModelFallback({
         ...resolveModelFallbackOptions(params.followupRun.run),
         run: (provider, model) => {
+          // Re-register run context on each fallback attempt. The previous
+          // attempt's lifecycle "end" event triggers clearAgentRunContext in
+          // server-chat.ts, so the mapping is lost before the retry starts.
+          if (params.sessionKey) {
+            registerAgentRunContext(runId, {
+              sessionKey: params.sessionKey,
+              verboseLevel: params.resolvedVerboseLevel,
+              isHeartbeat: params.isHeartbeat,
+            });
+          }
+
           // Notify that model selection is complete (including after fallback).
           // This allows responsePrefix template interpolation with the actual model.
           params.opts?.onModelSelected?.({
