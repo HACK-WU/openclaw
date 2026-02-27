@@ -111,6 +111,14 @@ function extractPtyFromResult(value: unknown): boolean | undefined {
   return d.pty === true ? true : undefined;
 }
 
+function extractPtyFromArgs(value: unknown): boolean | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  return record.pty === true ? true : undefined;
+}
+
 function buildToolStreamMessage(entry: ToolStreamEntry): Record<string, unknown> {
   const content: Array<Record<string, unknown>> = [];
   content.push({
@@ -273,7 +281,13 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       : phase === "result"
         ? formatToolOutput(data.result)
         : undefined;
-  const isPty = phase === "result" ? extractPtyFromResult(data.result) : undefined;
+  // Prefer early PTY detection from start args so heartbeat keep-alive works during updates.
+  const isPty =
+    phase === "start"
+      ? extractPtyFromArgs(data.args)
+      : phase === "result"
+        ? extractPtyFromResult(data.result)
+        : undefined;
 
   const now = Date.now();
   let entry = host.toolStreamById.get(toolCallId);

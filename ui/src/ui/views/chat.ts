@@ -546,7 +546,9 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   }
 
   if (props.stream !== null) {
-    const key = `stream:${props.sessionKey}:${props.streamStartedAt ?? "live"}`;
+    // Keep stream key stable for the whole session to avoid remount/flicker
+    // when streamStartedAt is refreshed by PTY heartbeat updates.
+    const key = `stream:${props.sessionKey}`;
     if (props.stream.trim().length > 0) {
       items.push({
         kind: "stream",
