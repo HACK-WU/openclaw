@@ -15,13 +15,16 @@ const TRUNCATION_BANNER = "\x1b[33m... (earlier output truncated)\x1b[0m\n";
 const PTY_RENDERED_FILE = "/tmp/test-pty-codebuddy-rendered.txt";
 
 /**
- * Read the current viewport content from a headless xterm.js terminal.
- * Extracts plain text lines (right-trimmed) and strips leading/trailing empty lines.
+ * Read content from a headless xterm.js terminal buffer.
+ * Reads scrollback + viewport lines and extracts plain text (right-trimmed),
+ * stripping leading/trailing empty lines.
  */
 function readHeadlessContent(terminal: HeadlessTerminal): string {
   const buffer = terminal.buffer.active;
   const lines: string[] = [];
-  for (let i = 0; i < terminal.rows; i++) {
+  // Read scrollback lines (baseY = number of scrolled-off lines)
+  const totalLines = buffer.baseY + terminal.rows;
+  for (let i = 0; i < totalLines; i++) {
     const line = buffer.getLine(i);
     lines.push(line ? line.translateToString(true) : "");
   }
@@ -177,80 +180,96 @@ export function appendOutput(
   }
   session.totalOutputChars += chunk.length;
 
-  if (session.isPty) {
-    // Feed chunk to the headless xterm.js terminal for pre-rendered screen snapshot.
-    // @xterm/headless is the official headless xterm.js engine — it handles ALL ANSI
-    // sequences correctly (cursor movements, clear-line, SGR, alt screen, etc.).
-    // For PTY, we store the RENDERED content directly in `aggregated` so all consumers
-    // automatically get clean text (no ANSI escape codes).
-    if (!session.headlessTerminal) {
-      session.headlessTerminal = new HeadlessTerminalCtor({
-        cols: 120,
-        rows: 30,
-        scrollback: 0,
-        allowProposedApi: true,
-      });
+  // Feed ALL output (PTY and non-PTY) through the headless xterm.js terminal.
+  // @xterm/headless is the official headless xterm.js engine — it handles ALL ANSI
+  // sequences correctly (cursor movements, clear-line, SGR, alt screen, etc.).
+  // This ensures `aggregated` always contains clean, rendered text regardless of
+  // whether the command was spawned with a PTY or regular pipes.
+  if (!session.headlessTerminal) {
+    // PTY: fixed viewport (matches real PTY dimensions), no scrollback.
+    //   PTY driver handles LF→CRLF conversion (ONLCR), so no convertEol needed.
+    // Non-PTY: large viewport + scrollback to capture all output lines.
+    //   Pipes output raw LF without CR, so enable convertEol to translate LF→CRLF
+    //   for proper line-by-line rendering in the headless terminal.
+    session.headlessTerminal = new HeadlessTerminalCtor({
+      cols: 120,
+      rows: session.isPty ? 30 : 500,
+      scrollback: session.isPty ? 0 : 5_000,
+      convertEol: !session.isPty,
+      allowProposedApi: true,
+    });
+  }
+
+  // Track pending write() callbacks to prevent race condition on exit
+  session.pendingWrites = (session.pendingWrites ?? 0) + 1;
+
+  // write() is async — update aggregated with rendered content in the callback
+  session.headlessTerminal.write(chunk, () => {
+    let rendered = readHeadlessContent(session.headlessTerminal!);
+    // Apply maxOutputChars truncation (headless scrollback is line-based,
+    // but we also need character-based limits for consistency)
+    if (!session.isPty) {
+      const capped = trimWithCap(rendered, session.maxOutputChars);
+      if (capped.length < rendered.length) {
+        session.truncated = true;
+      }
+      rendered = capped;
     }
+    // Apply PTY line truncation if maxLines is configured
+    if (session.isPty && session.maxLines && session.maxLines > 0) {
+      const trimmed = trimByLines(rendered, session.maxLines);
+      if (trimmed !== rendered) {
+        session.truncatedByLines = true;
+      }
+      rendered = trimmed;
+    }
+    // IMPORTANT: Store rendered content directly in aggregated so all consumers get clean text
+    session.aggregated = rendered;
+    session.tail = tail(rendered, 2000);
+    session.renderedContent = rendered; // Keep for backwards compatibility
 
-    // Track pending write() callbacks to prevent race condition on exit
-    session.pendingWrites = (session.pendingWrites ?? 0) + 1;
-
-    // write() is async — update aggregated with rendered content in the callback
-    session.headlessTerminal.write(chunk, () => {
-      const rendered = readHeadlessContent(session.headlessTerminal!);
-      // IMPORTANT: Store rendered content directly in aggregated so all consumers get clean text
-      session.aggregated = rendered;
-      session.tail = rendered;
-      session.renderedContent = rendered; // Keep for backwards compatibility
-
-      // Write the FULL TUI snapshot to debug file for inspection
+    // Write the FULL snapshot to debug file for inspection (PTY only, to avoid noise)
+    if (session.isPty) {
       try {
         fs.writeFileSync(PTY_RENDERED_FILE, rendered ?? "", "utf-8");
       } catch {
         // Ignore file write errors
       }
+    }
 
-      // Decrement pending writes and invoke callbacks if we've reached zero
-      session.pendingWrites = Math.max(0, (session.pendingWrites ?? 1) - 1);
-      if (session.pendingWrites === 0 && session.pendingWritesCallbacks?.length) {
-        const callbacks = session.pendingWritesCallbacks;
-        session.pendingWritesCallbacks = [];
-        for (const cb of callbacks) {
-          try {
-            cb();
-          } catch {
-            // Ignore callback errors
-          }
+    // Decrement pending writes and invoke callbacks if we've reached zero
+    session.pendingWrites = Math.max(0, (session.pendingWrites ?? 1) - 1);
+    if (session.pendingWrites === 0 && session.pendingWritesCallbacks?.length) {
+      const callbacks = session.pendingWritesCallbacks;
+      session.pendingWritesCallbacks = [];
+      for (const cb of callbacks) {
+        try {
+          cb();
+        } catch {
+          // Ignore callback errors
         }
       }
+    }
 
-      onRendered?.();
-    });
-    return;
-  }
-
-  // Non-PTY: simple concatenation with truncation
-  const aggregated = trimWithCap(session.aggregated + chunk, session.maxOutputChars);
-  session.truncated =
-    session.truncated || aggregated.length < session.aggregated.length + chunk.length;
-  session.aggregated = aggregated;
-  session.tail = tail(session.aggregated, 2000);
-  onRendered?.();
+    onRendered?.();
+  });
 }
 
 export function drainSession(session: ProcessSession) {
-  const stdout = session.pendingStdout.join("");
-  const stderr = session.pendingStderr.join("");
+  // All sessions now go through the headless terminal, so `aggregated` always
+  // contains clean, rendered text (no raw ANSI escape codes). Use it directly
+  // instead of joining the raw pendingStdout buffer.
+  const stdout = session.aggregated;
   session.pendingStdout = [];
   session.pendingStderr = [];
   session.pendingStdoutChars = 0;
   session.pendingStderrChars = 0;
-  return { stdout, stderr };
+  return { stdout, stderr: "" };
 }
 
 export function waitForPendingWrites(session: ProcessSession): Promise<void> {
-  // If no pending writes or not a PTY session, resolve immediately
-  if (!session.isPty || !session.pendingWrites || session.pendingWrites <= 0) {
+  // If no pending writes, resolve immediately
+  if (!session.pendingWrites || session.pendingWrites <= 0) {
     return Promise.resolve();
   }
 
@@ -271,14 +290,14 @@ export function markExited(
   session.exitCode = exitCode;
   session.exitSignal = exitSignal;
 
-  // For PTY: do a final synchronous read of the headless terminal buffer.
+  // Do a final synchronous read of the headless terminal buffer.
   // This catches any content that was parsed but whose write callback hasn't fired yet.
   // The result is stored directly in `aggregated` so consumers get the final rendered content.
-  if (session.isPty && session.headlessTerminal) {
+  if (session.headlessTerminal) {
     const finalContent = readHeadlessContent(session.headlessTerminal);
     if (finalContent) {
       session.aggregated = finalContent;
-      session.renderedContent = finalContent; // Keep for backwards compatibility
+      session.renderedContent = finalContent;
     }
   }
 
@@ -307,7 +326,7 @@ function moveToFinished(session: ProcessSession, status: ProcessStatus) {
     delete session.child;
   }
 
-  // Clean up headless terminal for PTY sessions
+  // Clean up headless terminal (used by all sessions)
   if (session.headlessTerminal) {
     try {
       session.headlessTerminal.dispose();
