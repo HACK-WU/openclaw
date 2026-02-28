@@ -159,7 +159,90 @@ export const zhCN: Record<string, string> = {
   "language.en": "English",
   "language.zhCN": "简体中文",
 
-  // Errors
+  // 通用（旧系统）
+  "common.version": "版本",
+  "common.health": "健康状况",
+  "common.ok": "正常",
+  "common.offline": "离线",
+  "common.connect": "连接",
+  "common.refresh": "刷新",
+  "common.enabled": "已启用",
+  "common.disabled": "已禁用",
+  "common.na": "不适用",
+  "common.docs": "文档",
+  "common.resources": "资源",
+
+  // 概览页 - 访问
+  "overview.access.title": "网关访问",
+  "overview.access.subtitle": "仪表板连接的位置及其身份验证方式。",
+  "overview.access.wsUrl": "WebSocket URL",
+  "overview.access.token": "网关令牌",
+  "overview.access.password": "密码 (不存储)",
+  "overview.access.sessionKey": "默认会话密钥",
+  "overview.access.language": "语言",
+  "overview.access.connectHint": "点击连接以应用连接更改。",
+  "overview.access.trustedProxy": "通过受信任代理认证。",
+
+  // 概览页 - 快照
+  "overview.snapshot.title": "快照",
+  "overview.snapshot.subtitle": "最新的网关握手信息。",
+  "overview.snapshot.status": "状态",
+  "overview.snapshot.uptime": "运行时间",
+  "overview.snapshot.tickInterval": "刻度间隔",
+  "overview.snapshot.lastChannelsRefresh": "最后频道刷新",
+  "overview.snapshot.channelsHint":
+    "使用频道链接 WhatsApp、Telegram、Discord、Signal 或 iMessage。",
+
+  // 概览页 - 统计
+  "overview.stats.instances": "实例",
+  "overview.stats.instancesHint": "过去 5 分钟内的在线信号。",
+  "overview.stats.sessions": "会话",
+  "overview.stats.sessionsHint": "网关跟踪的最近会话密钥。",
+  "overview.stats.cron": "定时任务",
+  "overview.stats.cronNext": "下次唤醒 {time}",
+
+  // 概览页 - 备注
+  "overview.notes.title": "备注",
+  "overview.notes.subtitle": "远程控制设置的快速提醒。",
+  "overview.notes.tailscaleTitle": "Tailscale serve",
+  "overview.notes.tailscaleText":
+    "首选 serve 模式以通过 tailnet 身份验证将网关保持在回环地址。",
+  "overview.notes.sessionTitle": "会话清理",
+  "overview.notes.sessionText": "使用 /new 或 sessions.patch 重置上下文。",
+  "overview.notes.cronTitle": "定时任务提醒",
+  "overview.notes.cronText": "为重复运行使用隔离的会话。",
+
+  // 概览页 - 身份验证
+  "overview.auth.required":
+    "此网关需要身份验证。添加令牌或密码，然后点击连接。",
+  "overview.auth.failed":
+    "身份验证失败。请使用 {command} 重新复制令牌化 URL，或更新令牌，然后点击连接。",
+
+  // 概览页 - 配对
+  "overview.pairing.hint": "此设备需要网关主机的配对批准。",
+  "overview.pairing.mobileHint":
+    "在手机上？从桌面运行 openclaw dashboard --no-open 复制完整 URL（包括 #token=...）。",
+
+  // 概览页 - 不安全
+  "overview.insecure.hint":
+    "此页面为 HTTP，因此浏览器阻止设备标识。请使用 HTTPS (Tailscale Serve) 或在网关主机上打开 {url}。",
+  "overview.insecure.stayHttp":
+    "如果您必须保持 HTTP，请设置 {config} (仅限令牌)。",
+
+  // 聊天
+  "chat.disconnected": "已断开与网关的连接。",
+  "chat.refreshTitle": "刷新聊天数据",
+  "chat.thinkingToggle": "切换助手思考/工作输出",
+  "chat.focusToggle": "切换专注模式 (隐藏侧边栏 + 页面页眉)",
+  "chat.onboardingDisabled": "引导期间禁用",
+
+  // 语言
+  "languages.en": "English",
+  "languages.zhCN": "简体中文 (简体中文)",
+  "languages.zhTW": "繁體中文 (繁体中文)",
+  "languages.ptBR": "Português (巴西葡萄牙语)",
+
+  // 错误
   "error.notFound": "未找到",
   "error.loadFailed": "加载失败",
   "error.saveFailed": "保存失败",

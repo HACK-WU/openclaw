@@ -68,11 +68,24 @@ function isChatResetCommand(text: string) {
 }
 
 export async function handleAbortChat(host: ChatHost) {
+  console.info("[chat/stop] click", {
+    connected: host.connected,
+    sessionKey: host.sessionKey,
+    chatRunId: host.chatRunId,
+    chatSending: host.chatSending,
+  });
   if (!host.connected) {
+    console.warn("[chat/stop] ignored: not connected");
     return;
   }
   host.chatMessage = "";
-  await abortChatRun(host as unknown as OpenClawApp);
+  const ok = await abortChatRun(host as unknown as OpenClawApp);
+  console.info("[chat/stop] request finished", {
+    ok,
+    sessionKey: host.sessionKey,
+    chatRunId: host.chatRunId,
+    lastError: host.lastError,
+  });
 }
 
 function enqueueChatMessage(

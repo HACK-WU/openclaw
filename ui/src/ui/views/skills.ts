@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 import type { SkillMessageMap } from "../controllers/skills.ts";
 import { clampText } from "../format.ts";
+import { t } from "../i18n/index.ts";
 import type { SkillStatusEntry, SkillStatusReport } from "../types.ts";
 import { groupSkills } from "./skills-grouping.ts";
 import {
@@ -179,6 +180,9 @@ function renderSkill(skill: SkillStatusEntry, props: SkillsProps) {
   const apiKey = props.edits[skill.skillKey] ?? "";
   const message = props.messages[skill.skillKey] ?? null;
   const canInstall = skill.install.length > 0 && skill.missing.bins.length > 0;
+  const canEdit = Boolean(
+    skill.filePath && (skill.source === "openclaw-workspace" || skill.source === "openclaw-managed"),
+  );
   const showBundledBadge = Boolean(skill.bundled && skill.source !== "openclaw-bundled");
   const missing = computeSkillMissing(skill);
   const reasons = computeSkillReasons(skill);

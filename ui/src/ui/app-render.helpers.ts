@@ -1,7 +1,6 @@
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
-import { t } from "../i18n/index.ts";
-import { refreshChat } from "./app-chat.ts";
+import { refreshChat, switchSession } from "./app-chat.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { OpenClawApp } from "./app.ts";

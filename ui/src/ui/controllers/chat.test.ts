@@ -114,7 +114,7 @@ describe("handleChatEvent", () => {
     expect(state.chatMessages).toEqual([]);
   });
 
-  it("processes final from own run and keeps all stream state for UI continuity", () => {
+  it("processes final from own run and clears all stream state", () => {
     const state = createState({
       sessionKey: "main",
       chatRunId: "run-1",
@@ -128,11 +128,10 @@ describe("handleChatEvent", () => {
       state: "final",
     };
     expect(handleChatEvent(state, payload)).toBe("final");
-    // All stream state should be preserved until loadChatHistory completes
-    // This allows tool events to continue being processed and UI to remain visible
-    expect(state.chatRunId).toBe("run-1");
-    expect(state.chatStream).toBe("Reply");
-    expect(state.chatStreamStartedAt).toBe(100);
+    // All stream state should be cleared on final, even without a message payload
+    expect(state.chatRunId).toBe(null);
+    expect(state.chatStream).toBe(null);
+    expect(state.chatStreamStartedAt).toBe(null);
   });
 
   it("appends final payload message from own run before clearing stream state", () => {

@@ -32,14 +32,6 @@ const CATCH_UP_THRESHOLD = 50;
 const CATCH_UP_MULTIPLIER = 4;
 
 /**
- * Minimum interval (ms) between expensive Markdown re-renders.
- * During the animation loop we use cheap plain-text rendering;
- * Markdown is only parsed on content changes or when the animation completes.
- * Increased to avoid blocking the typewriter animation with heavy Markdown parsing.
- */
-const MD_RENDER_INTERVAL_MS = 2000;
-
-/**
  * Escape HTML special characters for safe rendering as plain text.
  */
 function escapeHtml(text: string): string {
@@ -203,17 +195,14 @@ class TypewriterDirective extends AsyncDirective {
       return;
     }
 
-    const now = performance.now();
     const isAnimating = this._revealed < this._target.length;
 
     if (!isAnimating) {
       // Animation complete: render with Markdown for final display
       this._flushMarkdown();
-    } else if (now - this._lastMdRender >= MD_RENDER_INTERVAL_MS) {
-      // Throttled Markdown render during streaming
-      this._flushMarkdown();
     } else {
-      // Cheap plain-text render during animation frames
+      // Keep streaming-phase rendering mode stable to avoid visible flicker
+      // from switching between cheap HTML and Markdown HTML repeatedly.
       this._flushCheap();
     }
   }

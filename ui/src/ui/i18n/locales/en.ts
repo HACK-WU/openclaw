@@ -160,6 +160,89 @@ export const en: Record<string, string> = {
   "language.en": "English",
   "language.zhCN": "简体中文",
 
+  // Common (legacy)
+  "common.version": "Version",
+  "common.health": "Health",
+  "common.ok": "OK",
+  "common.offline": "Offline",
+  "common.connect": "Connect",
+  "common.refresh": "Refresh",
+  "common.enabled": "Enabled",
+  "common.disabled": "Disabled",
+  "common.na": "n/a",
+  "common.docs": "Docs",
+  "common.resources": "Resources",
+
+  // Overview Page - Access
+  "overview.access.title": "Gateway Access",
+  "overview.access.subtitle": "Where the dashboard connects and how it authenticates.",
+  "overview.access.wsUrl": "WebSocket URL",
+  "overview.access.token": "Gateway Token",
+  "overview.access.password": "Password (not stored)",
+  "overview.access.sessionKey": "Default Session Key",
+  "overview.access.language": "Language",
+  "overview.access.connectHint": "Click Connect to apply connection changes.",
+  "overview.access.trustedProxy": "Authenticated via trusted proxy.",
+
+  // Overview Page - Snapshot
+  "overview.snapshot.title": "Snapshot",
+  "overview.snapshot.subtitle": "Latest gateway handshake information.",
+  "overview.snapshot.status": "Status",
+  "overview.snapshot.uptime": "Uptime",
+  "overview.snapshot.tickInterval": "Tick Interval",
+  "overview.snapshot.lastChannelsRefresh": "Last Channels Refresh",
+  "overview.snapshot.channelsHint":
+    "Use Channels to link WhatsApp, Telegram, Discord, Signal, or iMessage.",
+
+  // Overview Page - Stats
+  "overview.stats.instances": "Instances",
+  "overview.stats.instancesHint": "Presence beacons in the last 5 minutes.",
+  "overview.stats.sessions": "Sessions",
+  "overview.stats.sessionsHint": "Recent session keys tracked by the gateway.",
+  "overview.stats.cron": "Cron",
+  "overview.stats.cronNext": "Next wake {time}",
+
+  // Overview Page - Notes
+  "overview.notes.title": "Notes",
+  "overview.notes.subtitle": "Quick reminders for remote control setups.",
+  "overview.notes.tailscaleTitle": "Tailscale serve",
+  "overview.notes.tailscaleText":
+    "Prefer serve mode to keep the gateway on loopback with tailnet auth.",
+  "overview.notes.sessionTitle": "Session hygiene",
+  "overview.notes.sessionText": "Use /new or sessions.patch to reset context.",
+  "overview.notes.cronTitle": "Cron reminders",
+  "overview.notes.cronText": "Use isolated sessions for recurring runs.",
+
+  // Overview Page - Auth
+  "overview.auth.required":
+    "This gateway requires auth. Add a token or password, then click Connect.",
+  "overview.auth.failed":
+    "Auth failed. Re-copy a tokenized URL with {command}, or update the token, then click Connect.",
+
+  // Overview Page - Pairing
+  "overview.pairing.hint": "This device needs pairing approval from the gateway host.",
+  "overview.pairing.mobileHint":
+    "On mobile? Copy the full URL (including #token=...) from openclaw dashboard --no-open on your desktop.",
+
+  // Overview Page - Insecure
+  "overview.insecure.hint":
+    "This page is HTTP, so the browser blocks device identity. Use HTTPS (Tailscale Serve) or open {url} on the gateway host.",
+  "overview.insecure.stayHttp":
+    "If you must stay on HTTP, set {config} (token-only).",
+
+  // Chat
+  "chat.disconnected": "Disconnected from gateway.",
+  "chat.refreshTitle": "Refresh chat data",
+  "chat.thinkingToggle": "Toggle assistant thinking/working output",
+  "chat.focusToggle": "Toggle focus mode (hide sidebar + page header)",
+  "chat.onboardingDisabled": "Disabled during onboarding",
+
+  // Languages
+  "languages.en": "English",
+  "languages.zhCN": "简体中文 (Simplified Chinese)",
+  "languages.zhTW": "繁體中文 (Traditional Chinese)",
+  "languages.ptBR": "Português (Brazilian Portuguese)",
+
   // Errors
   "error.notFound": "Not found",
   "error.loadFailed": "Failed to load",

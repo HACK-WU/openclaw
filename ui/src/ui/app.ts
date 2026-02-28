@@ -1,6 +1,13 @@
 import { LitElement } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { i18n, I18nController, isSupportedLocale } from "../i18n/index.ts";
+import {
+  i18n,
+  I18nController,
+  initLocale,
+  isSupportedLocale,
+  setLocale as setLocaleInternal,
+  type LocaleCode,
+} from "./i18n/index.ts";
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
   handleChannelConfigSave as handleChannelConfigSaveInternal,
@@ -54,6 +61,7 @@ import type { AppViewState } from "./app-view-state.ts";
 import { normalizeAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
 import type { CronFieldErrors } from "./controllers/cron.ts";
+import { loadSessions } from "./controllers/sessions.ts";
 import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
@@ -85,6 +93,7 @@ import type {
 import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types.ts";
 import { generateUUID } from "./uuid.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
+import type { DeleteSessionDialogState } from "./views/delete-session-dialog.ts";
 
 declare global {
   interface Window {
@@ -118,7 +127,7 @@ export class OpenClawApp extends LitElement {
   constructor() {
     super();
     if (isSupportedLocale(this.settings.locale)) {
-      void i18n.setLocale(this.settings.locale);
+       i18n.setLocale(this.settings.locale);
     }
   }
   @state() password = "";

@@ -161,6 +161,38 @@ export type ChatEventPayload = {
   errorMessage?: string;
 };
 
+/**
+ * Deduplicate messages based on id, messageId, or content hash.
+ * Keeps the first occurrence of each duplicate.
+ */
+function deduplicateMessages(messages: unknown[]): unknown[] {
+  const seen = new Set<string>();
+  return messages.filter((msg) => {
+    const m = msg as Record<string, unknown>;
+    // Use id/messageId if available (most reliable)
+    const id = typeof m.id === "string" ? m.id : "";
+    const messageId = typeof m.messageId === "string" ? m.messageId : "";
+    if (id || messageId) {
+      const key = id ? `id:${id}` : `msgId:${messageId}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    }
+    // Fall back to content-based deduplication
+    const role = typeof m.role === "string" ? m.role : "unknown";
+    const timestamp = typeof m.timestamp === "number" ? m.timestamp : 0;
+    const content = JSON.stringify(m.content);
+    const key = `${role}:${timestamp}:${content}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 export async function loadChatHistory(state: ChatState) {
   if (!state.client || !state.connected) {
     return;
@@ -177,7 +209,10 @@ export async function loadChatHistory(state: ChatState) {
       sessionKey: state.sessionKey,
       limit: 200,
     });
-    state.chatMessages = Array.isArray(res.messages) ? res.messages : [];
+    const messages = Array.isArray(res.messages) ? res.messages : [];
+    // Deduplicate messages to prevent rendering duplicates
+    // This handles cases where a message was added via event and also exists in history
+    state.chatMessages = deduplicateMessages(messages);
     state.chatThinkingLevel = res.thinkingLevel ?? null;
     // Restore active run state for Stop button visibility after refresh
     // Only restore if we don't already have an active run

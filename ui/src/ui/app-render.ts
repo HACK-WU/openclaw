@@ -1,9 +1,9 @@
 import { html, nothing } from "lit";
 import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
-import { t } from "../i18n/index.ts";
-import { refreshChatAvatar } from "./app-chat.ts";
+import { t } from "./i18n/index.ts";
+import { refreshChatAvatar, switchSession } from "./app-chat.ts";
 import { renderUsageTab } from "./app-render-usage-tab.ts";
-import { renderChatControls, renderTab, renderThemeToggle } from "./app-render.helpers.ts";
+import { renderChatControls, renderLocaleToggle, renderNavSessionsList, renderTab, renderThemeToggle } from "./app-render.helpers.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
@@ -66,9 +66,18 @@ import {
   updateSkillEnabled,
   updateSkillFileContent,
 } from "./controllers/skills.ts";
+import {
+  applySettingsFromUrl,
+  attachThemeListener,
+  detachThemeListener,
+  inferBasePath,
+  syncTabWithLocation,
+  syncThemeWithSettings,
+  syncUrlWithSessionKey,
+} from "./app-settings.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "./external-link.ts";
 import { icons } from "./icons.ts";
-import { normalizeBasePath, TAB_GROUPS, subtitleForTab, titleForTab } from "./navigation.ts";
+import { getTabGroups, normalizeBasePath, TAB_GROUPS, subtitleForTab, titleForTab } from "./navigation.ts";
 import { renderAgents } from "./views/agents.ts";
 import { renderChannels } from "./views/channels.ts";
 import { renderChat } from "./views/chat.ts";
@@ -300,7 +309,6 @@ export function renderApp(state: AppViewState) {
                     aria-expanded=${!isGroupCollapsed}
                   >
                     <span class="nav-label__text">${group.label}</span>
-                    <!-- 折叠/展开图标 -->
                     <span class="nav-label__chevron">${isGroupCollapsed ? "+" : "−"}</span>
                   </button>
                 </div>
@@ -328,7 +336,7 @@ export function renderApp(state: AppViewState) {
                 }}
                 aria-expanded=${!isGroupCollapsed}
               >
-                <span class="nav-label__text">${t(`nav.${group.label}`)}</span>
+                <span class="nav-label__text">${group.label}</span>
                 <span class="nav-label__chevron">${isGroupCollapsed ? "+" : "−"}</span>
               </button>
               <!-- 分组内的标签页列表 -->

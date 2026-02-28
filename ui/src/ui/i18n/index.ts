@@ -6,12 +6,18 @@
  *   t('nav.skills')  // => "Skills" or "技能"
  */
 
+import type { ReactiveController, ReactiveControllerHost } from "lit";
 import { en } from "./locales/en.ts";
 import { zhCN } from "./locales/zh-CN.ts";
 
 export type LocaleCode = "en" | "zh-CN";
 
+/** Legacy alias kept for compatibility with overview.ts / app.ts */
+export type Locale = LocaleCode;
+
 export type TranslationKey = keyof typeof en;
+
+const SUPPORTED_LOCALES: readonly LocaleCode[] = new Set(["en", "zh-CN"]);
 
 const locales: Record<LocaleCode, Record<string, string>> = {
   en,
@@ -20,11 +26,21 @@ const locales: Record<LocaleCode, Record<string, string>> = {
 
 let currentLocale: LocaleCode = "en";
 
+type LocaleSubscriber = (locale: LocaleCode) => void;
+const subscribers = new Set<LocaleSubscriber>();
+
 /**
  * Check if running in browser environment
  */
 function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof navigator !== "undefined";
+}
+
+/**
+ * Check if a value is a supported locale string
+ */
+export function isSupportedLocale(value: string | null | undefined): value is LocaleCode {
+  return value !== null && value !== undefined && SUPPORTED_LOCALES.has(value as LocaleCode);
 }
 
 /**
@@ -74,12 +90,24 @@ export function getLocale(): LocaleCode {
  * Set current locale and persist to localStorage
  */
 export function setLocale(locale: LocaleCode): void {
-  if (locales[locale]) {
+  if (locales[locale] && currentLocale !== locale) {
     currentLocale = locale;
     if (isBrowser()) {
       localStorage.setItem("openclaw-locale", locale);
     }
+    // Notify subscribers
+    for (const sub of subscribers) {
+      sub(currentLocale);
+    }
   }
+}
+
+/**
+ * Subscribe to locale changes
+ */
+export function subscribe(sub: LocaleSubscriber): () => void {
+  subscribers.add(sub);
+  return () => subscribers.delete(sub);
 }
 
 /**
@@ -115,4 +143,39 @@ export function t(key: string, params?: Record<string, string | number>): string
 export function hasTranslation(key: string): boolean {
   const translations = locales[currentLocale] || locales.en;
   return key in translations || key in locales.en;
+}
+
+/**
+ * Convenience object that mirrors the old I18nManager API surface
+ * used by overview.ts and app.ts.
+ */
+export const i18n = {
+  getLocale,
+  setLocale,
+  subscribe,
+  t,
+};
+
+/**
+ * Lit reactive controller that triggers host re-render on locale change.
+ * Replaces the old I18nController from ui/src/i18n/.
+ */
+export class I18nController implements ReactiveController {
+  private host: ReactiveControllerHost;
+  private unsubscribe?: () => void;
+
+  constructor(host: ReactiveControllerHost) {
+    this.host = host;
+    this.host.addController(this);
+  }
+
+  hostConnected() {
+    this.unsubscribe = subscribe(() => {
+      this.host.requestUpdate();
+    });
+  }
+
+  hostDisconnected() {
+    this.unsubscribe?.();
+  }
 }

@@ -308,7 +308,8 @@ img.chat-avatar {
   margin-left: 1px;
   vertical-align: text-bottom;
   background: var(--accent);
-  animation: blink-cursor 600ms steps(2) infinite;
+  animation: none;
+  opacity: 1;
 }
 
 /* When using injected cursor, hide the pseudo-element */

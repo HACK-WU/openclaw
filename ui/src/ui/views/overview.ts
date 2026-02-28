@@ -1,6 +1,6 @@
 import { html } from "lit";
 import { ConnectErrorDetailCodes } from "../../../../src/gateway/protocol/connect-error-details.js";
-import { t, i18n, type Locale } from "../../i18n/index.ts";
+import { t, i18n, type Locale } from "../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../external-link.ts";
 import { formatRelativeTimestamp, formatDurationHuman } from "../format.ts";
 import type { GatewayHelloOk } from "../gateway.ts";
@@ -255,7 +255,7 @@ export function renderOverview(props: OverviewProps) {
               .value=${currentLocale}
               @change=${(e: Event) => {
                 const v = (e.target as HTMLSelectElement).value as Locale;
-                void i18n.setLocale(v);
+                 i18n.setLocale(v);
                 props.onSettingsChange({ ...props.settings, locale: v });
               }}
             >

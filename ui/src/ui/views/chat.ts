@@ -544,7 +544,39 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   const items: ChatItem[] = [];
   const history = Array.isArray(props.messages) ? props.messages : [];
   const tools = Array.isArray(props.toolMessages) ? props.toolMessages : [];
-  const historyStart = Math.max(0, history.length - CHAT_HISTORY_RENDER_LIMIT);
+
+  // Deduplicate history messages based on content identity
+  // This prevents duplicate rendering when the same message appears multiple times
+  const seenMessageIds = new Set<string>();
+  const dedupedHistory: unknown[] = [];
+  for (const msg of history) {
+    const m = msg as Record<string, unknown>;
+    // Use id/messageId/toolCallId if available
+    const msgId = typeof m.id === "string" ? m.id : "";
+    const messageId = typeof m.messageId === "string" ? m.messageId : "";
+    const toolCallId = typeof m.toolCallId === "string" ? m.toolCallId : "";
+    const id = msgId || messageId || toolCallId;
+    if (id) {
+      if (seenMessageIds.has(id)) {
+        continue; // Skip duplicate message
+      }
+      seenMessageIds.add(id);
+      dedupedHistory.push(msg);
+      continue;
+    }
+    // For messages without id, use content hash
+    const role = typeof m.role === "string" ? m.role : "unknown";
+    const timestamp = typeof m.timestamp === "number" ? m.timestamp : 0;
+    const content = JSON.stringify(m.content);
+    const contentKey = `${role}:${timestamp}:${content}`;
+    if (seenMessageIds.has(contentKey)) {
+      continue; // Skip duplicate message
+    }
+    seenMessageIds.add(contentKey);
+    dedupedHistory.push(msg);
+  }
+
+  const historyStart = Math.max(0, dedupedHistory.length - CHAT_HISTORY_RENDER_LIMIT);
   if (historyStart > 0) {
     items.push({
       kind: "message",
@@ -556,8 +588,8 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       },
     });
   }
-  for (let i = historyStart; i < history.length; i++) {
-    const msg = history[i];
+  for (let i = historyStart; i < dedupedHistory.length; i++) {
+    const msg = dedupedHistory[i];
     const normalized = normalizeMessage(msg);
     const raw = msg as Record<string, unknown>;
     const marker = raw.__openclaw as Record<string, unknown> | undefined;

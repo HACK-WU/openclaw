@@ -353,7 +353,7 @@ export function createAgentEventHandler({
             },
             segments: latestSegments,
           };
-          if (!shouldSuppressHeartbeatBroadcast(clientRunId)) {
+          if (!shouldHideHeartbeatChatOutput(clientRunId)) {
             broadcast("chat", trailingPayload, { dropIfSlow: true });
           }
           nodeSendToSession(sessionKey, "chat", trailingPayload);
@@ -369,6 +369,10 @@ export function createAgentEventHandler({
       chatRunState.trailingTimers.delete(clientRunId);
     }
     chatRunState.deltaSentAt.set(clientRunId, now);
+    const completedSegments = chatRunState.completedSegments.get(clientRunId);
+    const rawText = chatRunState.lastRawText.get(clientRunId) ?? "";
+    const segments =
+      completedSegments && completedSegments.length > 0 ? [...completedSegments, rawText] : undefined;
     const payload = {
       runId: clientRunId,
       sessionKey,
@@ -406,7 +410,7 @@ export function createAgentEventHandler({
       normalizedHeartbeatText.suppress || isSilentReplyText(text, SILENT_REPLY_TOKEN);
     chatRunState.buffers.delete(clientRunId);
     chatRunState.deltaSentAt.delete(clientRunId);
-    chatRunBaseline.delete(clientRunId);
+    chatRunState.chatRunBaseline.delete(clientRunId);
     chatRunState.lastRawText.delete(clientRunId);
     chatRunState.completedSegments.delete(clientRunId);
     // Clear any pending trailing-edge timer for this run
@@ -415,6 +419,7 @@ export function createAgentEventHandler({
       clearTimeout(trailingTimer);
       chatRunState.trailingTimers.delete(clientRunId);
     }
+
     if (jobState === "done") {
       const payload = {
         runId: clientRunId,
@@ -580,7 +585,7 @@ export function createAgentEventHandler({
         chatRunState.abortedRuns.delete(evt.runId);
         chatRunState.buffers.delete(clientRunId);
         chatRunState.deltaSentAt.delete(clientRunId);
-        chatRunBaseline.delete(clientRunId);
+        chatRunState.chatRunBaseline.delete(clientRunId);
         chatRunState.lastRawText.delete(clientRunId);
         chatRunState.completedSegments.delete(clientRunId);
         if (chatLink) {

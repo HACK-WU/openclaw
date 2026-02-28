@@ -156,7 +156,7 @@ export function renderStreamingGroup(
             </div>
           `,
         )}
-        <div class="chat-bubble streaming fade-in">
+        <div class="chat-bubble">
           <div class="chat-text chat-text-streaming" ${typewriter(activeSegment)}></div>
         </div>
         ${toolCardsHtml}

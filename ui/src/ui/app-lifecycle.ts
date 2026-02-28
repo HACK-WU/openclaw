@@ -16,6 +16,7 @@ import {
   syncTabWithLocation,
   syncThemeWithSettings,
 } from "./app-settings.ts";
+import { checkChatStreamTimeout, loadChatHistory } from "./controllers/chat.ts";
 import { loadControlUiBootstrapConfig } from "./controllers/control-ui-bootstrap.ts";
 import type { Tab } from "./navigation.ts";
 
@@ -150,7 +151,16 @@ function handleChatHeartbeat(host: LifecycleHost) {
   }
 
   // Check for stream timeout
-  if (checkChatStreamTimeout(host as unknown as Parameters<typeof checkChatStreamTimeout>[0])) {
+  const timedOut = checkChatStreamTimeout(host as unknown as Parameters<typeof checkChatStreamTimeout>[0]);
+  if (host.chatRunId) {
+    console.debug("[chat-heartbeat] tick", {
+      sessionKey: host.sessionKey,
+      runId: host.chatRunId,
+      startedAt: host.chatStreamStartedAt,
+      timedOut,
+    });
+  }
+  if (timedOut) {
     console.warn(
       "[chat-heartbeat] Stream timeout detected, clearing stale state and refreshing history",
     );

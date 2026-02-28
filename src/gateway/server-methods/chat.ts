@@ -453,6 +453,12 @@ function createChatAbortOps(context: GatewayRequestContext): ChatAbortOps {
     agentRunSeq: context.agentRunSeq,
     broadcast: context.broadcast,
     nodeSendToSession: context.nodeSendToSession,
+    clearActiveRunId: (sessionKey: string) => {
+      const { storePath } = loadSessionEntry(sessionKey);
+      if (storePath) {
+        return clearSessionActiveRun(sessionKey, storePath);
+      }
+    },
   };
 }
 
@@ -644,12 +650,22 @@ export const chatHandlers: GatewayRequestHandlers = {
         abortOrigin: "rpc",
         stopReason: "rpc",
       });
+      if (!res.aborted) {
+        const { storePath, canonicalKey } = loadSessionEntry(rawSessionKey);
+        if (storePath) {
+          void clearSessionActiveRun(canonicalKey, storePath);
+        }
+      }
       respond(true, { ok: true, aborted: res.aborted, runIds: res.runIds });
       return;
     }
 
     const active = context.chatAbortControllers.get(runId);
     if (!active) {
+      const { storePath, canonicalKey } = loadSessionEntry(rawSessionKey);
+      if (storePath) {
+        void clearSessionActiveRun(canonicalKey, storePath);
+      }
       respond(true, { ok: true, aborted: false, runIds: [] });
       return;
     }
@@ -892,6 +908,14 @@ export const chatHandlers: GatewayRequestHandlers = {
           images: parsedImages.length > 0 ? parsedImages : undefined,
           onAgentRunStart: (runId) => {
             agentRunStarted = true;
+            // Map internal agent runId -> client runId so chat lifecycle events
+            // (final/error/abort) are emitted with the client-visible runId.
+            if (runId && runId !== clientRunId) {
+              context.addChatRun(runId, {
+                sessionKey: rawSessionKey,
+                clientRunId,
+              });
+            }
             const connId = typeof client?.connId === "string" ? client.connId : undefined;
             const wantsToolEvents = hasGatewayClientCap(
               client?.connect?.caps,
@@ -984,6 +1008,9 @@ export const chatHandlers: GatewayRequestHandlers = {
         })
         .finally(() => {
           context.chatAbortControllers.delete(clientRunId);
+          if (storePath) {
+            void clearSessionActiveRun(sessionKey, storePath);
+          }
         });
     } catch (err) {
       const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
@@ -1068,3 +1095,45 @@ export const chatHandlers: GatewayRequestHandlers = {
     respond(true, { ok: true, messageId: appended.messageId });
   },
 };
+
+/**
+ * Persist activeRunId into the session store so the UI can restore
+ * the Stop button after a page refresh / session switch.
+ */
+export async function setSessionActiveRun(
+  sessionKey: string,
+  runId: string,
+  storePath: string,
+): Promise<void> {
+  try {
+    await updateSessionStore(storePath, (store) => {
+      const entry = store[sessionKey];
+      if (entry) {
+        entry.activeRunId = runId;
+        entry.activeRunStartedAt = Date.now();
+      }
+    });
+  } catch {
+    // Best-effort; don't break the chat flow.
+  }
+}
+
+/**
+ * Clear activeRunId from the session store when a run completes, errors, or is aborted.
+ */
+export async function clearSessionActiveRun(
+  sessionKey: string,
+  storePath: string,
+): Promise<void> {
+  try {
+    await updateSessionStore(storePath, (store) => {
+      const entry = store[sessionKey];
+      if (entry) {
+        delete entry.activeRunId;
+        delete entry.activeRunStartedAt;
+      }
+    });
+  } catch {
+    // Best-effort; don't break the chat flow.
+  }
+}

@@ -164,6 +164,10 @@ export type SessionEntry = {
   skillsSnapshot?: SessionSkillSnapshot;
   systemPromptReport?: SessionSystemPromptReport;
   acp?: SessionAcpMeta;
+  /** Active chat run ID persisted for UI state restoration on refresh. */
+  activeRunId?: string;
+  /** Epoch ms when the active run started. */
+  activeRunStartedAt?: number;
 };
 
 function normalizeRuntimeField(value: string | undefined): string | undefined {
