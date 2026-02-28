@@ -1,7 +1,7 @@
-import type { Terminal as HeadlessTerminal } from "@xterm/headless";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import xtermHeadless from "@xterm/headless";
 import fs from "node:fs";
+import type { Terminal as HeadlessTerminal } from "@xterm/headless";
+import xtermHeadless from "@xterm/headless";
 const { Terminal: HeadlessTerminalCtor } = xtermHeadless;
 import { createSessionSlug as createSessionSlugId } from "./session-slug.js";
 
@@ -64,6 +64,7 @@ export interface ProcessSession {
   scopeKey?: string;
   sessionKey?: string;
   notifyOnExit?: boolean;
+  notifyOnExitEmptySuccess?: boolean;
   exitNotified?: boolean;
   child?: ChildProcessWithoutNullStreams;
   stdin?: SessionStdin;
@@ -319,7 +320,7 @@ function moveToFinished(session: ProcessSession, status: ProcessStatus) {
     session.child.stderr?.destroy?.();
 
     // Remove all event listeners to prevent memory leaks
-    session.child.removeAllListeners?.();
+    session.child.removeAllListeners();
 
     // Clear the reference
     delete session.child;

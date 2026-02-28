@@ -1,20 +1,19 @@
+import {
+  GATEWAY_EVENT_UPDATE_AVAILABLE,
+  type GatewayUpdateAvailableEventPayload,
+} from "../../../src/gateway/events.js";
+import { CHAT_SESSIONS_ACTIVE_MINUTES, flushChatQueueForEvent } from "./app-chat.ts";
 import type { EventLogEntry } from "./app-events.ts";
-import type { OpenClawApp } from "./app.ts";
-import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
-import type { GatewayEventFrame, GatewayHelloOk } from "./gateway.ts";
-import type { Tab } from "./navigation.ts";
-import type { UiSettings } from "./storage.ts";
-import type { AgentsListResult, PresenceEntry, HealthSnapshot, StatusSummary } from "./types.ts";
-import { flushChatQueueForEvent } from "./app-chat.ts";
 import {
   applySettings,
   loadCron,
   refreshActiveTab,
   setLastActiveSessionKey,
-  syncUrlWithSessionKey,
 } from "./app-settings.ts";
 import { handleAgentEvent, resetToolStream, type AgentEventPayload } from "./app-tool-stream.ts";
-import { loadAgents } from "./controllers/agents.ts";
+import type { OpenClawApp } from "./app.ts";
+import { shouldReloadHistoryForFinalEvent } from "./chat-event-reload.ts";
+import { loadAgents, loadToolsCatalog } from "./controllers/agents.ts";
 import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
 import {
   loadChatHistory,
@@ -24,6 +23,7 @@ import {
 } from "./controllers/chat.ts";
 import { handleChatEvent, type ChatEventPayload } from "./controllers/chat.ts";
 import { loadDevices } from "./controllers/devices.ts";
+import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import {
   addExecApproval,
   parseExecApprovalRequested,
@@ -32,15 +32,31 @@ import {
 } from "./controllers/exec-approval.ts";
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadSessions } from "./controllers/sessions.ts";
+import {
+  resolveGatewayErrorDetailCode,
+  type GatewayEventFrame,
+  type GatewayHelloOk,
+} from "./gateway.ts";
 import { GatewayBrowserClient } from "./gateway.ts";
+import type { Tab } from "./navigation.ts";
+import type { UiSettings } from "./storage.ts";
+import type {
+  AgentsListResult,
+  PresenceEntry,
+  HealthSnapshot,
+  StatusSummary,
+  UpdateAvailable,
+} from "./types.ts";
 
 type GatewayHost = {
   settings: UiSettings;
   password: string;
+  clientInstanceId: string;
   client: GatewayBrowserClient | null;
   connected: boolean;
   hello: GatewayHelloOk | null;
   lastError: string | null;
+  lastErrorCode: string | null;
   onboarding?: boolean;
   eventLogBuffer: EventLogEntry[];
   eventLog: EventLogEntry[];
@@ -51,6 +67,9 @@ type GatewayHost = {
   agentsLoading: boolean;
   agentsList: AgentsListResult | null;
   agentsError: string | null;
+  toolsCatalogLoading: boolean;
+  toolsCatalogError: string | null;
+  toolsCatalogResult: import("./types.ts").ToolsCatalogResult | null;
   debugHealth: HealthSnapshot | null;
   assistantName: string;
   assistantAvatar: string | null;
@@ -60,6 +79,7 @@ type GatewayHost = {
   refreshSessionsAfterChat: Set<string>;
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalError: string | null;
+  updateAvailable: UpdateAvailable | null;
 };
 
 type SessionDefaultsSnapshot = {
@@ -116,21 +136,27 @@ function applySessionDefaults(host: GatewayHost, defaults?: SessionDefaultsSnaps
 
 export function connectGateway(host: GatewayHost) {
   host.lastError = null;
+  host.lastErrorCode = null;
   host.hello = null;
   host.connected = false;
   host.execApprovalQueue = [];
   host.execApprovalError = null;
 
-  host.client?.stop();
-  host.client = new GatewayBrowserClient({
+  const previousClient = host.client;
+  const client = new GatewayBrowserClient({
     url: host.settings.gatewayUrl,
     token: host.settings.token.trim() ? host.settings.token : undefined,
     password: host.password.trim() ? host.password : undefined,
     clientName: "openclaw-control-ui",
     mode: "webchat",
+    instanceId: host.clientInstanceId,
     onHello: (hello) => {
+      if (host.client !== client) {
+        return;
+      }
       host.connected = true;
       host.lastError = null;
+      host.lastErrorCode = null;
       host.hello = hello;
       applySnapshot(host, hello);
       // Reset orphaned chat run state from before disconnect.
@@ -146,23 +172,48 @@ export function connectGateway(host: GatewayHost) {
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
       void loadAssistantIdentity(host as unknown as OpenClawApp);
       void loadAgents(host as unknown as OpenClawApp);
+      void loadToolsCatalog(host as unknown as OpenClawApp);
       void loadNodes(host as unknown as OpenClawApp, { quiet: true });
       void loadDevices(host as unknown as OpenClawApp, { quiet: true });
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
     },
-    onClose: ({ code, reason }) => {
+    onClose: ({ code, reason, error }) => {
+      if (host.client !== client) {
+        return;
+      }
       host.connected = false;
       // Code 1012 = Service Restart (expected during config saves, don't show as error)
+      host.lastErrorCode =
+        resolveGatewayErrorDetailCode(error) ??
+        (typeof error?.code === "string" ? error.code : null);
       if (code !== 1012) {
+        if (error?.message) {
+          host.lastError = error.message;
+          return;
+        }
         host.lastError = `disconnected (${code}): ${reason || "no reason"}`;
+      } else {
+        host.lastError = null;
+        host.lastErrorCode = null;
       }
     },
-    onEvent: (evt) => handleGatewayEvent(host, evt),
+    onEvent: (evt) => {
+      if (host.client !== client) {
+        return;
+      }
+      handleGatewayEvent(host, evt);
+    },
     onGap: ({ expected, received }) => {
+      if (host.client !== client) {
+        return;
+      }
       host.lastError = `event gap detected (expected seq ${expected}, got ${received}); refresh recommended`;
+      host.lastErrorCode = null;
     },
   });
-  host.client.start();
+  host.client = client;
+  previousClient?.stop();
+  client.start();
 }
 
 export function handleGatewayEvent(host: GatewayHost, evt: GatewayEventFrame) {
@@ -170,6 +221,42 @@ export function handleGatewayEvent(host: GatewayHost, evt: GatewayEventFrame) {
     handleGatewayEventUnsafe(host, evt);
   } catch (err) {
     console.error("[gateway] handleGatewayEvent error:", evt.event, err);
+  }
+}
+
+function handleTerminalChatEvent(
+  host: GatewayHost,
+  payload: ChatEventPayload | undefined,
+  state: ReturnType<typeof handleChatEvent>,
+) {
+  if (state !== "final" && state !== "error" && state !== "aborted") {
+    return;
+  }
+  resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+  void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
+  const runId = payload?.runId;
+  if (!runId || !host.refreshSessionsAfterChat.has(runId)) {
+    return;
+  }
+  host.refreshSessionsAfterChat.delete(runId);
+  if (state === "final") {
+    void loadSessions(host as unknown as OpenClawApp, {
+      activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
+    });
+  }
+}
+
+function handleChatGatewayEvent(host: GatewayHost, payload: ChatEventPayload | undefined) {
+  if (payload?.sessionKey) {
+    setLastActiveSessionKey(
+      host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
+      payload.sessionKey,
+    );
+  }
+  const state = handleChatEvent(host as unknown as OpenClawApp, payload);
+  handleTerminalChatEvent(host, payload, state);
+  if (state === "final" && shouldReloadHistoryForFinalEvent(payload)) {
+    void loadChatHistory(host as unknown as OpenClawApp);
   }
 }
 
@@ -206,86 +293,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   }
 
   if (evt.event === "chat") {
-    const payload = evt.payload as ChatEventPayload | undefined;
-    const runId = payload?.runId;
-    const isNewSessionCommand = runId && host.refreshSessionsAfterChat.has(runId);
-
-    // When /new or /reset command returns with a new sessionKey, switch to it
-    if (payload?.sessionKey) {
-      const currentSessionKey = (host as unknown as OpenClawApp).sessionKey;
-      const newSessionKey = payload.sessionKey;
-
-      // Update last active session key in settings
-      setLastActiveSessionKey(
-        host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
-        newSessionKey,
-      );
-
-      // If this is a new session command and sessionKey changed, update UI state
-      if (isNewSessionCommand && newSessionKey !== currentSessionKey) {
-        (host as unknown as OpenClawApp).sessionKey = newSessionKey;
-        // Sync URL with new session key
-        syncUrlWithSessionKey(
-          host as unknown as Parameters<typeof syncUrlWithSessionKey>[0],
-          newSessionKey,
-          false,
-        );
-      }
-    }
-    const state = handleChatEvent(host as unknown as OpenClawApp, payload);
-
-    if (state === "final" || state === "final-other" || state === "error" || state === "aborted") {
-      // Don't reset tool stream immediately - keep showing tool cards
-      // until history loads. resetToolStream will be called after loadChatHistory.
-      if (state !== "final-other") {
-        void flushChatQueueForEvent(
-          host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
-        );
-      }
-      if (isNewSessionCommand) {
-        host.refreshSessionsAfterChat.delete(runId);
-      }
-      // Refresh sessions list when:
-      // 1. Command triggered refresh (e.g., /new, /reset)
-      // 2. Current session is not in the sessions list (new session was created)
-      if (state === "final" || state === "final-other") {
-        const sessions = (host as unknown as OpenClawApp).sessionsResult?.sessions ?? [];
-        const currentSessionKey = (host as unknown as OpenClawApp).sessionKey;
-        const sessionExists = sessions.some((s) => s.key === currentSessionKey);
-        if (isNewSessionCommand || !sessionExists) {
-          void loadSessions(host as unknown as OpenClawApp);
-        }
-      }
-    }
-    // "final-other" = sub-agent/other run completed; only refresh history, keep
-    // the active run's stream state (chatRunId/chatStream) intact so the Stop
-    // button stays visible while the user's own run is still streaming.
-    if (state === "final-other") {
-      void loadChatHistory(host as unknown as OpenClawApp);
-      return;
-    }
-    if (state === "final") {
-      // Load chat history and clear stream state after history is loaded
-      // This prevents the UI gap between stream clearing and history loading
-      loadChatHistory(host as unknown as OpenClawApp)
-        .then(() => {
-          // Clear stream state after history is loaded and messages are updated
-          (host as unknown as OpenClawApp).chatStream = null;
-          (host as unknown as OpenClawApp).chatStreamSegments = null;
-          (host as unknown as OpenClawApp).chatStreamStartedAt = null;
-          (host as unknown as OpenClawApp).chatRunId = null;
-          // Reset tool stream after history is loaded
-          resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
-        })
-        .catch(() => {
-          // If history load fails, still clear stream to prevent stuck state
-          (host as unknown as OpenClawApp).chatStream = null;
-          (host as unknown as OpenClawApp).chatStreamSegments = null;
-          (host as unknown as OpenClawApp).chatStreamStartedAt = null;
-          (host as unknown as OpenClawApp).chatRunId = null;
-          resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
-        });
-    }
+    handleChatGatewayEvent(host, evt.payload as ChatEventPayload | undefined);
     return;
   }
 
@@ -325,6 +333,12 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     if (resolved) {
       host.execApprovalQueue = removeExecApproval(host.execApprovalQueue, resolved.id);
     }
+    return;
+  }
+
+  if (evt.event === GATEWAY_EVENT_UPDATE_AVAILABLE) {
+    const payload = evt.payload as GatewayUpdateAvailableEventPayload | undefined;
+    host.updateAvailable = payload?.updateAvailable ?? null;
   }
 }
 
@@ -334,6 +348,7 @@ export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
         presence?: PresenceEntry[];
         health?: HealthSnapshot;
         sessionDefaults?: SessionDefaultsSnapshot;
+        updateAvailable?: UpdateAvailable;
       }
     | undefined;
   if (snapshot?.presence && Array.isArray(snapshot.presence)) {
@@ -345,4 +360,5 @@ export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
   if (snapshot?.sessionDefaults) {
     applySessionDefaults(host, snapshot.sessionDefaults);
   }
+  host.updateAvailable = snapshot?.updateAvailable ?? null;
 }
