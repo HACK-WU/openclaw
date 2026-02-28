@@ -1,6 +1,5 @@
 import { LitElement } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { i18n, I18nController, isSupportedLocale } from "../i18n/index.ts";
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
   handleChannelConfigSave as handleChannelConfigSaveInternal,
@@ -60,6 +59,7 @@ import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exe
 import { loadSessions } from "./controllers/sessions.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
+import { i18n, I18nController, isSupportedLocale } from "./i18n/index.ts";
 import { initLocale, setLocale as setLocaleInternal, type LocaleCode } from "./i18n/index.ts";
 import type { Tab } from "./navigation.ts";
 import { loadSettings, type UiSettings } from "./storage.ts";
@@ -121,7 +121,7 @@ export class OpenClawApp extends LitElement {
   constructor() {
     super();
     if (isSupportedLocale(this.settings.locale)) {
-      void i18n.setLocale(this.settings.locale);
+      i18n.setLocale(this.settings.locale);
     }
   }
   @state() password = "";

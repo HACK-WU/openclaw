@@ -1,6 +1,5 @@
 import { html, nothing } from "lit";
 import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
-import { t } from "../i18n/index.ts";
 import { refreshChatAvatar, switchSession } from "./app-chat.ts";
 import { renderUsageTab } from "./app-render-usage-tab.ts";
 import {
@@ -74,6 +73,7 @@ import {
   updateSkillFileContent,
 } from "./controllers/skills.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "./external-link.ts";
+import { t } from "./i18n/index.ts";
 import { icons } from "./icons.ts";
 import { normalizeBasePath, getTabGroups, subtitleForTab, titleForTab } from "./navigation.ts";
 import { renderAgents } from "./views/agents.ts";

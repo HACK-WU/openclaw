@@ -6,6 +6,7 @@
  *   t('nav.skills')  // => "Skills" or "技能"
  */
 
+import type { ReactiveController, ReactiveControllerHost } from "lit";
 import { en } from "./locales/en.ts";
 import { zhCN } from "./locales/zh-CN.ts";
 
@@ -19,6 +20,57 @@ const locales: Record<LocaleCode, Record<string, string>> = {
 };
 
 let currentLocale: LocaleCode = "en";
+
+// Subscribers for locale changes
+const subscribers: Set<(locale: LocaleCode) => void> = new Set();
+
+/**
+ * Check if a locale is supported
+ */
+export function isSupportedLocale(value: string | null | undefined): value is LocaleCode {
+  return value !== null && value !== undefined && value in locales;
+}
+
+/**
+ * I18n manager object for backward compatibility
+ */
+export const i18n = {
+  getLocale(): LocaleCode {
+    return currentLocale;
+  },
+  setLocale(locale: LocaleCode): void {
+    setLocale(locale);
+    // Notify subscribers
+    subscribers.forEach((sub) => sub(locale));
+  },
+  subscribe(callback: (locale: LocaleCode) => void): () => void {
+    subscribers.add(callback);
+    return () => subscribers.delete(callback);
+  },
+};
+
+/**
+ * Lit controller for reactive i18n updates
+ */
+export class I18nController implements ReactiveController {
+  private host: ReactiveControllerHost;
+  private unsubscribe?: () => void;
+
+  constructor(host: ReactiveControllerHost) {
+    this.host = host;
+    this.host.addController(this);
+  }
+
+  hostConnected() {
+    this.unsubscribe = i18n.subscribe(() => {
+      this.host.requestUpdate();
+    });
+  }
+
+  hostDisconnected() {
+    this.unsubscribe?.();
+  }
+}
 
 /**
  * Check if running in browser environment
