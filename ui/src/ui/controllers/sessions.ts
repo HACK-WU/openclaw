@@ -26,6 +26,7 @@ export type SessionsState = {
  *   - limit: 返回结果数量限制，0表示不限制
  *   - includeGlobal: 是否包含全局会话
  *   - includeUnknown: 是否包含未知类型的会话
+ * @returns 返回一个对象，包含 isEmpty 字段表示会话列表是否为空
  *
  * 工作流程：
  * 1. 检查前置条件（客户端连接、加载状态）
@@ -34,6 +35,7 @@ export type SessionsState = {
  * 4. 调用后端API获取会话列表
  * 5. 更新应用状态或记录错误信息
  * 6. 重置加载状态
+ * 7. 返回会话列表是否为空
  *
  * 使用场景：
  * - 应用初始化时加载会话列表
@@ -49,16 +51,16 @@ export async function loadSessions(
     includeGlobal?: boolean;
     includeUnknown?: boolean;
   },
-) {
+): Promise<{ isEmpty: boolean }> {
   // 前置条件检查1：确保客户端对象已初始化
   if (!state.client || !state.connected) {
-    return;
+    return { isEmpty: true };
   }
 
   // 前置条件检查2：防止重复加载
   // 如果已经有加载任务在进行中，直接返回，避免并发请求导致的状态混乱
   if (state.sessionsLoading) {
-    return;
+    return { isEmpty: (state.sessionsResult?.sessions ?? []).length === 0 };
   }
 
   // 设置加载状态
@@ -112,6 +114,7 @@ export async function loadSessions(
     // 这会触发UI的重新渲染，显示新的会话列表
     if (res) {
       state.sessionsResult = res;
+      return { isEmpty: res.sessions.length === 0 };
     }
   } catch (err) {
     // 捕获并处理加载过程中的错误
@@ -123,6 +126,8 @@ export async function loadSessions(
     // 这样新的加载请求才能被执行
     state.sessionsLoading = false;
   }
+
+  return { isEmpty: (state.sessionsResult?.sessions ?? []).length === 0 };
 }
 
 export async function patchSession(

@@ -111,6 +111,12 @@ export const zh_CN: TranslationMap = {
     thinkingToggle: "切换助手思考/工作输出",
     focusToggle: "切换专注模式 (隐藏侧边栏 + 页面页眉)",
     onboardingDisabled: "引导期间禁用",
+    sidebar: {
+      offline: "离线",
+      loading: "加载中...",
+      noSessions: "未找到会话。",
+      moreCount: "还有 {count} 个",
+    },
   },
   languages: {
     en: "English",

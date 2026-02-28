@@ -112,6 +112,12 @@ export const en: TranslationMap = {
     thinkingToggle: "Toggle assistant thinking/working output",
     focusToggle: "Toggle focus mode (hide sidebar + page header)",
     onboardingDisabled: "Disabled during onboarding",
+    sidebar: {
+      offline: "Offline",
+      loading: "Loading...",
+      noSessions: "No sessions found.",
+      moreCount: "{count} more",
+    },
   },
   languages: {
     en: "English",

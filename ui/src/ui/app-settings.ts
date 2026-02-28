@@ -59,6 +59,19 @@ type SettingsHost = {
   themeMedia: MediaQueryList | null;
   themeMediaHandler: ((event: MediaQueryListEvent) => void) | null;
   pendingGatewayUrl?: string | null;
+  // Session-related fields for ensureDefaultSession
+  sessionsResult?: import("./types.ts").SessionsListResult | null;
+  chatStream?: string | null;
+  chatStreamSegments?: string[] | null;
+  chatStreamStartedAt?: number | null;
+  chatRunId?: string | null;
+  chatQueue?: unknown[];
+  chatSending?: boolean;
+  chatMessage?: string;
+  chatAttachments?: unknown[];
+  lastError?: string | null;
+  chatMessages?: unknown[];
+  chatToolMessages?: unknown[];
 };
 
 export function applySettings(host: SettingsHost, next: UiSettings) {
@@ -413,11 +426,77 @@ export function syncUrlWithSessionKey(host: SettingsHost, sessionKey: string, re
   }
 }
 
+/**
+ * Ensure a default session exists when the sessions list is empty.
+ * Creates a new session with a unique key and updates the application state.
+ */
+function ensureDefaultSession(host: SettingsHost): void {
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 8);
+  const newSessionKey = `agent:main:${timestamp}-${randomSuffix}`;
+
+  const newSession = {
+    key: newSessionKey,
+    kind: "direct" as const,
+    label: "",
+    updatedAt: timestamp,
+  };
+
+  // Create or update sessionsResult
+  if (host.sessionsResult) {
+    host.sessionsResult = {
+      ...host.sessionsResult,
+      sessions: [newSession],
+    };
+  } else {
+    host.sessionsResult = {
+      ts: timestamp,
+      path: "",
+      count: 1,
+      defaults: { model: null, contextTokens: null },
+      sessions: [newSession],
+    };
+  }
+
+  // Update session key and related state
+  host.sessionKey = newSessionKey;
+  host.chatStream = null;
+  host.chatStreamSegments = null;
+  host.chatStreamStartedAt = null;
+  host.chatRunId = null;
+  host.chatQueue = [];
+  host.chatSending = false;
+  host.chatMessage = "";
+  host.chatAttachments = [];
+  host.lastError = null;
+  host.chatMessages = [];
+  host.chatToolMessages = [];
+
+  // Update last active session key in settings
+  applySettings(host, {
+    ...host.settings,
+    lastActiveSessionKey: newSessionKey,
+  });
+
+  // Update URL to reflect the new session
+  const url = new URL(window.location.href);
+  url.searchParams.set("session", newSessionKey);
+  window.history.replaceState({}, "", url.toString());
+}
+
 export async function loadOverview(host: SettingsHost) {
+  // Load sessions first and check if the list is empty
+  const { isEmpty } = await loadSessions(host as unknown as OpenClawApp);
+
+  // If no sessions exist, create a default one
+  if (isEmpty) {
+    ensureDefaultSession(host);
+  }
+
+  // Load other overview data in parallel
   await Promise.all([
     loadChannels(host as unknown as OpenClawApp, false),
     loadPresence(host as unknown as OpenClawApp),
-    loadSessions(host as unknown as OpenClawApp),
     loadCronStatus(host as unknown as OpenClawApp),
     loadDebug(host as unknown as OpenClawApp),
   ]);
