@@ -147,11 +147,12 @@ export function setLocale(locale: LocaleCode): void {
  * Get all available locales
  */
 export function getAvailableLocales(): { code: LocaleCode; name: string }[] {
+  const translations = locales[currentLocale] || locales.en;
   return [
-    { code: "en", name: "English" },
-    { code: "zh-CN", name: "简体中文" },
-    { code: "zh-TW", name: "繁體中文" },
-    { code: "pt-BR", name: "Português" },
+    { code: "en", name: translations["language.en"] ?? "English" },
+    { code: "zh-CN", name: translations["language.zhCN"] ?? "简体中文" },
+    { code: "zh-TW", name: translations["language.zhTW"] ?? "繁體中文" },
+    { code: "pt-BR", name: translations["language.ptBR"] ?? "Português" },
   ];
 }
 
