@@ -235,9 +235,9 @@ export const zhTW: Record<string, string> = {
 
   // Languages (for backward compatibility)
   "languages.en": "English",
-  "languages.zhCN": "簡體中文 (简体中文)",
-  "languages.zhTW": "繁體中文 (繁體中文)",
-  "languages.ptBR": "Português (巴西葡萄牙語)",
+  "languages.zhCN": "简体中文",
+  "languages.zhTW": "繁體中文",
+  "languages.ptBR": "Português",
 
   // Errors
   "error.notFound": "未找到",

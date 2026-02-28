@@ -238,9 +238,9 @@ export const en: Record<string, string> = {
 
   // Languages (for backward compatibility)
   "languages.en": "English",
-  "languages.zhCN": "Simplified Chinese (简体中文)",
-  "languages.zhTW": "Traditional Chinese (繁體中文)",
-  "languages.ptBR": "Portuguese (Português)",
+  "languages.zhCN": "简体中文",
+  "languages.zhTW": "繁體中文",
+  "languages.ptBR": "Português",
 
   // Errors
   "error.notFound": "Not found",
