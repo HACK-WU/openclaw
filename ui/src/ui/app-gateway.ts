@@ -232,7 +232,8 @@ function handleTerminalChatEvent(
   if (state !== "final" && state !== "error" && state !== "aborted") {
     return;
   }
-  resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+  // Note: Don't reset tool stream here - tool cards should remain visible
+  // after conversation completes. resetToolStream is only for starting new conversations.
   void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
   const runId = payload?.runId;
   if (!runId || !host.refreshSessionsAfterChat.has(runId)) {
