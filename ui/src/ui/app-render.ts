@@ -335,7 +335,7 @@ export function renderApp(state: AppViewState) {
                 }}
                 aria-expanded=${!isGroupCollapsed}
               >
-                <span class="nav-label__text">${t(`nav.${group.label}`)}</span>
+                <span class="nav-label__text">${group.label}</span>
                 <span class="nav-label__chevron">${isGroupCollapsed ? "+" : "−"}</span>
               </button>
               <!-- 分组内的标签页列表 -->
