@@ -64,23 +64,17 @@ function syncSidebarWithLatestPty(host: LifecycleHost) {
     return;
   }
 
-  // Merge all PTY cards to get the latest complete output
-  let mergedText = "";
-  for (const card of ptyCards) {
-    if (card.text && card.text.trim()) {
-      mergedText = card.text;
-    }
-  }
+  // Get the last PTY card's text (full content from backend)
+  const lastPtyCard = ptyCards[ptyCards.length - 1];
+  const mergedText = lastPtyCard.text ?? "";
 
   if (!mergedText) {
     return;
   }
 
-  // Only update if content has actually changed (prevent infinite loop)
-  const newContent = PTY_SIDEBAR_PREFIX + mergedText;
-  if (host.sidebarContent !== newContent) {
-    host.sidebarContent = newContent;
-  }
+  // Always update sidebar content with the latest PTY output
+  // Backend sends complete TUI snapshot each time, frontend just overwrites
+  host.sidebarContent = PTY_SIDEBAR_PREFIX + mergedText;
 }
 
 type LifecycleHost = {
