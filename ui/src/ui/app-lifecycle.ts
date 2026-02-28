@@ -16,7 +16,7 @@ import {
   syncTabWithLocation,
   syncThemeWithSettings,
 } from "./app-settings.ts";
-import { PTY_SIDEBAR_PREFIX, extractToolCards, classifyToolCards } from "./chat/tool-cards.ts";
+import { PTY_SIDEBAR_PREFIX, extractToolCards } from "./chat/tool-cards.ts";
 import { checkChatStreamTimeout, loadChatHistory } from "./controllers/chat.ts";
 import { loadControlUiBootstrapConfig } from "./controllers/control-ui-bootstrap.ts";
 import { loadSessions } from "./controllers/sessions.ts";
@@ -57,24 +57,26 @@ function syncSidebarWithLatestPty(host: LifecycleHost) {
     return;
   }
 
-  const classified = classifyToolCards(allCards);
-  const ptyCards = classified.ptyTerminals;
+  // Find the last PTY card from allCards (search from end for efficiency)
+  let lastPtyCard: ToolCard | null = null;
+  for (let i = allCards.length - 1; i >= 0; i--) {
+    if (allCards[i].isPty) {
+      lastPtyCard = allCards[i];
+      break;
+    }
+  }
 
-  if (ptyCards.length === 0) {
+  if (!lastPtyCard) {
     return;
   }
 
-  // Get the last PTY card's text (full content from backend)
-  const lastPtyCard = ptyCards[ptyCards.length - 1];
   const mergedText = lastPtyCard.text ?? "";
 
-  if (!mergedText) {
-    return;
+  // Only update if there's new content - preserve existing content when session ends
+  // This ensures terminal output remains visible after the session completes
+  if (mergedText) {
+    host.sidebarContent = PTY_SIDEBAR_PREFIX + mergedText;
   }
-
-  // Always update sidebar content with the latest PTY output
-  // Backend sends complete TUI snapshot each time, frontend just overwrites
-  host.sidebarContent = PTY_SIDEBAR_PREFIX + mergedText;
 }
 
 type LifecycleHost = {

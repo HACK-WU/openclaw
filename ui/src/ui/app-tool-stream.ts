@@ -209,7 +209,9 @@ function buildToolStreamMessage(entry: ToolStreamEntry): Record<string, unknown>
         }
       : (entry.args ?? {}),
   });
-  if (entry.output) {
+  // Always include toolresult if output is defined (even if empty string)
+  // This ensures PTY terminal updates are properly tracked
+  if (entry.output !== undefined) {
     content.push({
       type: "toolresult",
       name: entry.name,
@@ -456,12 +458,14 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
         ? formatToolOutput(data.result)
         : undefined;
   // Prefer early PTY detection from start args so heartbeat keep-alive works during updates.
+  // For update phase, preserve existing isPty value from entry if available.
+  const existingEntry = host.toolStreamById.get(toolCallId);
   const isPty =
     phase === "start"
       ? extractPtyFromArgs(data.args)
       : phase === "result"
         ? extractPtyFromResult(data.result)
-        : undefined;
+        : existingEntry?.isPty;
 
   const now = Date.now();
   let entry = host.toolStreamById.get(toolCallId);
@@ -486,7 +490,7 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       entry.args = args;
     }
     if (output !== undefined) {
-      entry.output = output || undefined;
+      entry.output = output;
     }
     if (isPty !== undefined) {
       entry.isPty = isPty;

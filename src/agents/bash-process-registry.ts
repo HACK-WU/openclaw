@@ -205,7 +205,11 @@ export function appendOutput(
 
   // write() is async — update aggregated with rendered content in the callback
   session.headlessTerminal.write(chunk, () => {
-    let rendered = readHeadlessContent(session.headlessTerminal!);
+    // Check if headlessTerminal still exists (may have been destroyed during cleanup)
+    if (!session.headlessTerminal) {
+      return;
+    }
+    let rendered = readHeadlessContent(session.headlessTerminal);
     // Apply maxOutputChars truncation (headless scrollback is line-based,
     // but we also need character-based limits for consistency)
     if (!session.isPty) {
