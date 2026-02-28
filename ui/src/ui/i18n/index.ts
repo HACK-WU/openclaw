@@ -9,14 +9,17 @@
 import type { ReactiveController, ReactiveControllerHost } from "lit";
 import { en } from "./locales/en.ts";
 import { zhCN } from "./locales/zh-CN.ts";
+import { zhTW } from "./locales/zh-TW.ts";
 
-export type LocaleCode = "en" | "zh-CN";
+export type LocaleCode = "en" | "zh-CN" | "zh-TW" | "pt-BR";
 
 export type TranslationKey = keyof typeof en;
 
 const locales: Record<LocaleCode, Record<string, string>> = {
   en,
   "zh-CN": zhCN,
+  "zh-TW": zhTW,
+  "pt-BR": en, // Fallback to English for now
 };
 
 let currentLocale: LocaleCode = "en";
@@ -91,8 +94,14 @@ export function detectLocale(): LocaleCode {
     navigator.language || (navigator as { userLanguage?: string }).userLanguage || "en";
   const lang = browserLang.toLowerCase();
 
+  if (lang === "zh-tw" || lang === "zh-hk") {
+    return "zh-TW";
+  }
   if (lang.startsWith("zh")) {
     return "zh-CN";
+  }
+  if (lang.startsWith("pt")) {
+    return "pt-BR";
   }
 
   return "en";
@@ -141,6 +150,8 @@ export function getAvailableLocales(): { code: LocaleCode; name: string }[] {
   return [
     { code: "en", name: "English" },
     { code: "zh-CN", name: "简体中文" },
+    { code: "zh-TW", name: "繁體中文" },
+    { code: "pt-BR", name: "Português" },
   ];
 }
 
