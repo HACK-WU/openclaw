@@ -368,9 +368,7 @@ export function createAgentEventHandler({
         },
         segments,
       };
-      if (!shouldSuppressHeartbeatBroadcast(clientRunId)) {
-        broadcast("chat", payload, { dropIfSlow: true });
-      }
+      broadcast("chat", payload, { dropIfSlow: true });
       nodeSendToSession(sessionKey, "chat", payload);
       chatRunState.deltaSentAt.set(clientRunId, Date.now());
       return;
@@ -410,9 +408,7 @@ export function createAgentEventHandler({
             },
             segments: latestSegments,
           };
-          if (!shouldSuppressHeartbeatBroadcast(clientRunId)) {
-            broadcast("chat", trailingPayload, { dropIfSlow: true });
-          }
+          broadcast("chat", trailingPayload, { dropIfSlow: true });
           nodeSendToSession(sessionKey, "chat", trailingPayload);
         }, delay);
         chatRunState.trailingTimers.set(clientRunId, timer);
