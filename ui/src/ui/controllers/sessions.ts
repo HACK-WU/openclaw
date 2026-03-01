@@ -171,7 +171,7 @@ export async function deleteSession(state: SessionsState, key: string): Promise<
   if (state.sessionsLoading) {
     return false;
   }
-  const confirmed = window.confirm(
+  const confirmed = confirm(
     `Delete session "${key}"?\n\nDeletes the session entry and archives its transcript.`,
   );
   if (!confirmed) {

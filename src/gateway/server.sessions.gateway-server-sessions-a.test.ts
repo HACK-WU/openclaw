@@ -1188,7 +1188,7 @@ describe("gateway server sessions", () => {
     ws.close();
   });
 
-  test("webchat clients cannot patch or delete sessions", async () => {
+  test("webchat clients cannot patch sessions but can delete sessions", async () => {
     await createSessionStoreDir();
 
     await writeSessionStore({
@@ -1219,6 +1219,7 @@ describe("gateway server sessions", () => {
       scopes: ["operator.admin"],
     });
 
+    // webchat 客户端不能 patch 会话
     const patched = await rpcReq(ws, "sessions.patch", {
       key: "agent:main:discord:group:dev",
       label: "should-fail",
@@ -1226,11 +1227,11 @@ describe("gateway server sessions", () => {
     expect(patched.ok).toBe(false);
     expect(patched.error?.message ?? "").toMatch(/webchat clients cannot patch sessions/i);
 
+    // webchat 客户端可以 delete 会话
     const deleted = await rpcReq(ws, "sessions.delete", {
       key: "agent:main:discord:group:dev",
     });
-    expect(deleted.ok).toBe(false);
-    expect(deleted.error?.message ?? "").toMatch(/webchat clients cannot delete sessions/i);
+    expect(deleted.ok).toBe(true);
 
     ws.close();
   });

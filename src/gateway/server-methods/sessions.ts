@@ -9,6 +9,7 @@ import { clearSessionQueues } from "../../auto-reply/reply/queue.js";
 import { loadConfig } from "../../config/config.js";
 import {
   loadSessionStore,
+  resolveMainSessionKey,
   snapshotSessionOrigin,
   type SessionEntry,
   updateSessionStore,
@@ -83,6 +84,10 @@ function rejectWebchatSessionMutation(params: {
   respond: RespondFn;
 }): boolean {
   if (!params.client?.connect || !params.isWebchatConnect(params.client.connect)) {
+    return false;
+  }
+  // 只允许 webchat 客户端执行 delete 操作，patch 操作仍然禁止
+  if (params.action === "delete") {
     return false;
   }
   params.respond(

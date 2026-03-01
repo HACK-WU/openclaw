@@ -20,6 +20,7 @@ function createState(request: RequestFn, overrides: Partial<SessionsState> = {})
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("deleteSessionAndRefresh", () => {
@@ -34,7 +35,10 @@ describe("deleteSessionAndRefresh", () => {
       throw new Error(`unexpected method: ${method}`);
     });
     const state = createState(request);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
 
     const deleted = await deleteSessionAndRefresh(state, "agent:main:test");
 
@@ -55,7 +59,10 @@ describe("deleteSessionAndRefresh", () => {
   it("does not refresh sessions when user cancels delete", async () => {
     const request = vi.fn(async () => undefined);
     const state = createState(request, { sessionsError: "existing error" });
-    vi.spyOn(window, "confirm").mockReturnValue(false);
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => false),
+    );
 
     const deleted = await deleteSessionAndRefresh(state, "agent:main:test");
 
@@ -76,7 +83,10 @@ describe("deleteSessionAndRefresh", () => {
       throw new Error(`unexpected method: ${method}`);
     });
     const state = createState(request);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
 
     const deleted = await deleteSessionAndRefresh(state, "agent:main:test");
 
