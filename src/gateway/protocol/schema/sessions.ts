@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 import { NonEmptyString, SessionLabelString } from "./primitives.js";
 
 export const SessionsListParamsSchema = Type.Object(
@@ -129,3 +129,24 @@ export const SessionsUsageParamsSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+export const SessionsTitleParamsSchema = Type.Object(
+  {
+    key: NonEmptyString,
+    /** Maximum length of the generated title (default 10). */
+    maxLength: Type.Optional(Type.Integer({ minimum: 5, maximum: 30, default: 10 })),
+  },
+  { additionalProperties: false },
+);
+
+export const SessionsTitleResultSchema = Type.Object(
+  {
+    ok: Type.Literal(true),
+    title: SessionLabelString,
+    key: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
+
+export type SessionsTitleParams = Static<typeof SessionsTitleParamsSchema>;
+export type SessionsTitleResult = Static<typeof SessionsTitleResultSchema>;

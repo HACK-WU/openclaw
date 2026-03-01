@@ -1,7 +1,7 @@
 import { html } from "lit";
-import type { SessionsListResult } from "../types.ts";
 import { t } from "../i18n/index.ts";
 import { icons } from "../icons.ts";
+import type { SessionsListResult } from "../types.ts";
 
 export type ChatSessionsSidebarProps = {
   open: boolean;

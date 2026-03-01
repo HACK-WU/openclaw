@@ -199,6 +199,74 @@
   stroke-linejoin: round;
 }
 
+/* Action buttons container */
+.nav-sessions__item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* Generate title button */
+.nav-sessions__item-generate-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  opacity: 0.6;
+  transition:
+    opacity var(--duration-fast) ease,
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+  flex-shrink: 0;
+}
+
+.nav-sessions__item:hover .nav-sessions__item-generate-title {
+  opacity: 0.8;
+  background: var(--bg-hover);
+}
+
+.nav-sessions__item-generate-title:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+  color: var(--accent-primary);
+}
+
+.nav-sessions__item-generate-title:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.nav-sessions__item-generate-title:disabled svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.nav-sessions__item-generate-title svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* Hide nav sessions when sidebar is collapsed */
 .nav--collapsed .nav-sessions {
   display: none;

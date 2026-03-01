@@ -5,6 +5,7 @@ import { syncUrlWithSessionKey } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { OpenClawApp } from "./app.ts";
 import { ChatState, loadChatHistory } from "./controllers/chat.ts";
+import { generateSessionTitle } from "./controllers/sessions.ts";
 import { formatRelativeTimestamp } from "./format.ts";
 import { getAvailableLocales, type LocaleCode } from "./i18n/index.ts";
 import { t } from "./i18n/index.ts";
@@ -604,9 +605,11 @@ export function renderNavSessionsList(state: AppViewState) {
 function renderNavSessionItem(
   session: GatewaySessionRow,
   currentSessionKey: string,
-  state: AppViewState,
+  state: AppViewState & { sessionsGeneratingTitle?: Set<string> },
   totalSessions: number,
 ) {
+  // 检查是否正在生成标题
+  const isGeneratingTitle = state.sessionsGeneratingTitle?.has(session.key) ?? false;
   // 判断当前会话是否处于激活状态
   const isActive = session.key === currentSessionKey;
 
@@ -663,43 +666,75 @@ function renderNavSessionItem(
         </div>
       </div>
 
-      <!-- 删除按钮区域 -->
-      ${
-        // 当会话总数大于 1 时才显示删除按钮，避免删除最后一个会话
-        totalSessions <= 1
-          ? nothing
-          : html`
-            <!-- 删除按钮 -->
-            <button
-              class="nav-sessions__item-delete"
-              @click=${(e: Event) => {
-                // 阻止事件冒泡，避免触发会话切换点击事件
-                e.stopPropagation();
+      <!-- 操作按钮区域 -->
+      <div class="nav-sessions__item-actions">
+        <!-- 生成标题按钮 -->
+        <button
+          class="nav-sessions__item-generate-title"
+          ?disabled=${isGeneratingTitle}
+          @click=${(e: Event) => {
+            // 阻止事件冒泡，避免触发会话切换点击事件
+            e.stopPropagation();
 
-                // 未连接状态下不允许删除会话
-                if (!state.connected) {
-                  return;
-                }
+            // 未连接状态下不允许生成标题
+            if (!state.connected) {
+              return;
+            }
 
-                // 打开删除确认对话框
-                const app = state as unknown as {
-                  deleteSessionDialog: DeleteSessionDialogState | null;
-                };
-                app.deleteSessionDialog = {
-                  sessionKey: session.key, // 要删除的会话键
-                  sessionName: displayName, // 要删除的会话名称（用于显示）
-                  isDeleting: false, // 删除操作状态
-                  error: null, // 错误信息
-                };
-              }}
-              title="${t("chat.sidebar.deleteSession")}"
-              aria-label="${t("chat.sidebar.deleteSession")}"
-            >
-              <!-- 删除图标（垃圾桶图标） -->
-              ${icons.trash}
-            </button>
-          `
-      }
+            // 如果正在生成中，不重复调用
+            if (isGeneratingTitle) {
+              return;
+            }
+
+            // 调用生成标题函数
+            void generateSessionTitle(
+              state as unknown as Parameters<typeof generateSessionTitle>[0],
+              session.key,
+            );
+          }}
+          .title=${isGeneratingTitle ? "正在生成标题..." : "生成标题"}
+          aria-label=${isGeneratingTitle ? "正在生成标题" : "生成标题"}
+        >
+          ${isGeneratingTitle ? icons.loader : icons.penLine}
+        </button>
+
+        ${
+          // 当会话总数大于 1 时才显示删除按钮，避免删除最后一个会话
+          totalSessions <= 1
+            ? nothing
+            : html`
+              <!-- 删除按钮 -->
+              <button
+                class="nav-sessions__item-delete"
+                @click=${(e: Event) => {
+                  // 阻止事件冒泡，避免触发会话切换点击事件
+                  e.stopPropagation();
+
+                  // 未连接状态下不允许删除会话
+                  if (!state.connected) {
+                    return;
+                  }
+
+                  // 打开删除确认对话框
+                  const app = state as unknown as {
+                    deleteSessionDialog: DeleteSessionDialogState | null;
+                  };
+                  app.deleteSessionDialog = {
+                    sessionKey: session.key, // 要删除的会话键
+                    sessionName: displayName, // 要删除的会话名称（用于显示）
+                    isDeleting: false, // 删除操作状态
+                    error: null, // 错误信息
+                  };
+                }}
+                title="${t("chat.sidebar.deleteSession")}"
+                aria-label="${t("chat.sidebar.deleteSession")}"
+              >
+                <!-- 删除图标（垃圾桶图标） -->
+                ${icons.trash}
+              </button>
+            `
+        }
+      </div>
     </li>
   `;
 }

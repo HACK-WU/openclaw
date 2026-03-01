@@ -33,7 +33,9 @@ import {
   validateSessionsPreviewParams,
   validateSessionsResetParams,
   validateSessionsResolveParams,
+  validateSessionsTitleParams,
 } from "../protocol/index.js";
+import { generateSessionTitle } from "../session-title-generator.js";
 import {
   archiveFileOnDisk,
   archiveSessionTranscripts,
@@ -689,5 +691,60 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       },
       undefined,
     );
+  },
+  "sessions.title": async ({ params, respond }) => {
+    if (!assertValidParams(params, validateSessionsTitleParams, "sessions.title", respond)) {
+      return;
+    }
+    const p = params;
+    const key = requireSessionKey(p.key, respond);
+    if (!key) {
+      return;
+    }
+
+    const { cfg, target, storePath } = resolveGatewaySessionTargetFromKey(key);
+    const { entry } = loadSessionEntry(key);
+
+    if (!entry?.sessionId) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "Session has no sessionId"));
+      return;
+    }
+
+    const parsedAgent = parseAgentSessionKey(target.canonicalKey ?? key);
+    const agentId = normalizeAgentId(parsedAgent?.agentId ?? resolveDefaultAgentId(cfg));
+
+    // Generate title using AI
+    const result = await generateSessionTitle({
+      sessionId: entry.sessionId,
+      storePath,
+      sessionFile: entry.sessionFile,
+      agentId,
+      maxLength: p.maxLength,
+      cfg,
+    });
+
+    if (!result.ok) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, result.error));
+      return;
+    }
+
+    // Update session label with generated title
+    const applied = await updateSessionStore(storePath, async (store) => {
+      const { primaryKey } = migrateAndPruneSessionStoreKey({ cfg, key, store });
+      const existing = store[primaryKey];
+      if (!existing) {
+        return null;
+      }
+      existing.label = result.title;
+      existing.updatedAt = Date.now();
+      return existing;
+    });
+
+    if (!applied) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "Session not found"));
+      return;
+    }
+
+    respond(true, { ok: true, title: result.title, key: target.canonicalKey }, undefined);
   },
 };

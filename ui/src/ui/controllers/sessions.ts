@@ -198,3 +198,54 @@ export async function deleteSessionAndRefresh(state: SessionsState, key: string)
   await loadSessions(state);
   return true;
 }
+
+/**
+ * 为会话生成 AI 标题
+ *
+ * 调用后端 AI 根据对话内容生成概括性标题，并更新会话的 label。
+ *
+ * @param state - 应用状态对象
+ * @param key - 会话键
+ * @param maxLength - 标题最大长度（默认 10）
+ * @returns 生成的标题，失败返回 null
+ */
+export async function generateSessionTitle(
+  state: SessionsState & { sessionsGeneratingTitle?: Set<string> },
+  key: string,
+  maxLength?: number,
+): Promise<string | null> {
+  if (!state.client || !state.connected) {
+    return null;
+  }
+
+  // 检查是否已经在生成中
+  if (state.sessionsGeneratingTitle?.has(key)) {
+    return null;
+  }
+
+  // 添加到生成中集合
+  state.sessionsGeneratingTitle?.add(key);
+
+  try {
+    const result = await state.client.request<{ ok: true; title: string; key: string }>(
+      "sessions.title",
+      {
+        key,
+        maxLength: maxLength ?? 10,
+      },
+    );
+
+    if (result?.ok) {
+      // 刷新会话列表以显示新标题
+      await loadSessions(state);
+      return result.title;
+    }
+    return null;
+  } catch (err) {
+    state.sessionsError = String(err);
+    return null;
+  } finally {
+    // 从生成中集合移除
+    state.sessionsGeneratingTitle?.delete(key);
+  }
+}

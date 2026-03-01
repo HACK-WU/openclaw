@@ -163,6 +163,7 @@ export type AppViewState = {
   sessionsLoading: boolean;
   sessionsResult: SessionsListResult | null;
   sessionsError: string | null;
+  sessionsGeneratingTitle: Set<string>; // Set of session keys currently generating titles
   sessionsFilterActive: string;
   sessionsFilterLimit: string;
   sessionsIncludeGlobal: boolean;
