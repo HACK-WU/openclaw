@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { AssistantIdentity } from "../assistant-identity.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
@@ -127,7 +128,7 @@ export function renderStreamingGroup(
       <div class="chat-group assistant">
         ${renderAvatar("assistant", assistant)}
         <div class="chat-group-messages">
-          <div class="chat-bubble streaming fade-in">
+          <div class="chat-bubble streaming">
             <div class="chat-text chat-text-streaming" ${typewriter(text)}></div>
           </div>
           ${toolCardsHtml}
@@ -149,14 +150,16 @@ export function renderStreamingGroup(
     <div class="chat-group assistant">
       ${renderAvatar("assistant", assistant)}
       <div class="chat-group-messages">
-        ${completedSegments.map(
+        ${repeat(
+          completedSegments,
+          (_seg, i) => `completed-seg:${i}`,
           (seg) => html`
-            <div class="chat-bubble fade-in">
+            <div class="chat-bubble">
               <div class="chat-text">${unsafeHTML(toSanitizedMarkdownHtml(seg))}</div>
             </div>
           `,
         )}
-        <div class="chat-bubble streaming fade-in">
+        <div class="chat-bubble streaming">
           <div class="chat-text chat-text-streaming" ${typewriter(activeSegment)}></div>
         </div>
         ${toolCardsHtml}
