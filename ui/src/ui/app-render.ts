@@ -14,7 +14,7 @@ import type { AppViewState } from "./app-view-state.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
-import { loadAgents, loadToolsCatalog } from "./controllers/agents.ts";
+import { loadAgents, loadToolsCatalog, createAgent, deleteAgent } from "./controllers/agents.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
 import {
@@ -677,6 +677,16 @@ export function renderApp(state: AppViewState) {
                 toolsCatalogError: state.toolsCatalogError,
                 toolsCatalogResult: state.toolsCatalogResult,
                 skillsFilter: state.skillsFilter,
+                // Save feedback
+                configSaveSuccess: state.agentConfigSaveSuccess,
+                // Create/Delete state
+                showCreateDialog: state.agentShowCreateDialog,
+                createForm: state.agentCreateForm,
+                createBusy: state.agentCreateBusy,
+                createError: state.agentCreateError,
+                deleteBusy: state.agentDeleteBusy,
+                deleteError: state.agentDeleteError,
+                showDeleteConfirm: state.agentShowDeleteConfirm,
                 onRefresh: async () => {
                   await loadAgents(state);
                   const nextSelected =
@@ -824,7 +834,15 @@ export function renderApp(state: AppViewState) {
                   }
                 },
                 onConfigReload: () => loadConfig(state),
-                onConfigSave: () => saveConfig(state),
+                onConfigSave: async () => {
+                  await saveConfig(state);
+                  if (!state.lastError) {
+                    state.agentConfigSaveSuccess = true;
+                    window.setTimeout(() => {
+                      state.agentConfigSaveSuccess = false;
+                    }, 2500);
+                  }
+                },
                 onChannelsRefresh: () => loadChannels(state, false),
                 onCronRefresh: () => state.loadCron(),
                 onSkillsFilterChange: (next) => (state.skillsFilter = next),
@@ -995,6 +1013,47 @@ export function renderApp(state: AppViewState) {
                     ? { primary, fallbacks: normalized }
                     : { fallbacks: normalized };
                   updateConfigFormValue(state, basePath, next);
+                },
+                // Create/Delete callbacks
+                onShowCreateDialog: () => {
+                  state.agentCreateForm = { name: "", workspace: "", emoji: "" };
+                  state.agentCreateError = null;
+                  state.agentShowCreateDialog = true;
+                },
+                onHideCreateDialog: () => {
+                  state.agentShowCreateDialog = false;
+                },
+                onCreateFormChange: (field, value) => {
+                  state.agentCreateForm = { ...state.agentCreateForm, [field]: value };
+                },
+                onCreateAgent: async () => {
+                  const ok = await createAgent(state, state.agentCreateForm);
+                  if (ok) {
+                    state.agentShowCreateDialog = false;
+                    const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
+                    if (agentIds.length > 0) {
+                      void loadAgentIdentities(state, agentIds);
+                    }
+                    await loadConfig(state);
+                  }
+                },
+                onShowDeleteConfirm: (agentId) => {
+                  state.agentDeleteError = null;
+                  state.agentShowDeleteConfirm = agentId;
+                },
+                onHideDeleteConfirm: () => {
+                  state.agentShowDeleteConfirm = null;
+                },
+                onDeleteAgent: async (agentId) => {
+                  const ok = await deleteAgent(state, agentId);
+                  if (ok) {
+                    state.agentShowDeleteConfirm = null;
+                    const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
+                    if (agentIds.length > 0) {
+                      void loadAgentIdentities(state, agentIds);
+                    }
+                    await loadConfig(state);
+                  }
                 },
               })
             : nothing

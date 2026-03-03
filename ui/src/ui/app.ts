@@ -247,6 +247,16 @@ export class OpenClawApp extends LitElement {
   @state() agentSkillsReport: SkillStatusReport | null = null;
   @state() agentSkillsAgentId: string | null = null;
 
+  // Agent create/delete state
+  @state() agentShowCreateDialog = false;
+  @state() agentCreateForm = { name: "", workspace: "", emoji: "" };
+  @state() agentCreateBusy = false;
+  @state() agentCreateError: string | null = null;
+  @state() agentDeleteBusy = false;
+  @state() agentDeleteError: string | null = null;
+  @state() agentShowDeleteConfirm: string | null = null;
+  @state() agentConfigSaveSuccess = false;
+
   @state() sessionsLoading = false;
   @state() sessionsResult: SessionsListResult | null = null;
   @state() sessionsError: string | null = null;

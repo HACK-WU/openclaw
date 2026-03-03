@@ -31,6 +31,12 @@ import {
 
 export type AgentsPanel = "overview" | "files" | "tools" | "skills" | "channels" | "cron";
 
+export type AgentCreateForm = {
+  name: string;
+  workspace: string;
+  emoji: string;
+};
+
 export type AgentsProps = {
   loading: boolean;
   error: string | null;
@@ -67,6 +73,16 @@ export type AgentsProps = {
   toolsCatalogError: string | null;
   toolsCatalogResult: ToolsCatalogResult | null;
   skillsFilter: string;
+  // Save feedback
+  configSaveSuccess: boolean;
+  // Create/Delete state
+  showCreateDialog: boolean;
+  createForm: AgentCreateForm;
+  createBusy: boolean;
+  createError: string | null;
+  deleteBusy: boolean;
+  deleteError: string | null;
+  showDeleteConfirm: string | null;
   onRefresh: () => void;
   onSelectAgent: (agentId: string) => void;
   onSelectPanel: (panel: AgentsPanel) => void;
@@ -88,6 +104,14 @@ export type AgentsProps = {
   onAgentSkillToggle: (agentId: string, skillName: string, enabled: boolean) => void;
   onAgentSkillsClear: (agentId: string) => void;
   onAgentSkillsDisableAll: (agentId: string) => void;
+  // Create/Delete callbacks
+  onShowCreateDialog: () => void;
+  onHideCreateDialog: () => void;
+  onCreateFormChange: (field: keyof AgentCreateForm, value: string) => void;
+  onCreateAgent: () => void;
+  onDeleteAgent: (agentId: string) => void;
+  onShowDeleteConfirm: (agentId: string) => void;
+  onHideDeleteConfirm: () => void;
 };
 
 export type AgentContext = {
@@ -106,6 +130,7 @@ export function renderAgents(props: AgentsProps) {
   const selectedAgent = selectedId
     ? (agents.find((agent) => agent.id === selectedId) ?? null)
     : null;
+  const isDefault = Boolean(defaultId && selectedId === defaultId);
 
   return html`
     <div class="agents-layout">
@@ -115,9 +140,12 @@ export function renderAgents(props: AgentsProps) {
             <div class="card-title">Agents</div>
             <div class="card-sub">${agents.length} configured.</div>
           </div>
-          <button class="btn btn--sm" ?disabled=${props.loading} @click=${props.onRefresh}>
-            ${props.loading ? "Loading…" : "Refresh"}
-          </button>
+          <div class="row" style="gap: 6px;">
+            <button class="btn btn--sm" ?disabled=${props.loading} @click=${props.onRefresh}>
+              ${props.loading ? "Loading…" : "Refresh"}
+            </button>
+            <button class="btn btn--sm primary" @click=${props.onShowCreateDialog}>+ Add</button>
+          </div>
         </div>
         ${
           props.error
@@ -165,7 +193,18 @@ export function renderAgents(props: AgentsProps) {
                   selectedAgent,
                   defaultId,
                   props.agentIdentityById[selectedAgent.id] ?? null,
+                  isDefault,
+                  props.deleteBusy,
+                  props.showDeleteConfirm === selectedAgent.id,
+                  () => props.onShowDeleteConfirm(selectedAgent.id),
+                  () => props.onHideDeleteConfirm(),
+                  () => props.onDeleteAgent(selectedAgent.id),
                 )}
+                ${
+                  props.deleteError && props.showDeleteConfirm === selectedAgent.id
+                    ? html`<div class="callout danger" style="margin-top: -8px;">${props.deleteError}</div>`
+                    : nothing
+                }
                 ${renderAgentTabs(props.activePanel, (panel) => props.onSelectPanel(panel))}
                 ${
                   props.activePanel === "overview"
@@ -180,6 +219,7 @@ export function renderAgents(props: AgentsProps) {
                         configLoading: props.configLoading,
                         configSaving: props.configSaving,
                         configDirty: props.configDirty,
+                        configSaveSuccess: props.configSaveSuccess,
                         onConfigReload: props.onConfigReload,
                         onConfigSave: props.onConfigSave,
                         onModelChange: props.onModelChange,
@@ -289,6 +329,8 @@ export function renderAgents(props: AgentsProps) {
         }
       </section>
     </div>
+    ${props.showCreateDialog ? renderCreateAgentDialog(props) : nothing}
+    ${props.showDeleteConfirm ? renderDeleteConfirmOverlay(props) : nothing}
   `;
 }
 
@@ -296,6 +338,12 @@ function renderAgentHeader(
   agent: AgentsListResult["agents"][number],
   defaultId: string | null,
   agentIdentity: AgentIdentityResult | null,
+  isDefault: boolean,
+  deleteBusy: boolean,
+  showDeleteConfirm: boolean,
+  onShowDelete: () => void,
+  _onHideDelete: () => void,
+  _onConfirmDelete: () => void,
 ) {
   const badge = agentBadgeText(agent.id, defaultId);
   const displayName = normalizeAgentLabel(agent);
@@ -313,6 +361,19 @@ function renderAgentHeader(
       <div class="agent-header-meta">
         <div class="mono">${agent.id}</div>
         ${badge ? html`<span class="agent-pill">${badge}</span>` : nothing}
+        ${
+          !isDefault
+            ? html`
+                <button
+                  class="btn btn--sm danger"
+                  ?disabled=${deleteBusy || showDeleteConfirm}
+                  @click=${onShowDelete}
+                >
+                  Delete
+                </button>
+              `
+            : nothing
+        }
       </div>
     </section>
   `;
@@ -355,6 +416,7 @@ function renderAgentOverview(params: {
   configLoading: boolean;
   configSaving: boolean;
   configDirty: boolean;
+  configSaveSuccess: boolean;
   onConfigReload: () => void;
   onConfigSave: () => void;
   onModelChange: (agentId: string, modelId: string | null) => void;
@@ -370,6 +432,7 @@ function renderAgentOverview(params: {
     configLoading,
     configSaving,
     configDirty,
+    configSaveSuccess,
     onConfigReload,
     onConfigSave,
     onModelChange,
@@ -481,7 +544,14 @@ function renderAgentOverview(params: {
             />
           </label>
         </div>
-        <div class="row" style="justify-content: flex-end; gap: 8px;">
+        <div class="row" style="justify-content: flex-end; gap: 8px; align-items: center;">
+          ${
+            configSaveSuccess
+              ? html`
+                  <span class="save-toast">Config saved</span>
+                `
+              : nothing
+          }
           <button class="btn btn--sm" ?disabled=${configLoading} @click=${onConfigReload}>
             Reload Config
           </button>
@@ -495,5 +565,94 @@ function renderAgentOverview(params: {
         </div>
       </div>
     </section>
+  `;
+}
+
+function renderCreateAgentDialog(props: AgentsProps) {
+  const { createForm, createBusy, createError } = props;
+  const canSubmit = createForm.name.trim().length > 0 && createForm.workspace.trim().length > 0;
+  return html`
+    <div class="dialog-overlay" @click=${props.onHideCreateDialog}>
+      <div class="dialog-card" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="card-title">Create Agent</div>
+        <div class="card-sub">Add a new agent with its own workspace and identity.</div>
+        ${createError ? html`<div class="callout danger" style="margin-top: 8px;">${createError}</div>` : nothing}
+        <div class="dialog-form">
+          <label class="field">
+            <span>Name <span class="required">*</span></span>
+            <input
+              type="text"
+              .value=${createForm.name}
+              placeholder="e.g. researcher"
+              ?disabled=${createBusy}
+              @input=${(e: Event) => props.onCreateFormChange("name", (e.target as HTMLInputElement).value)}
+            />
+          </label>
+          <label class="field">
+            <span>Workspace Path <span class="required">*</span></span>
+            <input
+              type="text"
+              .value=${createForm.workspace}
+              placeholder="e.g. ~/agents/researcher"
+              ?disabled=${createBusy}
+              @input=${(e: Event) => props.onCreateFormChange("workspace", (e.target as HTMLInputElement).value)}
+            />
+          </label>
+          <label class="field">
+            <span>Emoji (optional)</span>
+            <input
+              type="text"
+              .value=${createForm.emoji}
+              placeholder="e.g. \uD83D\uDD2C"
+              ?disabled=${createBusy}
+              @input=${(e: Event) => props.onCreateFormChange("emoji", (e.target as HTMLInputElement).value)}
+            />
+          </label>
+        </div>
+        <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 16px;">
+          <button class="btn btn--sm" ?disabled=${createBusy} @click=${props.onHideCreateDialog}>
+            Cancel
+          </button>
+          <button
+            class="btn btn--sm primary"
+            ?disabled=${!canSubmit || createBusy}
+            @click=${props.onCreateAgent}
+          >
+            ${createBusy ? "Creating…" : "Create"}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderDeleteConfirmOverlay(props: AgentsProps) {
+  const agentId = props.showDeleteConfirm;
+  if (!agentId) {
+    return nothing;
+  }
+  return html`
+    <div class="dialog-overlay" @click=${props.onHideDeleteConfirm}>
+      <div class="dialog-card" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="card-title">Delete Agent</div>
+        <div class="card-sub">
+          Are you sure you want to delete agent <strong>${agentId}</strong>?
+          This will also remove workspace files and session transcripts.
+        </div>
+        ${props.deleteError ? html`<div class="callout danger" style="margin-top: 8px;">${props.deleteError}</div>` : nothing}
+        <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 16px;">
+          <button class="btn btn--sm" ?disabled=${props.deleteBusy} @click=${props.onHideDeleteConfirm}>
+            Cancel
+          </button>
+          <button
+            class="btn btn--sm danger"
+            ?disabled=${props.deleteBusy}
+            @click=${() => props.onDeleteAgent(agentId)}
+          >
+            ${props.deleteBusy ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
   `;
 }

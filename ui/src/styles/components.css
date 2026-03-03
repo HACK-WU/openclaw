@@ -2584,9 +2584,9 @@
 }
 
 .agent-header-meta {
-  display: grid;
-  justify-items: end;
-  gap: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--muted);
 }
 
@@ -2640,6 +2640,57 @@
 .agent-model-select {
   display: grid;
   gap: 12px;
+}
+
+/* Agent dialog overlay */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: fade-in 0.15s ease-out;
+}
+
+.dialog-card {
+  width: min(460px, calc(100% - 32px));
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 24px;
+  animation: scale-in 0.2s var(--ease-out);
+}
+
+.dialog-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.dialog-form .required {
+  color: var(--accent);
+}
+
+.btn.danger,
+.btn--sm.danger {
+  color: var(--danger, #ef4444);
+  border-color: var(--danger, #ef4444);
+}
+
+.btn.danger:hover:not(:disabled),
+.btn--sm.danger:hover:not(:disabled) {
+  background: var(--danger, #ef4444);
+  color: white;
+}
+
+.save-toast {
+  font-size: 13px;
+  color: var(--success, #22c55e);
+  font-weight: 500;
+  animation: fade-in 0.2s ease-out;
 }
 
 .agent-model-meta {

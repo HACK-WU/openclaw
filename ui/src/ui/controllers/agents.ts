@@ -11,6 +11,10 @@ export type AgentsState = {
   toolsCatalogLoading: boolean;
   toolsCatalogError: string | null;
   toolsCatalogResult: ToolsCatalogResult | null;
+  agentCreateBusy?: boolean;
+  agentCreateError?: string | null;
+  agentDeleteBusy?: boolean;
+  agentDeleteError?: string | null;
 };
 
 export async function loadAgents(state: AgentsState) {
@@ -60,5 +64,65 @@ export async function loadToolsCatalog(state: AgentsState, agentId?: string | nu
     state.toolsCatalogError = String(err);
   } finally {
     state.toolsCatalogLoading = false;
+  }
+}
+
+export type CreateAgentParams = {
+  name: string;
+  workspace: string;
+  emoji?: string;
+};
+
+export async function createAgent(state: AgentsState, params: CreateAgentParams): Promise<boolean> {
+  if (!state.client || !state.connected) {
+    return false;
+  }
+  state.agentCreateBusy = true;
+  state.agentCreateError = null;
+  try {
+    const res = await state.client.request<{ ok: boolean; agentId: string }>("agents.create", {
+      name: params.name,
+      workspace: params.workspace,
+      ...(params.emoji ? { emoji: params.emoji } : {}),
+    });
+    if (res?.ok) {
+      await loadAgents(state);
+      state.agentsSelectedId = res.agentId;
+      return true;
+    }
+    return false;
+  } catch (err) {
+    state.agentCreateError = String(err);
+    return false;
+  } finally {
+    state.agentCreateBusy = false;
+  }
+}
+
+export async function deleteAgent(
+  state: AgentsState,
+  agentId: string,
+  deleteFiles = true,
+): Promise<boolean> {
+  if (!state.client || !state.connected) {
+    return false;
+  }
+  state.agentDeleteBusy = true;
+  state.agentDeleteError = null;
+  try {
+    const res = await state.client.request<{ ok: boolean }>("agents.delete", {
+      agentId,
+      deleteFiles,
+    });
+    if (res?.ok) {
+      await loadAgents(state);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    state.agentDeleteError = String(err);
+    return false;
+  } finally {
+    state.agentDeleteBusy = false;
   }
 }

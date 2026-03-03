@@ -160,6 +160,16 @@ export type AppViewState = {
   agentSkillsError: string | null;
   agentSkillsReport: SkillStatusReport | null;
   agentSkillsAgentId: string | null;
+  // Agent create/delete state
+  agentShowCreateDialog: boolean;
+  agentCreateForm: { name: string; workspace: string; emoji: string };
+  agentCreateBusy: boolean;
+  agentCreateError: string | null;
+  agentDeleteBusy: boolean;
+  agentDeleteError: string | null;
+  agentShowDeleteConfirm: string | null;
+  // Agent config save feedback
+  agentConfigSaveSuccess: boolean;
   sessionsLoading: boolean;
   sessionsResult: SessionsListResult | null;
   sessionsError: string | null;
