@@ -24,8 +24,14 @@ import {
   findAgentEntryIndex,
   listAgentEntries,
   pruneAgentConfig,
+  setDefaultAgent,
 } from "../../commands/agents.config.js";
-import { loadConfig, writeConfigFile } from "../../config/config.js";
+import {
+  clearConfigCache,
+  clearRuntimeConfigSnapshot,
+  loadConfig,
+  writeConfigFile,
+} from "../../config/config.js";
 import { resolveSessionTranscriptsDirForAgent } from "../../config/sessions/paths.js";
 import { sameFileIdentity } from "../../infra/file-identity.js";
 import { SafeOpenError, readLocalFileSafely, writeFileWithinRoot } from "../../infra/fs-safe.js";
@@ -43,6 +49,7 @@ import {
   validateAgentsFilesListParams,
   validateAgentsFilesSetParams,
   validateAgentsListParams,
+  validateAgentsSetDefaultParams,
   validateAgentsUpdateParams,
 } from "../protocol/index.js";
 import { listAgentsForGateway } from "../session-utils.js";
@@ -544,6 +551,40 @@ export const agentsHandlers: GatewayRequestHandlers = {
     }
 
     respond(true, { ok: true, agentId, removedBindings: result.removedBindings }, undefined);
+  },
+  "agents.setDefault": async ({ params, respond }) => {
+    if (!validateAgentsSetDefaultParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid agents.setDefault params: ${formatValidationErrors(
+            validateAgentsSetDefaultParams.errors,
+          )}`,
+        ),
+      );
+      return;
+    }
+
+    const cfg = loadConfig();
+    const agentId = normalizeAgentId(String(params.agentId ?? ""));
+
+    if (findAgentEntryIndex(listAgentEntries(cfg), agentId) < 0) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, `agent "${agentId}" not found`),
+      );
+      return;
+    }
+
+    const nextConfig = setDefaultAgent(cfg, agentId);
+    await writeConfigFile(nextConfig);
+    clearConfigCache();
+    clearRuntimeConfigSnapshot();
+
+    respond(true, { ok: true, agentId }, undefined);
   },
   "agents.files.list": async ({ params, respond }) => {
     if (!validateAgentsFilesListParams(params)) {

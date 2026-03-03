@@ -100,6 +100,21 @@ export const AgentsDeleteResultSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const AgentsSetDefaultParamsSchema = Type.Object(
+  {
+    agentId: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
+
+export const AgentsSetDefaultResultSchema = Type.Object(
+  {
+    ok: Type.Literal(true),
+    agentId: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
+
 export const AgentsFileEntrySchema = Type.Object(
   {
     name: NonEmptyString,

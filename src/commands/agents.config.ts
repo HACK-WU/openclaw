@@ -208,3 +208,29 @@ export function pruneAgentConfig(
     removedAllow: allow.length - filteredAllow.length,
   };
 }
+
+export function setDefaultAgent(cfg: OpenClawConfig, agentId: string): OpenClawConfig {
+  const id = normalizeAgentId(agentId);
+  const list = listAgentEntries(cfg);
+
+  // Find the target agent
+  const targetIndex = findAgentEntryIndex(list, id);
+  if (targetIndex < 0) {
+    throw new Error(`agent "${agentId}" not found`);
+  }
+
+  // Update all entries: set target as default, others as not default
+  const nextList = list.map((entry, index) => {
+    const isTarget = index === targetIndex;
+    const { default: _, ...rest } = entry as AgentEntry & { default?: boolean };
+    return isTarget ? { ...rest, default: true } : rest;
+  });
+
+  return {
+    ...cfg,
+    agents: {
+      ...cfg.agents,
+      list: nextList,
+    },
+  };
+}

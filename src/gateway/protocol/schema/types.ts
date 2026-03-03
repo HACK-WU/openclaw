@@ -22,6 +22,8 @@ import type {
   AgentsFilesSetResultSchema,
   AgentsListParamsSchema,
   AgentsListResultSchema,
+  AgentsSetDefaultParamsSchema,
+  AgentsSetDefaultResultSchema,
   AgentsUpdateParamsSchema,
   AgentsUpdateResultSchema,
   ModelChoiceSchema,
@@ -218,6 +220,8 @@ export type AgentsFilesSetParams = Static<typeof AgentsFilesSetParamsSchema>;
 export type AgentsFilesSetResult = Static<typeof AgentsFilesSetResultSchema>;
 export type AgentsListParams = Static<typeof AgentsListParamsSchema>;
 export type AgentsListResult = Static<typeof AgentsListResultSchema>;
+export type AgentsSetDefaultParams = Static<typeof AgentsSetDefaultParamsSchema>;
+export type AgentsSetDefaultResult = Static<typeof AgentsSetDefaultResultSchema>;
 export type ModelChoice = Static<typeof ModelChoiceSchema>;
 export type ModelsListParams = Static<typeof ModelsListParamsSchema>;
 export type ModelsListResult = Static<typeof ModelsListResultSchema>;

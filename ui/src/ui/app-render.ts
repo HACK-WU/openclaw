@@ -14,7 +14,13 @@ import type { AppViewState } from "./app-view-state.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
-import { loadAgents, loadToolsCatalog, createAgent, deleteAgent } from "./controllers/agents.ts";
+import {
+  loadAgents,
+  loadToolsCatalog,
+  createAgent,
+  deleteAgent,
+  setDefaultAgent,
+} from "./controllers/agents.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
 import {
@@ -136,6 +142,17 @@ function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
   const list = state.agentsList?.agents ?? [];
   const parsed = parseAgentSessionKey(state.sessionKey);
   const agentId = parsed?.agentId ?? state.agentsList?.defaultId ?? "main";
+
+  // First try to get identity from agentIdentityById (loaded from workspace)
+  const agentIdentity = state.agentIdentityById[agentId];
+  if (agentIdentity?.avatar) {
+    const avatar = agentIdentity.avatar.trim();
+    if (AVATAR_DATA_RE.test(avatar) || AVATAR_HTTP_RE.test(avatar)) {
+      return avatar;
+    }
+  }
+
+  // Fall back to agentsList identity (from config)
   const agent = list.find((entry) => entry.id === agentId);
   const identity = agent?.identity;
   const candidate = identity?.avatarUrl ?? identity?.avatar;
@@ -1061,6 +1078,12 @@ export function renderApp(state: AppViewState) {
                     await loadConfig(state);
                   }
                 },
+                onSetDefaultAgent: async (agentId) => {
+                  const ok = await setDefaultAgent(state, agentId);
+                  if (ok) {
+                    await loadAgents(state);
+                  }
+                },
               })
             : nothing
         }
@@ -1234,12 +1257,8 @@ export function renderApp(state: AppViewState) {
                 onAbort: () => void state.handleAbortChat(),
                 onQueueRemove: (id) => state.removeQueuedMessage(id),
                 onNewSession: async () => {
-                  // Generate a new unique session key
-                  const currentParsed = state.sessionKey.split(":");
-                  const agentId =
-                    currentParsed[0] === "agent" && currentParsed.length >= 2
-                      ? currentParsed[1]
-                      : "main";
+                  // Generate a new unique session key using the default agent
+                  const agentId = state.agentsList?.defaultId ?? "main";
                   const timestamp = Date.now();
                   const randomSuffix = Math.random().toString(36).substring(2, 8);
                   const newSessionKey = `agent:${agentId}:${timestamp}-${randomSuffix}`;
@@ -1296,6 +1315,9 @@ export function renderApp(state: AppViewState) {
                     ...state.settings,
                     lastActiveSessionKey: newSessionKey,
                   });
+
+                  // Load assistant identity for the new session
+                  void state.loadAssistantIdentity();
 
                   // Reset tool stream and scroll
                   state.resetToolStream();

@@ -126,3 +126,17 @@ export async function deleteAgent(
     state.agentDeleteBusy = false;
   }
 }
+
+export async function setDefaultAgent(state: AgentsState, agentId: string): Promise<boolean> {
+  if (!state.client || !state.connected) {
+    return false;
+  }
+  try {
+    const res = await state.client.request<{ ok: boolean }>("agents.setDefault", {
+      agentId,
+    });
+    return res?.ok ?? false;
+  } catch {
+    return false;
+  }
+}

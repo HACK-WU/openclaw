@@ -28,7 +28,8 @@ export async function loadAssistantIdentity(
     state.assistantName = normalized.name;
     state.assistantAvatar = normalized.avatar;
     state.assistantAgentId = normalized.agentId ?? null;
-  } catch {
+  } catch (err) {
     // Ignore errors; keep last known identity.
+    console.error("Failed to load assistant identity:", err);
   }
 }

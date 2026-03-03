@@ -112,6 +112,7 @@ export type AgentsProps = {
   onDeleteAgent: (agentId: string) => void;
   onShowDeleteConfirm: (agentId: string) => void;
   onHideDeleteConfirm: () => void;
+  onSetDefaultAgent: (agentId: string) => void;
 };
 
 export type AgentContext = {
@@ -199,6 +200,7 @@ export function renderAgents(props: AgentsProps) {
                   () => props.onShowDeleteConfirm(selectedAgent.id),
                   () => props.onHideDeleteConfirm(),
                   () => props.onDeleteAgent(selectedAgent.id),
+                  () => props.onSetDefaultAgent(selectedAgent.id),
                 )}
                 ${
                   props.deleteError && props.showDeleteConfirm === selectedAgent.id
@@ -344,6 +346,7 @@ function renderAgentHeader(
   onShowDelete: () => void,
   _onHideDelete: () => void,
   _onConfirmDelete: () => void,
+  onSetDefault: () => void,
 ) {
   const badge = agentBadgeText(agent.id, defaultId);
   const displayName = normalizeAgentLabel(agent);
@@ -364,6 +367,13 @@ function renderAgentHeader(
         ${
           !isDefault
             ? html`
+                <button
+                  class="btn btn--sm"
+                  ?disabled=${deleteBusy || showDeleteConfirm}
+                  @click=${onSetDefault}
+                >
+                  设为默认
+                </button>
                 <button
                   class="btn btn--sm danger"
                   ?disabled=${deleteBusy || showDeleteConfirm}
