@@ -74,6 +74,7 @@ export type AppViewState = {
   chatStreamSegments: string[] | null;
   chatStreamStartedAt: number | null;
   chatRunId: string | null;
+  chatAgentId: string | null;
   compactionStatus: CompactionStatus | null;
   fallbackStatus: FallbackStatus | null;
   chatAvatarUrl: string | null;

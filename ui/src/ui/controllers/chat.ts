@@ -26,6 +26,7 @@ export type ChatState = {
   chatMessage: string;
   chatAttachments: ChatAttachment[];
   chatRunId: string | null;
+  chatAgentId: string | null;
   chatStream: string | null;
   chatStreamSegments: string[] | null;
   chatStreamStartedAt: number | null;
@@ -325,6 +326,7 @@ export async function sendChatMessage(
       deliver: false,
       idempotencyKey: runId,
       attachments: apiAttachments,
+      ...(state.chatAgentId ? { agentId: state.chatAgentId } : {}),
     });
     return runId;
   } catch (err) {

@@ -131,8 +131,38 @@ export function renderChatControls(state: AppViewState) {
       <circle cx="12" cy="12" r="3"></circle>
     </svg>
   `;
+  const agents = state.agentsList?.agents ?? [];
+  const currentAgentId = state.chatAgentId;
   return html`
     <div class="chat-controls">
+      ${
+        agents.length > 1
+          ? html`
+              <label class="field chat-controls__agent">
+                <select
+                  .value=${currentAgentId ?? ""}
+                  ?disabled=${!state.connected}
+                  @change=${(e: Event) => {
+                    const val = (e.target as HTMLSelectElement).value;
+                    state.chatAgentId = val || null;
+                  }}
+                >
+                  <option value="">Default</option>
+                  ${repeat(
+                    agents,
+                    (a) => a.id,
+                    (a) => {
+                      const label = a.identity?.emoji
+                        ? `${a.identity.emoji} ${a.identity?.name ?? a.id}`
+                        : (a.identity?.name ?? a.id);
+                      return html`<option value=${a.id}>${label}</option>`;
+                    },
+                  )}
+                </select>
+              </label>
+            `
+          : nothing
+      }
       <label class="field chat-controls__session">
         <select
           .value=${state.sessionKey}
