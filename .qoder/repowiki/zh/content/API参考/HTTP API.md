@@ -1,23 +1,91 @@
 # HTTP API
 
 <cite>
-**本文档引用的文件**
+**本文引用的文件**
 - [src/gateway/server-http.ts](file://src/gateway/server-http.ts)
+- [src/gateway/server.impl.ts](file://src/gateway/server.impl.ts)
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts)
+- [src/gateway/auth.ts](file://src/gateway/auth.ts)
+- [src/gateway/http-auth-helpers.ts](file://src/gateway/http-auth-helpers.ts)
 - [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts)
 - [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts)
-- [src/gateway/open-responses.schema.ts](file://src/gateway/open-responses.schema.ts)
-- [src/gateway/http-common.ts](file://src/gateway/http-common.ts)
+- [src/gateway/server.ws-connection/message-handler.ts](file://src/gateway/server.ws-connection/message-handler.ts)
+- [src/gateway/server.ws-connection/auth-context.ts](file://src/gateway/server.ws-connection/auth-context.ts)
 - [src/gateway/http-utils.ts](file://src/gateway/http-utils.ts)
-- [src/gateway/auth.ts](file://src/gateway/auth.ts)
-- [src/media/server.ts](file://src/media/server.ts)
-- [src/media/store.ts](file://src/media/store.ts)
-- [src/gateway/server.ws-connection/message-handler.ts](file://src/gateway/server/ws-connection/message-handler.ts)
-- [extensions/zalo/src/monitor.ts](file://extensions/zalo/src/monitor.ts)
-- [extensions/googlechat/src/monitor.ts](file://extensions/googlechat/src/monitor.ts)
-- [docs/zh-CN/automation/webhook.md](file://docs/zh-CN/automation/webhook.md)
+- [src/gateway/hooks.ts](file://src/gateway/hooks.ts)
+- [src/gateway/tools-invoke-http.ts](file://src/gateway/tools-invoke-http.ts)
+- [src/gateway/slack/http/index.ts](file://src/gateway/slack/http/index.ts)
+- [src/gateway/canvas-capability.ts](file://src/gateway/canvas-capability.ts)
+- [src/gateway/control-ui.ts](file://src/gateway/control-ui.ts)
+- [src/gateway/a2ui.ts](file://src/gateway/a2ui.ts)
+- [src/gateway/server-channels.ts](file://src/gateway/server-channels.ts)
+- [src/gateway/server-plugins.ts](file://src/gateway/server-plugins.ts)
+- [src/gateway/security-path.ts](file://src/gateway/security-path.ts)
+- [src/gateway/auth-rate-limit.ts](file://src/gateway/auth-rate-limit.ts)
+- [src/gateway/server-methods-list.ts](file://src/gateway/server-methods-list.ts)
+- [src/gateway/server-methods.ts](file://src/gateway/server-methods.ts)
+- [src/gateway/server-methods/chat.ts](file://src/gateway/server-methods/chat.ts)
+- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts)
+- [src/gateway/server-methods/secrets.ts](file://src/gateway/server-methods/secrets.ts)
+- [src/gateway/server-methods/nodes.helpers.ts](file://src/gateway/server-methods/nodes.helpers.ts)
+- [src/gateway/server-session-key.ts](file://src/gateway/server-session-key.ts)
+- [src/gateway/protocol/client-info.ts](file://src/gateway/protocol/client-info.ts)
+- [src/gateway/net.ts](file://src/gateway/net.ts)
+- [src/gateway/server/tls.js](file://src/gateway/server/tls.js)
+- [src/gateway/server/startup-auth.js](file://src/gateway/server/startup-auth.js)
+- [src/gateway/server/health-state.js](file://src/gateway/server/health-state.js)
+- [src/gateway/server-discovery-runtime.js](file://src/gateway/server-discovery-runtime.js)
+- [src/gateway/server-startup.js](file://src/gateway/server-startup.js)
+- [src/gateway/server-tailscale.js](file://src/gateway/server-tailscale.js)
+- [src/gateway/server-wizard-sessions.js](file://src/gateway/server-wizard-sessions.js)
+- [src/gateway/server-ws-runtime.js](file://src/gateway/server-ws-runtime.js)
+- [src/gateway/server-lanes.js](file://src/gateway/server-lanes.js)
+- [src/gateway/server-maintenance.js](file://src/gateway/server-maintenance.js)
+- [src/gateway/server-plugins.js](file://src/gateway/server-plugins.js)
+- [src/gateway/server-reload-handlers.js](file://src/gateway/server-reload-handlers.js)
+- [src/gateway/server-runtime-config.js](file://src/gateway/server-runtime-config.js)
+- [src/gateway/server-runtime-state.js](file://src/gateway/server-runtime-state.js)
+- [src/gateway/server-model-catalog.js](file://src/gateway/server-model-catalog.js)
+- [src/gateway/server-close.js](file://src/gateway/server-close.js)
+- [src/gateway/server-startup-log.js](file://src/gateway/server-startup-log.js)
+- [src/gateway/server-channels.js](file://src/gateway/server-channels.js)
+- [src/gateway/server-mobile-nodes.js](file://src/gateway/server-mobile-nodes.js)
+- [src/gateway/server-node-subscriptions.js](file://src/gateway/server-node-subscriptions.js)
+- [src/gateway/server-cron.js](file://src/gateway/server-cron.js)
+- [src/gateway/server-methods-list.js](file://src/gateway/server-methods-list.js)
+- [src/gateway/server-methods.js](file://src/gateway/server-methods.js)
+- [src/gateway/server-methods/chat.js](file://src/gateway/server-methods/chat.js)
+- [src/gateway/server-methods/exec-approval.js](file://src/gateway/server-methods/exec-approval.js)
+- [src/gateway/server-methods/secrets.js](file://src/gateway/server-methods/secrets.js)
+- [src/gateway/server-methods/nodes.helpers.js](file://src/gateway/server-methods/nodes.helpers.js)
+- [src/gateway/server-session-key.js](file://src/gateway/server-session-key.js)
+- [src/gateway/protocol/client-info.js](file://src/gateway/protocol/client-info.js)
+- [src/gateway/net.js](file://src/gateway/net.js)
+- [src/gateway/server/tls.js](file://src/gateway/server/tls.js)
+- [src/gateway/server/startup-auth.js](file://src/gateway/server/startup-auth.js)
+- [src/gateway/server/health-state.js](file://src/gateway/server/health-state.js)
+- [src/gateway/server-discovery-runtime.js](file://src/gateway/server-discovery-runtime.js)
+- [src/gateway/server-startup.js](file://src/gateway/server-startup.js)
+- [src/gateway/server-tailscale.js](file://src/gateway/server-tailscale.js)
+- [src/gateway/server-wizard-sessions.js](file://src/gateway/server-wizard-sessions.js)
+- [src/gateway/server-ws-runtime.js](file://src/gateway/server-ws-runtime.js)
+- [src/gateway/server-lanes.js](file://src/gateway/server-lanes.js)
+- [src/gateway/server-maintenance.js](file://src/gateway/server-maintenance.js)
+- [src/gateway/server-plugins.js](file://src/gateway/server-plugins.js)
+- [src/gateway/server-reload-handlers.js](file://src/gateway/server-reload-handlers.js)
+- [src/gateway/server-runtime-config.js](file://src/gateway/server-runtime-config.js)
+- [src/gateway/server-runtime-state.js](file://src/gateway/server-runtime-state.js)
+- [src/gateway/server-model-catalog.js](file://src/gateway/server-model-catalog.js)
+- [src/gateway/server-close.js](file://src/gateway/server-close.js)
+- [src/gateway/server-startup-log.js](file://src/gateway/server-startup-log.js)
+- [src/gateway/server-channels.js](file://src/gateway/server-channels.js)
+- [src/gateway/server-mobile-nodes.js](file://src/gateway/server-mobile-nodes.js)
+- [src/gateway/server-node-subscriptions.js](file://src/gateway/server-node-subscriptions.js)
+- [src/gateway/server-cron.js](file://src/gateway/server-cron.js)
 </cite>
 
 ## 目录
+
 1. [简介](#简介)
 2. [项目结构](#项目结构)
 3. [核心组件](#核心组件)
@@ -30,449 +98,488 @@
 10. [附录](#附录)
 
 ## 简介
-本文件为 OpenClaw 的 HTTP API 文档，面向 Web 界面与外部系统集成，覆盖以下能力：
-- OpenAI 兼容 API：/v1/chat/completions
-- OpenResponses 兼容 API：/v1/responses
-- 媒体文件上传与下载：/media/:id
-- Web 钩子接收端点：/hooks/*（由网关统一入口分发）
-- 认证机制、请求头规范、响应格式与错误码
-- 端点列表、参数说明与示例请求/响应路径
+
+本文件为 OpenClaw Gateway 的 HTTP API 完整文档，覆盖以下内容：
+
+- RESTful API 的 HTTP 方法、URL 模式与请求/响应模式
+- 认证与授权机制（Bearer Token、共享密钥、密码、Tailscale、受信代理）
+- 路由定义、中间件处理与请求处理流程
+- 端点详情、参数规范与返回值格式
+- 使用示例、错误码与状态码处理
+- 版本控制策略、速率限制与安全考虑
+- 客户端实现指南与最佳实践
 
 ## 项目结构
-OpenClaw 的 HTTP 能力主要由网关服务器聚合，按功能模块划分：
-- 网关 HTTP 入口与路由：负责鉴权、路由与错误处理
-- OpenAI 兼容端点：/v1/chat/completions
-- OpenResponses 兼容端点：/v1/responses
-- 媒体服务：/media/:id 下载与清理
-- Web 钩子：/hooks/* 统一入口，支持多种子路径与映射
+
+OpenClaw Gateway 的 HTTP 层由多模块协作构成：
+
+- HTTP 入口与路由：server-http.ts 统一接收 HTTP 请求，按路径分派到各子处理器
+- 认证与安全：auth.ts 提供多种认证方式；http-common.ts 提供通用响应与安全头
+- OpenAI 兼容接口：openai-http.ts 实现 /v1/chat/completions
+- OpenResponses 接口：openresponses-http.ts 实现 /v1/responses
+- 插件路由保护：security-path.ts 识别受保护插件前缀，配合 enforcePluginRouteGatewayAuth 进行网关级鉴权
+- 工具调用：tools-invoke-http.ts 处理工具调用请求
+- 钩子与 Slack：hooks.ts、slack/http/index.ts 提供外部集成入口
+- Canvas/A2UI/Control UI：canvas-capability.ts、a2ui.ts、control-ui.ts 提供可视化能力
+- WebSocket 升级：server-http.ts 在 upgrade 事件中进行 Canvas/WebSocket 认证
+- 健康检查与运行时：server/health-state.js、server-startup.js 等
 
 ```mermaid
 graph TB
-Client["客户端/外部系统"] --> Gateway["网关 HTTP 服务器"]
-Gateway --> OpenAI["OpenAI 兼容处理器<br/>/v1/chat/completions"]
-Gateway --> Responses["OpenResponses 兼容处理器<br/>/v1/responses"]
-Gateway --> Media["媒体服务<br/>/media/:id"]
-Gateway --> Hooks["Web 钩子入口<br/>/hooks/*"]
-Gateway --> Auth["鉴权与代理校验"]
-OpenAI --> Agent["智能体执行器"]
-Responses --> Agent
-Media --> Store["本地媒体存储"]
+A["HTTP 入口<br/>server-http.ts"] --> B["OpenAI 兼容接口<br/>openai-http.ts"]
+A --> C["OpenResponses 接口<br/>openresponses-http.ts"]
+A --> D["工具调用<br/>tools-invoke-http.ts"]
+A --> E["钩子处理<br/>hooks.ts"]
+A --> F["Slack 集成<br/>slack/http/index.ts"]
+A --> G["插件路由保护<br/>security-path.ts + server-http.ts"]
+A --> H["Canvas/A2UI/Control UI<br/>canvas-capability.ts + a2ui.ts + control-ui.ts"]
+A --> I["WebSocket 升级<br/>server-http.ts"]
+J["认证与安全<br/>auth.ts + http-common.ts"] --> A
+K["速率限制<br/>auth-rate-limit.ts"] --> J
 ```
 
 图表来源
-- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L398-L515)
-- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L171-L427)
-- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L346-L800)
-- [src/media/server.ts](file://src/media/server.ts#L28-L89)
+
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L500-L630)
+- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L1-L200)
+- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L1-L200)
+- [src/gateway/tools-invoke-http.ts](file://src/gateway/tools-invoke-http.ts)
+- [src/gateway/hooks.ts](file://src/gateway/hooks.ts)
+- [src/gateway/slack/http/index.ts](file://src/gateway/slack/http/index.ts)
+- [src/gateway/security-path.ts](file://src/gateway/security-path.ts)
+- [src/gateway/canvas-capability.ts](file://src/gateway/canvas-capability.ts)
+- [src/gateway/a2ui.ts](file://src/gateway/a2ui.ts)
+- [src/gateway/control-ui.ts](file://src/gateway/control-ui.ts)
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L1-L200)
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L1-L108)
+- [src/gateway/auth-rate-limit.ts](file://src/gateway/auth-rate-limit.ts)
 
 章节来源
-- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L398-L515)
+
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L500-L630)
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L1-L200)
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L1-L108)
 
 ## 核心组件
-- 网关 HTTP 服务器：统一处理 HTTP 请求，按顺序尝试钩子、工具调用、通道插件、OpenAI/Responses 端点、Canvas/控制 UI 等。
-- OpenAI 兼容处理器：解析 /v1/chat/completions 请求，支持流式与非流式响应。
-- OpenResponses 兼容处理器：解析 /v1/responses 请求，支持输入文本/图片/文件、工具选择、流式事件。
-- 媒体服务：安全下载与一次性访问，带 TTL 清理与大小限制。
-- 鉴权模块：支持 Token/密码/Tailscale 设备令牌等多种方式。
+
+- HTTP 入口与路由分发：统一在 server-http.ts 中完成，支持 OpenAI 兼容、OpenResponses、工具调用、钩子、Slack、Canvas/A2UI/Control UI、插件路由等
+- 认证与授权：auth.ts 支持 token/password/Tailscale/受信代理等多种模式；http-common.ts 提供统一响应与安全头
+- OpenAI 兼容接口：openai-http.ts 实现流式 SSE 响应，支持消息数组解析与会话键管理
+- OpenResponses 接口：openresponses-http.ts 实现流式事件推送，支持工具选择、输入文件/图片限制
+- 速率限制：auth-rate-limit.ts 提供基于 IP 的失败次数统计与重试等待时间
+- WebSocket 升级：server-http.ts 在 upgrade 事件中对 Canvas/WebSocket 进行认证
 
 章节来源
-- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L363-L515)
-- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L171-L427)
-- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L346-L800)
-- [src/media/server.ts](file://src/media/server.ts#L28-L89)
-- [src/gateway/auth.ts](file://src/gateway/auth.ts#L217-L271)
+
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L500-L630)
+- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L1-L200)
+- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L1-L200)
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L1-L200)
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L1-L108)
+- [src/gateway/auth-rate-limit.ts](file://src/gateway/auth-rate-limit.ts)
 
 ## 架构总览
-网关 HTTP 服务器在收到请求后，先尝试匹配已启用的功能模块；若未命中，则返回 404。所有受保护的 HTTP 接口均通过统一鉴权逻辑进行校验。
+
+下图展示 HTTP 请求从入口到具体处理器的调用链路，以及认证与速率限制的参与位置。
 
 ```mermaid
 sequenceDiagram
-participant C as "客户端"
-participant G as "网关 HTTP 服务器"
-participant A as "鉴权模块"
-participant O as "OpenAI/Responses 处理器"
-participant M as "媒体服务"
-participant H as "钩子入口"
-C->>G : 发送 HTTP 请求
-G->>A : 校验访问凭据
-A-->>G : 返回授权结果
-alt 已授权
-alt OpenAI/Responses 端点
-G->>O : 调用对应处理器
-O-->>C : JSON/SSe 响应
-else 媒体下载
-G->>M : 处理 /media/ : id
-M-->>C : 文件内容或错误
-else 钩子入口
-G->>H : 分发到具体钩子处理器
-H-->>C : 结果或状态
-end
-else 未授权
-G-->>C : 401 未授权
+participant Client as "客户端"
+participant HTTP as "HTTP 入口<br/>server-http.ts"
+participant Auth as "认证模块<br/>auth.ts"
+participant OA as "OpenAI 处理器<br/>openai-http.ts"
+participant OR as "OpenResponses 处理器<br/>openresponses-http.ts"
+participant Tools as "工具调用处理器<br/>tools-invoke-http.ts"
+participant Hooks as "钩子处理器<br/>hooks.ts"
+participant Slack as "Slack 处理器<br/>slack/http/index.ts"
+participant Sec as "插件路由保护<br/>security-path.ts"
+participant Common as "通用响应/安全头<br/>http-common.ts"
+Client->>HTTP : 发送 HTTP 请求
+HTTP->>Auth : 解析并校验认证信息
+Auth-->>HTTP : 返回认证结果
+alt OpenAI 路径
+HTTP->>OA : 分发到 OpenAI 处理器
+OA->>Common : 设置安全头/发送 JSON/SSE
+OA-->>Client : 流式响应
+else OpenResponses 路径
+HTTP->>OR : 分发到 OpenResponses 处理器
+OR->>Common : 设置安全头/发送 JSON/SSE
+OR-->>Client : 流式事件
+else 工具调用
+HTTP->>Tools : 分发到工具调用处理器
+Tools->>Common : 设置安全头/发送 JSON
+Tools-->>Client : 结果或错误
+else 钩子
+HTTP->>Hooks : 分发到钩子处理器
+Hooks->>Common : 设置安全头/发送 JSON
+Hooks-->>Client : 结果或错误
+else Slack
+HTTP->>Slack : 分发到 Slack 处理器
+Slack->>Common : 设置安全头/发送 JSON
+Slack-->>Client : 结果或错误
+else 插件路由
+HTTP->>Sec : 判断是否受保护
+Sec-->>HTTP : 受保护则强制网关鉴权
+HTTP->>Auth : 再次鉴权
+Auth-->>HTTP : 鉴权通过/拒绝
+HTTP-->>Client : 成功或 401/429
 end
 ```
 
 图表来源
-- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L398-L515)
-- [src/gateway/auth.ts](file://src/gateway/auth.ts#L217-L271)
-- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L171-L427)
-- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L346-L800)
-- [src/media/server.ts](file://src/media/server.ts#L28-L89)
+
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L500-L630)
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L471-L487)
+- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L1-L200)
+- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L1-L200)
+- [src/gateway/tools-invoke-http.ts](file://src/gateway/tools-invoke-http.ts)
+- [src/gateway/hooks.ts](file://src/gateway/hooks.ts)
+- [src/gateway/slack/http/index.ts](file://src/gateway/slack/http/index.ts)
+- [src/gateway/security-path.ts](file://src/gateway/security-path.ts)
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L1-L108)
 
 ## 详细组件分析
 
-### OpenAI 兼容 API：/v1/chat/completions
-- 方法与路径
-  - 方法：POST
-  - 路径：/v1/chat/completions
-- 认证
-  - 支持 Bearer Token 或密码（取决于网关配置）
-- 请求体字段
-  - model：模型标识（可选）
-  - messages：消息数组（必需）
-  - user：用户标识（可选）
-  - stream：是否流式（可选）
-- 响应
-  - 非流式：标准 OpenAI 格式 JSON
-  - 流式：SSE，事件类型为 chat.completion.chunk，最后以 [DONE] 结束
-- 会话键
-  - 优先使用请求头 x-openclaw-session-key；否则根据 user 或随机生成
-- 错误
-  - 400：缺少用户消息等无效请求
-  - 401：未授权
-  - 405：方法不被允许
-  - 500：内部错误
+### 认证与授权
 
-```mermaid
-sequenceDiagram
-participant Client as "客户端"
-participant Server as "网关 HTTP 服务器"
-participant Auth as "鉴权模块"
-participant OA as "OpenAI 处理器"
-participant Agent as "智能体执行器"
-Client->>Server : POST /v1/chat/completions
-Server->>Auth : 校验 Token/密码
-Auth-->>Server : 授权结果
-alt 授权失败
-Server-->>Client : 401 未授权
-else 授权成功
-Server->>OA : 解析并校验请求体
-OA->>Agent : 执行智能体命令
-alt 非流式
-Agent-->>OA : 文本结果
-OA-->>Client : JSON 响应
-else 流式
-Agent-->>OA : 事件流
-OA-->>Client : SSE 数据流
-end
-end
-```
-
-图表来源
-- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L171-L427)
-- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L16-L56)
-- [src/gateway/http-utils.ts](file://src/gateway/http-utils.ts#L52-L79)
-- [src/gateway/auth.ts](file://src/gateway/auth.ts#L217-L271)
-
-章节来源
-- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L171-L427)
-- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L16-L56)
-- [src/gateway/http-utils.ts](file://src/gateway/http-utils.ts#L52-L79)
-- [src/gateway/auth.ts](file://src/gateway/auth.ts#L217-L271)
-
-### OpenResponses 兼容 API：/v1/responses
-- 方法与路径
-  - 方法：POST
-  - 路径：/v1/responses
-- 认证
-  - 支持 Bearer Token 或密码（取决于网关配置）
-- 请求体字段（节选）
-  - model：模型标识（必需）
-  - input：字符串或 ItemParam 数组（必需）
-  - instructions：附加指令（可选）
-  - tools/tool_choice：工具定义与选择策略（可选）
-  - stream/max_output_tokens/max_tool_calls/user：控制参数（可选）
-  - temperature/top_p/metadata/store/previous_response_id/reasoning/truncation：兼容字段（可选）
-- 输入项（ItemParam）支持：
-  - message（含 system/developer/user/assistant 角色与文本/多模态内容）
-  - function_call/function_call_output
-  - reasoning/item_reference
-- 响应
-  - 非流式：ResponseResource（包含 id/object/status/model/output/usage/error）
-  - 流式：SSE 事件序列（response.created/response.in_progress/response.completed/response.failed 等）
-- 会话键
-  - 优先使用请求头 x-openclaw-session-key；否则根据 user 或随机生成
-- 错误
-  - 400：请求体校验失败或缺少必要字段
-  - 401：未授权
-  - 405：方法不被允许
-  - 500：内部错误
-
-```mermaid
-sequenceDiagram
-participant Client as "客户端"
-participant Server as "网关 HTTP 服务器"
-participant Auth as "鉴权模块"
-participant OR as "OpenResponses 处理器"
-participant Agent as "智能体执行器"
-Client->>Server : POST /v1/responses
-Server->>Auth : 校验 Token/密码
-Auth-->>Server : 授权结果
-alt 授权失败
-Server-->>Client : 401 未授权
-else 授权成功
-Server->>OR : 解析并校验请求体Zod
-OR->>Agent : 执行智能体命令含工具/图像/文件
-alt 非流式
-Agent-->>OR : 文本/函数调用结果
-OR-->>Client : JSON 响应
-else 流式
-OR-->>Client : SSE 事件流含输出片段/完成事件
-end
-end
-```
-
-图表来源
-- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L346-L800)
-- [src/gateway/open-responses.schema.ts](file://src/gateway/open-responses.schema.ts#L174-L199)
-- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L16-L56)
-- [src/gateway/http-utils.ts](file://src/gateway/http-utils.ts#L52-L79)
-- [src/gateway/auth.ts](file://src/gateway/auth.ts#L217-L271)
-
-章节来源
-- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L346-L800)
-- [src/gateway/open-responses.schema.ts](file://src/gateway/open-responses.schema.ts#L174-L199)
-- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L16-L56)
-- [src/gateway/http-utils.ts](file://src/gateway/http-utils.ts#L52-L79)
-- [src/gateway/auth.ts](file://src/gateway/auth.ts#L217-L271)
-
-### 媒体文件上传与下载
-- 下载接口
-  - 方法：GET
-  - 路径：/media/:id
-  - 安全性：仅允许在媒体根目录内解析，拒绝路径穿越与符号链接逃逸
-  - TTL：超过配置 TTL 将删除文件并返回 410
-  - 大小限制：超过 5MB 返回 413
-- 上传接口
-  - 当前仓库未提供直接上传端点；媒体可通过内部流程写入本地目录后由 /media/:id 下载
-- 响应
-  - 成功：二进制文件内容（自动设置 Content-Type）
-  - 错误：400/404/410/413
+- 支持模式
+  - Bearer Token：从 Authorization 头提取，匹配配置中的 token 或 password 字段
+  - 密码：明文密码校验
+  - Tailscale：通过代理转发头与 Whois 校验用户身份
+  - 受信代理：允许通过受信代理链解析真实客户端 IP
+- 认证流程
+  - 优先尝试 Bearer Token；若未提供或失败，则尝试密码；若仍失败且允许 Tailscale，则尝试 Tailscale 用户校验
+  - 失败时可触发速率限制，返回 Retry-After 与 429
+- 速率限制
+  - 基于 IP 的失败计数与冷却窗口，超过阈值后返回 429 并设置 Retry-After
+- 安全头
+  - 默认设置 X-Content-Type-Options、Referrer-Policy，可选 Strict-Transport-Security
 
 ```mermaid
 flowchart TD
-Start(["请求 /media/:id"]) --> Validate["校验 ID 合法性"]
-Validate --> |非法| BadReq["400 invalid path"]
-Validate --> |合法| OpenFile["安全打开文件"]
-OpenFile --> SizeCheck{"大小超限？"}
-SizeCheck --> |是| TooLarge["413 too large"]
-SizeCheck --> |否| TtlCheck{"是否过期？"}
-TtlCheck --> |是| Expired["410 expired"]
-TtlCheck --> |否| Serve["读取并返回内容"]
-Serve --> Cleanup["完成后异步删除临时文件"]
-OpenFile --> NotFound["404 not found"]
+Start(["进入认证"]) --> CheckBearer["提取 Bearer Token"]
+CheckBearer --> |存在| AuthToken["校验 token/password"]
+CheckBearer --> |不存在| CheckPwd["校验密码"]
+AuthToken --> |成功| Allow["认证通过"]
+AuthToken --> |失败| CheckPwd
+CheckPwd --> |成功| Allow
+CheckPwd --> |失败| CheckTS["检查 Tailscale 代理头"]
+CheckTS --> |满足| TSWhois["查询 Whois 并校验用户"]
+TSWhois --> |成功| Allow
+TSWhois --> |失败| Deny["认证失败"]
+Allow --> End(["结束"])
+Deny --> RateLimit{"是否触发速率限制?"}
+RateLimit --> |是| RL["记录失败并返回 429/Retry-After"]
+RateLimit --> |否| Fail["返回 401 Unauthorized"]
+RL --> End
+Fail --> End
 ```
 
 图表来源
-- [src/media/server.ts](file://src/media/server.ts#L28-L89)
-- [src/media/store.ts](file://src/media/store.ts#L170-L209)
+
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L471-L487)
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L434-L469)
+- [src/gateway/auth-rate-limit.ts](file://src/gateway/auth-rate-limit.ts)
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L40-L70)
 
 章节来源
-- [src/media/server.ts](file://src/media/server.ts#L28-L89)
-- [src/media/store.ts](file://src/media/store.ts#L170-L209)
 
-### Web 钩子接收端点：/hooks/*
-- 基础路径
-  - 由配置决定（如 /hooks），支持子路径如 /hooks/wake、/hooks/agent 或映射规则
-- 认证
-  - 必须通过 Authorization: Bearer <token> 或 X-OpenClaw-Token（禁止使用查询参数 token）
-  - 多次失败将触发限流
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L1-L200)
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L434-L487)
+- [src/gateway/http-auth-helpers.ts](file://src/gateway/http-auth-helpers.ts#L1-L29)
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L1-L108)
+- [src/gateway/auth-rate-limit.ts](file://src/gateway/auth-rate-limit.ts)
+
+### OpenAI 兼容接口 /v1/chat/completions
+
+- 方法与路径
+  - POST /v1/chat/completions
 - 请求体
-  - JSON；支持最大负载大小配置
-- 功能
-  - /hooks/wake：立即或下次心跳触发
-  - /hooks/agent：派发到指定智能体并返回 runId
-  - 映射：基于规则将外部请求映射为唤醒或派发动作
+  - 支持字段：model、stream、messages、user 等
+  - messages 支持字符串或数组形式的内容，系统/开发者消息会被拼接为额外系统提示
+- 认证
+  - Bearer Token 或共享密钥/密码
 - 响应
-  - 200/202/400/401/404/413/429
+  - 非流式：JSON 对象
+  - 流式：SSE，逐条发送 chat.completion.chunk，最后以 [DONE] 结束
+- 会话键
+  - 基于 agentId、user、前缀生成会话键，用于关联上下文与用量统计
 
 ```mermaid
 sequenceDiagram
-participant Ext as "外部系统"
-participant G as "网关 HTTP 服务器"
-participant H as "钩子处理器"
-participant Policy as "策略校验"
-participant Dispatch as "派发器"
-Ext->>G : POST /hooks/<subpath> (Authorization : Bearer)
-G->>H : 提取并校验 token
-alt 校验失败
-H-->>Ext : 401/429
-else 校验成功
-H->>Policy : 校验代理/通道/会话键
-Policy-->>H : 通过/拒绝
-alt wake
-H->>Dispatch : 触发心跳
-Dispatch-->>H : 返回模式
-H-->>Ext : 200
-else agent
-H->>Dispatch : 派发到智能体
-Dispatch-->>H : 返回 runId
-H-->>Ext : 202
-end
-end
+participant Client as "客户端"
+participant HTTP as "HTTP 入口<br/>server-http.ts"
+participant OA as "OpenAI 处理器<br/>openai-http.ts"
+participant Auth as "认证模块<br/>auth.ts"
+participant Common as "通用响应/安全头<br/>http-common.ts"
+Client->>HTTP : POST /v1/chat/completions
+HTTP->>Auth : 校验 Bearer Token/密码
+Auth-->>HTTP : 认证结果
+HTTP->>OA : 解析 messages/构建提示
+OA->>Common : 设置 SSE 头/写入数据
+OA-->>Client : 流式返回 assistant 角色与内容
 ```
 
 图表来源
-- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L141-L361)
-- [docs/zh-CN/automation/webhook.md](file://docs/zh-CN/automation/webhook.md#L82-L97)
+
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L563-L574)
+- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L1-L200)
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L471-L487)
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L101-L108)
 
 章节来源
-- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L141-L361)
-- [docs/zh-CN/automation/webhook.md](file://docs/zh-CN/automation/webhook.md#L82-L97)
 
-### Web 钩子平台示例：Zalo/Google Chat
-- Zalo
-  - 注册 Webhook 目标时需提供路径与密钥
-  - 请求必须携带 X-Bot-API-Secret-Token
-  - 匹配路径后执行业务处理
-- Google Chat
-  - 注册 Webhook 目标时需规范化 audience 类型
-  - 匹配路径后执行业务处理
+- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L1-L200)
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L563-L574)
+
+### OpenResponses 接口 /v1/responses
+
+- 方法与路径
+  - POST /v1/responses
+- 请求体
+  - 支持 tools、tool_choice、文件/图片输入等
+  - 支持工具选择策略：none、required、指定函数名
+- 认证
+  - Bearer Token 或共享密钥/密码
+- 响应
+  - 非流式：JSON 对象
+  - 流式：SSE，事件类型包括数据项与用量统计
+- 输入限制
+  - 文件/图片大小、MIME 类型、URL 白名单、最大路径层级等
+
+```mermaid
+sequenceDiagram
+participant Client as "客户端"
+participant HTTP as "HTTP 入口<br/>server-http.ts"
+participant OR as "OpenResponses 处理器<br/>openresponses-http.ts"
+participant Auth as "认证模块<br/>auth.ts"
+participant Common as "通用响应/安全头<br/>http-common.ts"
+Client->>HTTP : POST /v1/responses
+HTTP->>Auth : 校验 Bearer Token/密码
+Auth-->>HTTP : 认证结果
+HTTP->>OR : 解析工具/输入限制
+OR->>Common : 设置 SSE 头/写入事件
+OR-->>Client : 流式返回事件与用量
+```
+
+图表来源
+
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L550-L562)
+- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L1-L200)
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L471-L487)
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L101-L108)
 
 章节来源
-- [extensions/zalo/src/monitor.ts](file://extensions/zalo/src/monitor.ts#L138-L178)
-- [extensions/googlechat/src/monitor.ts](file://extensions/googlechat/src/monitor.ts#L158-L174)
+
+- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L1-L200)
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L550-L562)
+
+### 工具调用 /tools/invoke/\*
+
+- 方法与路径
+  - POST /tools/invoke/{toolName}
+- 认证
+  - Bearer Token 或共享密钥/密码
+- 响应
+  - JSON 对象，包含工具执行结果或错误
+
+章节来源
+
+- [src/gateway/tools-invoke-http.ts](file://src/gateway/tools-invoke-http.ts)
+
+### 钩子接口 /hooks/\*
+
+- 方法与路径
+  - POST /hooks/{agentId}
+- 认证
+  - Bearer Token 或受保护插件路由默认强制网关鉴权
+- 响应
+  - JSON 对象，包含钩子调度结果或错误
+
+章节来源
+
+- [src/gateway/hooks.ts](file://src/gateway/hooks.ts)
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L514-L516)
+
+### Slack 集成
+
+- 方法与路径
+  - 由 slack/http/index.ts 提供，通常为特定事件回调路径
+- 认证
+  - 依据 server-http.ts 的钩子/插件路由策略进行鉴权
+- 响应
+  - JSON 对象，包含处理结果或错误
+
+章节来源
+
+- [src/gateway/slack/http/index.ts](file://src/gateway/slack/http/index.ts)
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L527-L529)
+
+### 插件路由保护
+
+- 受保护插件前缀默认强制网关鉴权
+- enforcePluginRouteGatewayAuth 会在受保护路径上进行 Bearer Token 校验
+- 非受保护插件路由由插件自身负责鉴权
+
+章节来源
+
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L530-L549)
+- [src/gateway/security-path.ts](file://src/gateway/security-path.ts)
+
+### Canvas/A2UI/Control UI
+
+- Canvas 能力通过 scoped URL 与节点侧能力令牌进行授权
+- A2UI 与 Control UI 提供可视化界面与头像服务
+- Canvas WebSocket 升级需通过 Canvas 授权
+
+章节来源
+
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L575-L617)
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L632-L687)
+- [src/gateway/canvas-capability.ts](file://src/gateway/canvas-capability.ts)
+- [src/gateway/a2ui.ts](file://src/gateway/a2ui.ts)
+- [src/gateway/control-ui.ts](file://src/gateway/control-ui.ts)
+
+### WebSocket 升级与 Canvas 授权
+
+- upgrade 事件中对 Canvas WebSocket 进行授权
+- 若 Canvas 授权失败，写入升级失败并关闭连接
+- 成功后交由 WebSocket 服务器处理
+
+章节来源
+
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L632-L687)
+- [src/gateway/server.ws-connection/message-handler.ts](file://src/gateway/server.ws-connection/message-handler.ts#L1123-L1171)
 
 ## 依赖关系分析
-- 网关 HTTP 服务器按优先级路由到各处理器
-- OpenAI/Responses 处理器共享鉴权与通用 HTTP 工具
-- 媒体服务与安全文件打开工具配合，确保路径安全与大小限制
-- 钩子入口集中处理认证与限流
+
+- 认证与安全
+  - auth.ts 依赖 auth-rate-limit.ts 进行速率限制
+  - http-common.ts 提供统一响应与安全头
+- HTTP 入口
+  - server-http.ts 依赖各处理器模块（OpenAI、OpenResponses、工具调用、钩子、Slack、Canvas/A2UI/Control UI）
+  - server-http.ts 在 upgrade 事件中调用 Canvas 授权
+- WebSocket
+  - server.ws-connection/message-handler.ts 与 server.ws-connection/auth-context.ts 协同处理 WS 连接与重复未授权请求
 
 ```mermaid
 graph LR
-Server["server-http.ts"] --> OpenAI["openai-http.ts"]
-Server --> Responses["openresponses-http.ts"]
-Server --> Media["media/server.ts"]
-Server --> Hooks["server-http.ts(钩子)"]
-OpenAI --> Auth["auth.ts"]
-Responses --> Auth
-OpenAI --> Utils["http-common.ts / http-utils.ts"]
-Responses --> Utils
-Media --> Store["media/store.ts"]
+Auth["auth.ts"] --> RateLimit["auth-rate-limit.ts"]
+Common["http-common.ts"] --> OA["openai-http.ts"]
+Common --> OR["openresponses-http.ts"]
+HTTP["server-http.ts"] --> OA
+HTTP --> OR
+HTTP --> Tools["tools-invoke-http.ts"]
+HTTP --> Hooks["hooks.ts"]
+HTTP --> Slack["slack/http/index.ts"]
+HTTP --> Canvas["canvas-capability.ts"]
+HTTP --> A2UI["a2ui.ts"]
+HTTP --> Ctrl["control-ui.ts"]
+WSMsg["server.ws-connection/message-handler.ts"] --> WSAuth["server.ws-connection/auth-context.ts"]
 ```
 
 图表来源
-- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L398-L515)
-- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L1-L40)
-- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L1-L60)
-- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L1-L57)
-- [src/gateway/http-utils.ts](file://src/gateway/http-utils.ts#L1-L80)
-- [src/gateway/auth.ts](file://src/gateway/auth.ts#L1-L60)
-- [src/media/server.ts](file://src/media/server.ts#L1-L20)
-- [src/media/store.ts](file://src/media/store.ts#L1-L20)
+
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L1-L200)
+- [src/gateway/auth-rate-limit.ts](file://src/gateway/auth-rate-limit.ts)
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L1-L108)
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L500-L630)
+- [src/gateway/server.ws-connection/message-handler.ts](file://src/gateway/server.ws-connection/message-handler.ts#L1123-L1171)
+- [src/gateway/server.ws-connection/auth-context.ts](file://src/gateway/server.ws-connection/auth-context.ts#L1-L122)
 
 章节来源
-- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L398-L515)
-- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L1-L40)
-- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L1-L60)
-- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L1-L57)
-- [src/gateway/http-utils.ts](file://src/gateway/http-utils.ts#L1-L80)
-- [src/gateway/auth.ts](file://src/gateway/auth.ts#L1-L60)
-- [src/media/server.ts](file://src/media/server.ts#L1-L20)
-- [src/media/store.ts](file://src/media/store.ts#L1-L20)
+
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L500-L630)
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L1-L200)
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L1-L108)
 
 ## 性能考量
-- 流式响应：OpenAI/Responses 均采用 SSE，避免大响应阻塞连接
-- 媒体 TTL：过期自动清理，降低磁盘占用
-- 代理与限流：钩子入口对多次失败进行限流，防止滥用
-- 身份验证：鉴权模块支持快速比较与 Tailscale 校验，减少不必要的开销
+
+- 流式响应
+  - OpenAI 与 OpenResponses 均采用 SSE 流式输出，降低单次响应延迟
+- 速率限制
+  - 基于 IP 的失败次数与冷却窗口，防止暴力破解
+- 超时与负载
+  - 请求体超时与负载上限在读取 JSON 时进行校验，避免过大请求导致资源耗尽
+- 并发与队列
+  - 通过 server-lanes.js 与 server-cron.js 等模块协调并发与定时任务
+
+[本节为通用指导，不直接分析具体文件]
 
 ## 故障排查指南
+
+- 400 错误
+  - 请求体过大或请求体超时：检查 maxBodyBytes 与网络状况
+  - 参数无效：检查请求体字段类型与必填项
 - 401 未授权
-  - 检查 Authorization: Bearer <token> 是否正确传递
-  - 确认网关配置的 token/password 是否与请求一致
-- 405 方法不被允许
-  - 确保使用 POST 方法访问 /v1/chat/completions 或 /v1/responses
-- 400 请求体无效
-  - OpenAI：确保 messages 中包含有效用户消息
-  - OpenResponses：确保 input/model 字段存在且符合 Zod 校验
-- 413 媒体过大
-  - 文件超过 5MB 限制；请压缩或拆分
-- 410 媒体过期
-  - TTL 到期自动删除；重新上传或缩短 TTL
-- 429 钩子限流
-  - 短时间内多次认证失败；稍后再试或检查 token
+  - Bearer Token 缺失或不匹配；确认 Authorization 头与配置一致
+- 429 速率限制
+  - 多次失败触发限流，等待 Retry-After 指示的时间后重试
+- 404 未找到
+  - 请求路径不存在或未启用对应端点
+- 500 内部错误
+  - 处理器内部异常，查看日志定位具体模块
 
 章节来源
-- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L16-L56)
-- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L211-L219)
-- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L384-L393)
-- [src/media/server.ts](file://src/media/server.ts#L46-L56)
-- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L156-L177)
+
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L66-L95)
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L40-L70)
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L619-L626)
 
 ## 结论
-OpenClaw 的 HTTP API 通过统一网关实现多协议兼容与安全控制，覆盖对话、响应、媒体与钩子等核心场景。建议在生产环境启用鉴权与 TLS，并合理配置媒体 TTL 与钩子限流策略。
+
+OpenClaw Gateway 的 HTTP API 通过统一入口与模块化处理器，提供了 OpenAI 兼容与 OpenResponses 两大主流接口，并辅以灵活的认证与速率限制机制。插件路由保护与 Canvas/A2UI/Control UI 扩展了可视化与集成能力。建议客户端遵循 Bearer Token 认证、合理设置请求体大小与流式消费策略，并在出现 429 时遵守 Retry-After 重试。
+
+[本节为总结性内容，不直接分析具体文件]
 
 ## 附录
 
-### 认证机制与请求头规范
-- 认证方式
-  - Bearer Token：Authorization: Bearer <token>
-  - 密码：依据网关配置（密码模式）
-  - Tailscale：在受信任代理环境下校验
-- 请求头
-  - Authorization: Bearer <token>
-  - x-openclaw-session-key：显式会话键
-  - x-openclaw-agent-id/x-openclaw-agent：代理标识
-  - X-OpenClaw-Token：钩子 token（仅头部，禁止查询参数）
+### 版本控制与兼容性
+
+- OpenAI 兼容接口遵循 /v1/\* 命名空间
+- OpenResponses 接口遵循 /v1/responses
+- Canvas/A2UI/Control UI 路径独立于上述命名空间
 
 章节来源
-- [src/gateway/auth.ts](file://src/gateway/auth.ts#L217-L271)
-- [src/gateway/http-utils.ts](file://src/gateway/http-utils.ts#L16-L79)
-- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L194-L221)
 
-### 响应格式与错误码
-- 成功
-  - 200：JSON 响应（非流式）
-  - 202：异步派发成功（钩子 agent）
-  - 204：无内容（钩子映射 action=null）
-- 错误
-  - 400：无效请求体/参数
-  - 401：未授权
-  - 404：未找到
-  - 405：方法不被允许
-  - 413：媒体过大
-  - 410：媒体过期
-  - 429：钩子限流
-  - 500：内部错误
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L563-L574)
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L550-L562)
+- [src/gateway/a2ui.ts](file://src/gateway/a2ui.ts)
+- [src/gateway/control-ui.ts](file://src/gateway/control-ui.ts)
+
+### 安全与合规
+
+- 默认安全头：X-Content-Type-Options、Referrer-Policy，可选 HSTS
+- 速率限制：防暴力破解与滥用
+- 受信代理与 Tailscale：支持代理链与基于网络的身份校验
 
 章节来源
-- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L16-L56)
-- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L156-L177)
-- [src/media/server.ts](file://src/media/server.ts#L46-L82)
 
-### 端点清单与参数速览
-- /v1/chat/completions
-  - 方法：POST
-  - 参数：model/messages/user/stream
-  - 响应：JSON 或 SSE
-- /v1/responses
-  - 方法：POST
-  - 参数：model,input,instructions,tools,tool_choice,stream,max_output_tokens,user 等
-  - 响应：JSON 或 SSE
-- /media/:id
-  - 方法：GET
-  - 参数：无（路径参数）
-  - 响应：二进制文件或错误
-- /hooks/*
-  - 方法：POST
-  - 参数：JSON 载荷（见钩子文档）
-  - 响应：JSON 状态或 runId
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L11-L21)
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L124-L145)
+- [src/gateway/auth.ts](file://src/gateway/auth.ts#L176-L200)
+
+### 客户端实现指南与最佳实践
+
+- 认证
+  - 使用 Bearer Token，确保 Authorization 头正确传递
+  - 对于受保护插件路由，务必携带有效 Token
+- 请求体
+  - 控制请求体大小，避免超过 maxBodyBytes
+  - 对流式接口采用逐条消费，及时释放内存
+- 错误处理
+  - 400：修正请求体字段与类型
+  - 401：检查 Token 有效性与配置
+  - 429：等待 Retry-After 后重试
+  - 404：确认端点路径与功能开关
+  - 500：重试并上报日志
+- 速率限制
+  - 为每个 IP 维护重试时间窗口，避免频繁重试
+- WebSocket 升级
+  - Canvas WebSocket 需要 Canvas 授权，失败即关闭连接
 
 章节来源
-- [src/gateway/openai-http.ts](file://src/gateway/openai-http.ts#L171-L427)
-- [src/gateway/openresponses-http.ts](file://src/gateway/openresponses-http.ts#L346-L800)
-- [src/media/server.ts](file://src/media/server.ts#L28-L89)
-- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L141-L361)
-- [docs/zh-CN/automation/webhook.md](file://docs/zh-CN/automation/webhook.md#L82-L97)
+
+- [src/gateway/http-common.ts](file://src/gateway/http-common.ts#L40-L70)
+- [src/gateway/server-http.ts](file://src/gateway/server-http.ts#L632-L687)
+- [src/gateway/auth-rate-limit.ts](file://src/gateway/auth-rate-limit.ts)

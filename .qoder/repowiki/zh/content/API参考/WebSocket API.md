@@ -2,25 +2,23 @@
 
 <cite>
 **本文引用的文件**
-- [src/gateway/client.ts](file://src/gateway/client.ts)
-- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts)
+- [docs/gateway/protocol.md](file://docs/gateway/protocol.md)
 - [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts)
-- [src/gateway/protocol/schema/primitives.ts](file://src/gateway/protocol/schema/primitives.ts)
-- [src/gateway/server.auth.e2e.test.ts](file://src/gateway/server.auth.e2e.test.ts)
-- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts)
-- [src/gateway/server-methods/system.ts](file://src/gateway/server-methods/system.ts)
-- [src/gateway/exec-approval-manager.ts](file://src/gateway/exec-approval-manager.ts)
-- [src/gateway/test-helpers.server.ts](file://src/gateway/test-helpers.server.ts)
-- [scripts/dev/gateway-smoke.ts](file://scripts/dev/gateway-smoke.ts)
-- [ui/src/ui/gateway.ts](file://ui/src/ui/gateway.ts)
-- [ui/src/ui/app-gateway.ts](file://ui/src/ui/app-gateway.ts)
-- [apps/shared/OpenClawKit/Sources/OpenClawProtocol/GatewayModels.swift](file://apps/shared/OpenClawKit/Sources/OpenClawProtocol/GatewayModels.swift)
-- [apps/macos/Sources/OpenClawProtocol/GatewayModels.swift](file://apps/macos/Sources/OpenClawProtocol/GatewayModels.swift)
+- [src/gateway/protocol/schema/protocol-schemas.ts](file://src/gateway/protocol/schema/protocol-schemas.ts)
+- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts)
+- [src/gateway/server/ws-connection.ts](file://src/gateway/server/ws-connection.ts)
+- [src/gateway/server/ws-connection/message-handler.ts](file://src/gateway/server/ws-connection/message-handler.ts)
+- [src/gateway/client.ts](file://src/gateway/client.ts)
 - [apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift](file://apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift)
-- [apps/macos/Sources/OpenClawMacCLI/WizardCommand.swift](file://apps/macos/Sources/OpenClawMacCLI/WizardCommand.swift)
+- [apps/shared/OpenClawKit/Tests/OpenClawKitTests/GatewayNodeSessionTests.swift](file://apps/shared/OpenClawKit/Tests/OpenClawKitTests/GatewayNodeSessionTests.swift)
+- [extensions/mattermost/src/mattermost/monitor-websocket.ts](file://extensions/mattermost/src/mattermost/monitor-websocket.ts)
+- [dist/plugin-sdk/gateway/server/ws-types.d.ts](file://dist/plugin-sdk/gateway/server/ws-types.d.ts)
+- [dist/plugin-sdk/gateway/ws-logging.d.ts](file://dist/plugin-sdk/gateway/ws-logging.d.ts)
+- [dist/plugin-sdk/infra/ws.d.ts](file://dist/plugin-sdk/infra/ws.d.ts)
 </cite>
 
 ## 目录
+
 1. [简介](#简介)
 2. [项目结构](#项目结构)
 3. [核心组件](#核心组件)
@@ -33,162 +31,132 @@
 10. [附录](#附录)
 
 ## 简介
-本文件为 OpenClaw WebSocket API 的权威技术文档，覆盖连接协议、握手与认证、消息帧格式、事件系统、RPC 方法、错误处理与协议版本管理。目标读者既包括需要快速集成的开发者，也包括希望深入理解实现细节的工程师。
+
+本文件面向OpenClaw的WebSocket API，系统化阐述连接建立流程、帧格式、事件类型、实时交互模式与协议规范；并覆盖连接处理、数据帧格式、二进制与文本承载、状态管理机制；同时提供客户端实现指南、错误处理策略、安全考虑、性能优化建议与调试工具使用方法。
 
 ## 项目结构
-OpenClaw 的 WebSocket API 主要由以下模块构成：
-- 客户端实现：负责连接建立、握手、挑战响应、认证、消息收发与事件订阅
-- 协议定义：统一的帧格式（req/res/event）、参数校验与协议版本
-- 服务端方法：如执行审批、系统状态等 RPC 实现
-- 事件系统：广播事件（如 exec.approval.requested、presence 等）
-- 平台适配：Swift/TypeScript 客户端对帧模型的解码与使用
+
+OpenClaw的WebSocket API由“协议定义”“服务端握手与消息处理”“客户端实现”三部分构成：
+
+- 协议定义：以TypeBox Schema定义帧结构、参数与校验器，统一生成TS/JS与Swift模型。
+- 服务端：负责WebSocket握手、鉴权、版本协商、消息分发与状态广播。
+- 客户端：负责连接、重连、帧编解码、事件序列号与心跳、错误处理与关闭码语义。
 
 ```mermaid
 graph TB
-subgraph "客户端"
-A["GatewayClient<br/>src/gateway/client.ts"]
-B["浏览器前端<br/>ui/src/ui/gateway.ts"]
-C["Swift 客户端<br/>GatewayChannel.swift"]
-end
 subgraph "协议层"
-D["帧与参数 Schema<br/>src/gateway/protocol/schema/frames.ts"]
-E["协议导出与校验<br/>src/gateway/protocol/index.ts"]
-F["基础类型<br/>src/gateway/protocol/schema/primitives.ts"]
+A["frames.ts<br/>请求/响应/事件帧定义"]
+B["protocol-schemas.ts<br/>协议版本与Schema集合"]
+C["protocol/index.ts<br/>校验器与导出"]
 end
 subgraph "服务端"
-G["执行审批处理器<br/>src/gateway/server-methods/exec-approval.ts"]
-H["系统事件广播<br/>src/gateway/server-methods/system.ts"]
-I["审批管理器<br/>src/gateway/exec-approval-manager.ts"]
+D["ws-connection.ts<br/>握手/发送/日志"]
+E["message-handler.ts<br/>connect处理/版本协商/错误"]
 end
-A --> D
-B --> D
+subgraph "客户端"
+F["gateway/client.ts<br/>选项/关闭码语义/回调"]
+G["OpenClawKit/GatewayChannel.swift<br/>解析帧/事件/序号"]
+H["GatewayNodeSessionTests.swift<br/>connect帧识别/回执"]
+end
+A --> C
+B --> C
 C --> D
+C --> E
+C --> F
+C --> G
+C --> H
 D --> E
-E --> F
-A --> G
-A --> H
-G --> I
+F --> G
 ```
 
 图表来源
-- [src/gateway/client.ts](file://src/gateway/client.ts#L1-L442)
-- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L1-L165)
-- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts#L1-L603)
-- [src/gateway/protocol/schema/primitives.ts](file://src/gateway/protocol/schema/primitives.ts#L1-L18)
-- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts#L1-L138)
-- [src/gateway/server-methods/system.ts](file://src/gateway/server-methods/system.ts#L102-L140)
-- [src/gateway/exec-approval-manager.ts](file://src/gateway/exec-approval-manager.ts#L51-L82)
+
+- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L125-L163)
+- [src/gateway/protocol/schema/protocol-schemas.ts](file://src/gateway/protocol/schema/protocol-schemas.ts#L153-L283)
+- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts#L1-L640)
+- [src/gateway/server/ws-connection.ts](file://src/gateway/server/ws-connection.ts#L132-L170)
+- [src/gateway/server/ws-connection/message-handler.ts](file://src/gateway/server/ws-connection/message-handler.ts#L408-L450)
+- [src/gateway/client.ts](file://src/gateway/client.ts#L37-L83)
+- [apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift](file://apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift#L518-L548)
+- [apps/shared/OpenClawKit/Tests/OpenClawKitTests/GatewayNodeSessionTests.swift](file://apps/shared/OpenClawKit/Tests/OpenClawKitTests/GatewayNodeSessionTests.swift#L62-L76)
 
 章节来源
-- [src/gateway/client.ts](file://src/gateway/client.ts#L1-L442)
-- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L1-L165)
-- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts#L1-L603)
+
+- [docs/gateway/protocol.md](file://docs/gateway/protocol.md#L10-L256)
+- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L1-L164)
+- [src/gateway/protocol/schema/protocol-schemas.ts](file://src/gateway/protocol/schema/protocol-schemas.ts#L1-L286)
+- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts#L1-L640)
 
 ## 核心组件
-- 连接与握手
-  - 服务端在连接建立后发送“connect.challenge”事件，携带一次性随机数（nonce），客户端需在后续“connect”请求中回传该 nonce 以完成挑战响应
-  - “connect”请求包含协议版本范围、客户端信息、能力、权限、设备签名、认证凭据等
-  - 服务端返回“hello-ok”，包含协议版本、服务器信息、特性列表、快照、策略参数等
-- 消息帧
-  - req：请求帧，包含 type、id、method、params
-  - res：响应帧，包含 type、id、ok、payload 或 error
-  - event：事件帧，包含 type、event、payload、可选 seq、stateVersion
-- 事件系统
-  - 系统事件：如 system-presence、exec.approval.requested、exec.approval.resolved、presence、tick、shutdown 等
-  - 事件可带有序号 seq 与状态版本 stateVersion，用于顺序与一致性控制
-- RPC 方法
-  - 常用方法：connect、exec.approval.request、exec.approval.resolve、system-presence 等
-  - 参数与返回值均受 Schema 校验，错误通过 res.error 返回
+
+- 帧类型与结构
+  - 请求帧：携带唯一id、方法名与可选参数。
+  - 响应帧：携带对应请求id、布尔结果、可选负载或错误对象。
+  - 事件帧：携带事件名、可选载荷、可选序列号与状态版本。
+- 连接握手
+  - 首帧必须是connect请求；服务端先下发connect.challenge事件（含随机nonce与时间戳），客户端需按协议签名挑战并回传connect请求。
+  - 成功后返回hello-ok响应，包含协议版本、服务器信息、特性列表、快照、策略等。
+- 版本与校验
+  - PROTOCOL_VERSION在协议Schema中定义；客户端声明min/max协议版本，服务端进行协商并拒绝不兼容版本。
+  - 所有帧与参数均通过AJV校验器进行Schema校验。
+- 安全与鉴权
+  - 支持设备身份与签名挑战；支持网关令牌、设备令牌；支持TLS与证书指纹固定。
+- 实时事件
+  - 包括心跳tick、节点/代理/会话/执行审批等事件；事件帧可带有序列号与状态版本，用于去重与一致性。
 
 章节来源
-- [src/gateway/client.ts](file://src/gateway/client.ts#L178-L286)
-- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L126-L165)
-- [src/gateway/server.auth.e2e.test.ts](file://src/gateway/server.auth.e2e.test.ts#L249-L285)
-- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts#L18-L97)
-- [src/gateway/server-methods/system.ts](file://src/gateway/server-methods/system.ts#L102-L140)
+
+- [docs/gateway/protocol.md](file://docs/gateway/protocol.md#L17-L256)
+- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L125-L163)
+- [src/gateway/protocol/schema/protocol-schemas.ts](file://src/gateway/protocol/schema/protocol-schemas.ts#L285-L286)
+- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts#L243-L432)
 
 ## 架构总览
-下图展示从客户端到服务端的关键交互路径，包括握手、挑战响应、认证、RPC 调用与事件订阅。
+
+下图展示从客户端发起连接到服务端完成握手与事件分发的关键步骤。
 
 ```mermaid
 sequenceDiagram
-participant C as "客户端<br/>GatewayClient"
-participant S as "服务端"
-participant M as "执行审批管理器"
-C->>S : "WebSocket 连接"
-S-->>C : "event(connect.challenge){ nonce }"
-C->>C : "生成/缓存 nonce"
-C->>S : "req(connect){ min/maxProtocol, client, caps, auth, device }"
-S-->>C : "res(connect){ ok, hello-ok }"
-Note over C,S : "握手完成，建立会话"
-C->>S : "req(system-presence){}"
-S-->>C : "res(system-presence){ presence[] }"
-C->>S : "req(exec.approval.request){ id, command, ... }"
-S->>M : "创建审批记录并广播 exec.approval.requested"
-C-->>C : "监听 exec.approval.requested 事件"
-C->>S : "req(exec.approval.resolve){ id, decision }"
-S->>M : "解析决策并广播 exec.approval.resolved"
-S-->>C : "res(exec.approval.resolve){ ok : true }"
+participant Client as "客户端"
+participant Server as "服务端(ws-connection)"
+participant Handler as "消息处理器(message-handler)"
+Client->>Server : "建立WebSocket连接"
+Server->>Client : "发送connect.challenge事件(含nonce/ts)"
+Client->>Server : "发送connect请求(含min/max协议/客户端信息/鉴权/设备)"
+Handler->>Handler : "校验协议版本/参数/签名"
+alt 版本不匹配或校验失败
+Handler-->>Client : "发送错误响应并关闭连接"
+else 成功
+Handler-->>Client : "发送hello-ok响应(含策略/特性/快照)"
+Handler->>Client : "广播初始事件/状态"
+end
 ```
 
 图表来源
-- [src/gateway/client.ts](file://src/gateway/client.ts#L178-L286)
-- [src/gateway/server.auth.e2e.test.ts](file://src/gateway/server.auth.e2e.test.ts#L249-L285)
-- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts#L18-L97)
-- [src/gateway/server-methods/system.ts](file://src/gateway/server-methods/system.ts#L102-L140)
+
+- [src/gateway/server/ws-connection.ts](file://src/gateway/server/ws-connection.ts#L132-L170)
+- [src/gateway/server/ws-connection/message-handler.ts](file://src/gateway/server/ws-connection/message-handler.ts#L408-L450)
+- [docs/gateway/protocol.md](file://docs/gateway/protocol.md#L22-L90)
+
+章节来源
+
+- [src/gateway/server/ws-connection.ts](file://src/gateway/server/ws-connection.ts#L132-L170)
+- [src/gateway/server/ws-connection/message-handler.ts](file://src/gateway/server/ws-connection/message-handler.ts#L408-L450)
+- [docs/gateway/protocol.md](file://docs/gateway/protocol.md#L22-L90)
 
 ## 详细组件分析
 
-### 连接与握手流程
-- 握手阶段
-  - 服务端在连接建立后立即发送“connect.challenge”事件，携带 nonce
-  - 客户端收到后缓存 nonce，并在“connect”请求中回传
-  - “connect”请求包含 minProtocol、maxProtocol、client、caps、permissions、auth、device 等字段
-  - 服务端校验协议版本范围，若不兼容则拒绝；成功后返回“hello-ok”
-- 认证与角色声明
-  - 支持 token/password 两种认证方式；也可使用设备签名（device）进行硬件级认证
-  - 服务端返回 hello-ok 中的 auth 字段可包含 deviceToken、role、scopes 等
-- 挑战响应机制
-  - 客户端在收到“connect.challenge”事件后，必须在后续“connect”请求中带上 nonce 才能继续
-  - 若未按要求回传 nonce，服务端可能关闭连接或拒绝后续请求
+### 帧格式与协议规范
 
-```mermaid
-sequenceDiagram
-participant S as "服务端"
-participant C as "客户端"
-S-->>C : "event(connect.challenge){ nonce }"
-C->>C : "缓存 nonce"
-C->>S : "req(connect){ minProtocol, maxProtocol, client, auth, device }"
-alt 版本不兼容
-S-->>C : "res(connect){ ok : false, error }"
-C->>C : "关闭连接/重试"
-else 版本兼容
-S-->>C : "res(connect){ ok : true, hello-ok }"
-end
-```
-
-图表来源
-- [src/gateway/server.auth.e2e.test.ts](file://src/gateway/server.auth.e2e.test.ts#L249-L285)
-- [src/gateway/client.ts](file://src/gateway/client.ts#L178-L286)
-
-章节来源
-- [src/gateway/server.auth.e2e.test.ts](file://src/gateway/server.auth.e2e.test.ts#L249-L285)
-- [src/gateway/client.ts](file://src/gateway/client.ts#L178-L286)
-
-### 消息帧格式规范
-- req 帧
-  - 必填：type="req"、id、method
-  - 可选：params
-- res 帧
-  - 必填：type="res"、id、ok
-  - 可选：payload 或 error
-  - error 包含 code、message、details、retryable、retryAfterMs
-- event 帧
-  - 必填：type="event"、event
-  - 可选：payload、seq、stateVersion
-- 校验与序列化
-  - 使用 TypeBox Schema 与 AJV 校验，确保字段完整性与类型正确
-  - Swift 客户端支持对帧进行解码与编码，自动识别 req/res/event 类型
+- 帧类型
+  - req：请求帧，包含type、id、method、params。
+  - res：响应帧，包含type、id、ok、payload或error。
+  - event：事件帧，包含type、event、payload、可选seq与stateVersion。
+- 参数与校验
+  - ConnectParams、HelloOk、ErrorShape等Schema定义了握手与运行期参数的结构与约束。
+  - 所有方法参数均有对应的Schema与AJV校验器，确保消息合法性。
+- 协议版本
+  - PROTOCOL_VERSION为3；客户端需在connect.params中声明min/max协议版本，服务端进行协商。
 
 ```mermaid
 classDiagram
@@ -212,271 +180,264 @@ class EventFrame {
 +number seq
 +StateVersion stateVersion
 }
-class ErrorShape {
-+string code
-+string message
-+any details
-+boolean retryable
-+number retryAfterMs
+class ConnectParams {
++number minProtocol
++number maxProtocol
++ClientInfo client
++string[] caps
++string[] commands
++map permissions
++string pathEnv
++string role
++string[] scopes
++DeviceInfo device
++AuthInfo auth
++string locale
++string userAgent
 }
-RequestFrame --> ErrorShape : "错误时可选"
-ResponseFrame --> ErrorShape : "错误时可选"
+class HelloOk {
++string type
++number protocol
++ServerInfo server
++Features features
++Snapshot snapshot
++Policy policy
+}
+RequestFrame --> ResponseFrame : "请求-响应配对"
+EventFrame --> EventFrame : "事件广播"
+ConnectParams --> HelloOk : "握手结果"
 ```
 
 图表来源
-- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L126-L165)
+
+- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L125-L163)
+- [src/gateway/protocol/schema/protocol-schemas.ts](file://src/gateway/protocol/schema/protocol-schemas.ts#L153-L283)
 
 章节来源
-- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L126-L165)
-- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts#L233-L237)
-- [apps/shared/OpenClawKit/Sources/OpenClawProtocol/GatewayModels.swift](file://apps/shared/OpenClawKit/Sources/OpenClawProtocol/GatewayModels.swift#L2763-L2795)
-- [apps/macos/Sources/OpenClawProtocol/GatewayModels.swift](file://apps/macos/Sources/OpenClawProtocol/GatewayModels.swift#L2763-L2795)
 
-### 事件系统
-- 事件类型
-  - exec.approval.requested：发起执行审批请求，携带 id、request、createdAtMs、expiresAtMs
-  - exec.approval.resolved：审批已解决，携带 id、decision、resolvedBy、ts
-  - presence：系统实例在线状态列表
-  - tick：心跳事件，用于保活检测
-  - shutdown：服务端计划重启或关闭通知
-- 事件帧
-  - event 帧可带 seq（事件序号）与 stateVersion（状态版本），便于顺序与一致性控制
-- 客户端处理
-  - 浏览器前端监听并更新 UI 队列（如执行审批队列）
-  - Swift 客户端等待“connect.challenge”事件并提取 nonce
+- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L125-L163)
+- [src/gateway/protocol/schema/protocol-schemas.ts](file://src/gateway/protocol/schema/protocol-schemas.ts#L153-L283)
+- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts#L243-L432)
+
+### 连接处理与握手流程
+
+- 握手阶段
+  - 服务端在连接建立后立即发送connect.challenge事件，包含nonce与时间戳。
+  - 客户端需等待该挑战事件，按协议对挑战进行签名，并在connect请求中附带设备信息与鉴权凭据。
+- 版本协商
+  - 服务端根据客户端声明的min/max协议版本进行协商，若不兼容则返回错误并关闭连接。
+- 成功握手
+  - 返回hello-ok响应，包含协议版本、服务器信息、特性列表、快照与策略（如最大负载、缓冲字节、心跳间隔）。
 
 ```mermaid
 flowchart TD
-Start(["收到 event 帧"]) --> CheckType{"event 类型？"}
-CheckType --> |exec.approval.requested| Req["更新审批队列/过期定时器"]
-CheckType --> |exec.approval.resolved| Res["移除审批项"]
-CheckType --> |presence| Pres["刷新在线状态"]
-CheckType --> |tick| Tick["重置保活计时"]
-CheckType --> |shutdown| SD["提示/清理"]
-Req --> End(["结束"])
-Res --> End
-Pres --> End
-Tick --> End
-SD --> End
+Start(["开始"]) --> Challenge["服务端发送connect.challenge"]
+Challenge --> Wait["客户端等待挑战事件"]
+Wait --> Sign["客户端对挑战进行签名"]
+Sign --> ConnectReq["客户端发送connect请求"]
+ConnectReq --> Validate["服务端校验协议/参数/签名"]
+Validate --> |失败| ErrResp["返回错误响应并关闭"]
+Validate --> |成功| Hello["返回hello-ok响应"]
+Hello --> End(["完成握手"])
 ```
 
 图表来源
-- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts#L66-L75)
-- [src/gateway/server-methods/system.ts](file://src/gateway/server-methods/system.ts#L127-L137)
-- [ui/src/ui/app-gateway.ts](file://ui/src/ui/app-gateway.ts#L292-L329)
+
+- [src/gateway/server/ws-connection.ts](file://src/gateway/server/ws-connection.ts#L132-L170)
+- [src/gateway/server/ws-connection/message-handler.ts](file://src/gateway/server/ws-connection/message-handler.ts#L408-L450)
+- [docs/gateway/protocol.md](file://docs/gateway/protocol.md#L22-L90)
 
 章节来源
-- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts#L66-L75)
-- [src/gateway/server-methods/system.ts](file://src/gateway/server-methods/system.ts#L127-L137)
-- [ui/src/ui/app-gateway.ts](file://ui/src/ui/app-gateway.ts#L292-L329)
 
-### RPC 方法：connect
-- 请求
-  - method: "connect"
-  - params: ConnectParams
-    - minProtocol、maxProtocol：协议版本范围
-    - client：客户端标识（id、displayName、version、platform、mode、instanceId）
-    - caps、commands、permissions、pathEnv、role、scopes、device、auth、locale、userAgent
-- 响应
-  - ok=true：返回 HelloOk
-    - protocol：实际使用的协议版本
-    - server：版本、提交、主机、连接 ID
-    - features：支持的方法与事件列表
-    - snapshot：初始状态快照
-    - canvasHostUrl、auth、policy
-  - ok=false：返回 error
+- [src/gateway/server/ws-connection.ts](file://src/gateway/server/ws-connection.ts#L132-L170)
+- [src/gateway/server/ws-connection/message-handler.ts](file://src/gateway/server/ws-connection/message-handler.ts#L408-L450)
+- [docs/gateway/protocol.md](file://docs/gateway/protocol.md#L22-L90)
 
-章节来源
-- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L20-L68)
-- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L70-L113)
-- [src/gateway/client.ts](file://src/gateway/client.ts#L178-L286)
+### 数据帧格式与实时交互
 
-### RPC 方法：exec.approval.request
-- 请求
-  - method: "exec.approval.request"
-  - params:
-    - id（可选，显式指定审批 ID；若重复将被拒绝）
-    - command、cwd、host、security、ask、agentId、resolvedPath、sessionKey、timeoutMs
-- 响应
-  - 成功：返回 { id, decision, createdAtMs, expiresAtMs }
-  - 失败：返回 error（如 INVALID_REQUEST）
+- 文本帧与JSON
+  - WebSocket传输采用文本帧，JSON作为载体；二进制帧在OpenClaw的通用WebSocket协议中未作为主要承载方式。
+- 事件序列与去重
+  - 事件帧可带有序列号seq与stateVersion，客户端可据此检测丢包与重复，保持顺序一致性。
+- 心跳与保活
+  - hello-ok中包含心跳间隔策略；客户端应维持心跳周期，避免空闲超时。
+
+```mermaid
+sequenceDiagram
+participant Client as "客户端"
+participant Server as "服务端"
+Client->>Server : "req(connect)"
+Server-->>Client : "res(hello-ok)"
+Server-->>Client : "event(tick/其他事件)"
+Client->>Server : "req(业务方法)"
+Server-->>Client : "res(响应)"
+Note over Client,Server : "基于seq与stateVersion进行去重与一致性校验"
+```
+
+图表来源
+
+- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L146-L155)
+- [src/gateway/protocol/schema/protocol-schemas.ts](file://src/gateway/protocol/schema/protocol-schemas.ts#L153-L283)
+- [apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift](file://apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift#L535-L544)
 
 章节来源
-- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts#L18-L97)
 
-### RPC 方法：exec.approval.resolve
-- 请求
-  - method: "exec.approval.resolve"
-  - params: { id, decision }，其中 decision ∈ {"allow-once","allow-always","deny"}
-- 响应
-  - 成功：返回 { ok:true }
-  - 失败：返回 error（如 INVALID_REQUEST）
+- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L146-L155)
+- [apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift](file://apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift#L518-L548)
 
-章节来源
-- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts#L98-L135)
+### 客户端实现指南
 
-### RPC 方法：system-presence
-- 请求
-  - method: "system-presence"
-  - params: {}
-- 响应
-  - 返回 presence 列表（PresenceEntry[]）
+- 连接与选项
+  - 支持指定网关URL、令牌、设备令牌、密码、实例ID、客户端名称/显示名/版本、平台、设备家族、模式、角色、作用域、能力、命令、权限、路径环境变量、设备身份、最小/最大协议版本、TLS指纹等。
+- 回调与状态
+  - 提供onEvent、onHelloOk、onConnectError、onClose、onGap等回调；GATEWAY_CLOSE_CODE_HINTS提供常见关闭码语义。
+- Swift客户端参考
+  - OpenClawKit的GatewayChannel对URLSessionWebSocketTask的消息进行解析，区分res/event等帧类型，维护事件序列号lastSeq与最近tick时间lastTick，并对seqGap进行告警。
 
 章节来源
-- [ui/src/ui/controllers/presence.ts](file://ui/src/ui/controllers/presence.ts#L13-L37)
-- [src/gateway/server-methods/system.ts](file://src/gateway/server-methods/system.ts#L127-L137)
+
+- [src/gateway/client.ts](file://src/gateway/client.ts#L37-L83)
+- [apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift](file://apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift#L518-L548)
 
 ### 错误处理策略
-- 帧级别
-  - req/res/event 三类帧均受 Schema 校验；校验失败返回 res.error
-  - error 形态包含 code、message、details、retryable、retryAfterMs
-- 连接与握手
-  - 协议版本不匹配：拒绝连接
-  - 非“connect”首请求：拒绝并关闭
-  - TLS 指纹不匹配：拒绝连接
-- 业务错误
-  - exec.approval.request：重复 ID、超时、未知 ID 等
-  - exec.approval.resolve：无效决策、未知 ID
-- 客户端行为
-  - 对 res.ok=false 的请求抛出异常或透传错误
-  - 对 accept 状态的长耗时请求，客户端可选择等待最终结果
+
+- 关闭码语义
+  - 常见关闭码含义：正常关闭、异常关闭、策略违规、服务重启等；客户端可根据语义采取重连或提示。
+- 握手失败
+  - 当协议不匹配或参数/签名校验失败时，服务端返回错误响应并关闭连接；客户端应记录原因并按策略重试或提示用户。
+- 事件序列异常
+  - 当事件seq出现跳跃时，客户端应触发gap回调并进行重同步。
 
 章节来源
-- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L115-L124)
-- [src/gateway/server.auth.e2e.test.ts](file://src/gateway/server.auth.e2e.test.ts#L262-L285)
-- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts#L46-L52)
-- [src/gateway/client.ts](file://src/gateway/client.ts#L315-L332)
 
-### 协议版本管理与向后兼容
-- 协议版本
-  - 通过 connect.params.minProtocol 与 maxProtocol 指定版本范围
-  - 服务端返回 hello-ok.protocol 表示实际采用的版本
-- 兼容策略
-  - 服务端拒绝不在 min/max 范围内的版本
-  - 客户端在握手失败时可调整版本范围或降级
-- 现有实现
-  - 协议版本常量与导出位于协议索引文件中，供客户端和服务端共享
+- [src/gateway/client.ts](file://src/gateway/client.ts#L74-L83)
+- [src/gateway/server/ws-connection/message-handler.ts](file://src/gateway/server/ws-connection/message-handler.ts#L408-L450)
+- [apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift](file://apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift#L535-L544)
+
+### 安全考虑
+
+- 设备身份与挑战签名
+  - 客户端必须等待connect.challenge并在connect请求中附带设备身份与签名；服务端严格校验nonce、签名有效性与时效。
+- 认证与授权
+  - 支持网关令牌与设备令牌；设备令牌随hello-ok下发，客户端应持久化以便后续连接复用。
+- 传输安全
+  - 支持TLS；客户端可配置证书指纹固定，防止中间人攻击。
+- 跨源与明文
+  - 对非本地主机的ws://连接进行限制，要求使用安全WebSocket传输。
 
 章节来源
-- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L22-L23)
-- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts#L499-L499)
+
+- [docs/gateway/protocol.md](file://docs/gateway/protocol.md#L195-L256)
+- [src/gateway/server/ws-connection.ts](file://src/gateway/server/ws-connection.ts#L132-L170)
+
+### 使用示例与最佳实践
+
+- 建议流程
+  - 建立连接 → 等待connect.challenge → 签名挑战 → 发送connect → 处理hello-ok → 订阅事件 → 按需调用方法 → 维护心跳与序列号。
+- 性能优化
+  - 合理设置策略参数（最大负载、缓冲字节、心跳间隔）；避免频繁发送大负载事件；利用stateVersion进行增量更新。
+- 安全最佳实践
+  - 始终使用wss；启用设备身份与签名；妥善保管设备令牌；定期轮换设备令牌。
+
+章节来源
+
+- [docs/gateway/protocol.md](file://docs/gateway/protocol.md#L17-L256)
+- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L102-L112)
+
+### 协议特定调试工具与监控
+
+- 日志样式控制
+  - 提供GatewayWsLogStyle枚举与set/get函数，支持自动/完整/紧凑三种日志风格，便于在不同场景下调整输出粒度。
+- RawData转字符串
+  - 提供rawDataToString工具，便于在Node.js侧将RawData转换为字符串进行日志与调试。
+- Mattermost插件示例
+  - 展示了如何封装WebSocket工厂、处理open/message/close/error事件、解析事件负载与错误处理，可作为第三方集成参考。
+
+章节来源
+
+- [dist/plugin-sdk/gateway/ws-logging.d.ts](file://dist/plugin-sdk/gateway/ws-logging.d.ts#L1-L5)
+- [dist/plugin-sdk/infra/ws.d.ts](file://dist/plugin-sdk/infra/ws.d.ts#L1-L3)
+- [extensions/mattermost/src/mattermost/monitor-websocket.ts](file://extensions/mattermost/src/mattermost/monitor-websocket.ts#L1-L222)
 
 ## 依赖关系分析
-- 客户端依赖协议层的 Schema 与校验函数，确保发送帧合法
-- 服务端方法依赖协议层的参数校验与错误构造工具
-- 事件系统通过上下文广播事件，客户端订阅并更新本地状态
-- 平台 SDK（Swift/TypeScript）依赖通用帧模型进行解码与编码
+
+- 协议层
+  - frames.ts定义帧Schema；protocol-schemas.ts汇总所有Schema并导出PROTOCOL_VERSION；protocol/index.ts生成校验器并导出类型。
+- 服务端
+  - ws-connection.ts负责连接生命周期与发送；message-handler.ts负责connect处理、版本协商与错误返回。
+- 客户端
+  - gateway/client.ts提供连接选项与回调；OpenClawKit的GatewayChannel.swift负责消息解析与事件处理。
 
 ```mermaid
 graph LR
-Client["GatewayClient<br/>src/gateway/client.ts"] --> ProtoIdx["协议索引<br/>src/gateway/protocol/index.ts"]
-ProtoIdx --> Frames["帧 Schema<br/>src/gateway/protocol/schema/frames.ts"]
-Frames --> Primitives["基础类型<br/>src/gateway/protocol/schema/primitives.ts"]
-Handlers["执行审批处理器<br/>src/gateway/server-methods/exec-approval.ts"] --> ProtoIdx
-Handlers --> Manager["审批管理器<br/>src/gateway/exec-approval-manager.ts"]
-Client --> Handlers
-Client --> Sys["系统事件广播<br/>src/gateway/server-methods/system.ts"]
+Frames["frames.ts"] --> Index["protocol/index.ts"]
+Schemas["protocol-schemas.ts"] --> Index
+Index --> Conn["ws-connection.ts"]
+Index --> Msg["message-handler.ts"]
+Index --> Client["gateway/client.ts"]
+Index --> Swift["GatewayChannel.swift"]
 ```
 
 图表来源
-- [src/gateway/client.ts](file://src/gateway/client.ts#L1-L442)
-- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts#L1-L603)
-- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L1-L165)
-- [src/gateway/protocol/schema/primitives.ts](file://src/gateway/protocol/schema/primitives.ts#L1-L18)
-- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts#L1-L138)
-- [src/gateway/exec-approval-manager.ts](file://src/gateway/exec-approval-manager.ts#L51-L82)
-- [src/gateway/server-methods/system.ts](file://src/gateway/server-methods/system.ts#L102-L140)
+
+- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L1-L164)
+- [src/gateway/protocol/schema/protocol-schemas.ts](file://src/gateway/protocol/schema/protocol-schemas.ts#L1-L286)
+- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts#L1-L640)
+- [src/gateway/server/ws-connection.ts](file://src/gateway/server/ws-connection.ts#L132-L170)
+- [src/gateway/server/ws-connection/message-handler.ts](file://src/gateway/server/ws-connection/message-handler.ts#L408-L450)
+- [src/gateway/client.ts](file://src/gateway/client.ts#L37-L83)
+- [apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift](file://apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift#L518-L548)
 
 章节来源
-- [src/gateway/client.ts](file://src/gateway/client.ts#L1-L442)
-- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts#L1-L603)
+
+- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L1-L164)
+- [src/gateway/protocol/schema/protocol-schemas.ts](file://src/gateway/protocol/schema/protocol-schemas.ts#L1-L286)
+- [src/gateway/protocol/index.ts](file://src/gateway/protocol/index.ts#L1-L640)
 
 ## 性能考量
-- 心跳与保活
-  - 服务端发送“tick”事件，客户端需在超过两倍 tickIntervalMs 未收到心跳时主动断开
-- 大负载
-  - 客户端 WebSocket 初始化时设置较大 maxPayload，以支持屏幕截图等大响应
-- 事件顺序
-  - 事件帧可带 seq，客户端可检测丢包并上报 gap 回调
-- 广播策略
-  - 部分事件（如 presence）支持 dropIfSlow，避免阻塞关键路径
 
-章节来源
-- [src/gateway/client.ts](file://src/gateway/client.ts#L309-L311)
-- [src/gateway/client.ts](file://src/gateway/client.ts#L369-L386)
-- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L147-L156)
+- 心跳与保活
+  - 依据hello-ok中的tickIntervalMs维持心跳，避免因空闲导致连接被中间设备断开。
+- 负载与缓冲
+  - 利用策略中的maxPayload与maxBufferedBytes限制单帧大小与缓冲上限，防止内存压力。
+- 序列化与解析
+  - 采用JSON文本帧，解析成本低；事件帧带seq与stateVersion，便于增量更新与去重。
+
+[本节为通用指导，无需列出具体文件来源]
 
 ## 故障排查指南
-- 握手失败
-  - 检查是否先收到“connect.challenge”且已回传 nonce
-  - 核对 minProtocol/maxProtocol 是否在服务端允许范围内
-  - TLS 场景检查指纹是否匹配
-- 请求无响应
-  - 确认 id 是否唯一且未被服务端拒绝
-  - 对 accept 状态的长请求，确认是否在等待最终结果
-- 事件缺失
-  - 检查是否订阅了对应事件
-  - 关注 seq 与 stateVersion，确认事件顺序与版本一致
-- 常见错误码
-  - INVALID_REQUEST：参数校验失败或业务状态非法
-  - 其他错误形态包含 retryable/retryAfterMs，便于客户端自适应重试
+
+- 常见问题定位
+  - 协议不匹配：检查客户端min/max协议版本与服务端PROTOCOL_VERSION是否一致。
+  - 设备签名失败：确认已等待connect.challenge并正确签名，且nonce一致。
+  - 关闭码异常：参考GATEWAY_CLOSE_CODE_HINTS，结合服务端日志定位原因。
+- 事件序列异常
+  - 当收到seqGap事件时，优先进行重同步，必要时重建连接。
+- 第三方集成
+  - 参考Mattermost示例，确保正确处理open/message/close/error事件与错误日志。
 
 章节来源
-- [src/gateway/server.auth.e2e.test.ts](file://src/gateway/server.auth.e2e.test.ts#L249-L285)
-- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts#L46-L52)
-- [src/gateway/protocol/schema/frames.ts](file://src/gateway/protocol/schema/frames.ts#L115-L124)
+
+- [src/gateway/client.ts](file://src/gateway/client.ts#L74-L83)
+- [src/gateway/server/ws-connection/message-handler.ts](file://src/gateway/server/ws-connection/message-handler.ts#L408-L450)
+- [apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift](file://apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift#L535-L544)
+- [extensions/mattermost/src/mattermost/monitor-websocket.ts](file://extensions/mattermost/src/mattermost/monitor-websocket.ts#L101-L211)
 
 ## 结论
-OpenClaw WebSocket API 以清晰的帧模型、严格的参数校验与完善的事件系统为基础，提供了稳健的连接、认证与 RPC 能力。通过挑战响应与可插拔的认证方式，兼顾易用性与安全性；通过版本协商与错误形态，保障向前兼容与可维护性。建议在生产环境中严格遵循帧格式与事件语义，合理利用心跳与保活策略，并对错误进行分级处理与重试。
+
+OpenClaw的WebSocket API以清晰的帧模型与严格的协议校验为核心，配合设备身份挑战、令牌与TLS保障安全；通过事件序列号与状态版本实现可靠实时交互。遵循本文档的实现与调试建议，可在多端稳定接入并高效运维。
+
+[本节为总结性内容，无需列出具体文件来源]
 
 ## 附录
 
-### 示例：连接与鉴权（文本描述）
-- 步骤
-  - 建立 WebSocket 连接
-  - 接收“connect.challenge”并缓存 nonce
-  - 发送“connect”请求，包含 min/maxProtocol、client、auth/device、caps/scopes 等
-  - 接收“hello-ok”，记录协议版本与策略
-- 注意
-  - 若 min/max 不兼容，需调整版本范围
-  - 若未回传 nonce，服务端可能拒绝后续请求
+- 相关类型与工具
+  - GatewayWsClient：服务端对客户端连接的抽象，包含socket、连接参数、连接ID、设备信息与Canvas能力等。
+  - GatewayWsLogStyle：日志风格枚举，支持自动/完整/紧凑。
+  - rawDataToString：将RawData转换为字符串的工具函数。
 
 章节来源
-- [src/gateway/server.auth.e2e.test.ts](file://src/gateway/server.auth.e2e.test.ts#L249-L285)
-- [src/gateway/client.ts](file://src/gateway/client.ts#L178-L286)
 
-### 示例：执行审批流程（文本描述）
-- 发起审批
-  - 客户端发送“exec.approval.request”，服务端广播“exec.approval.requested”
-- 决策
-  - 客户端发送“exec.approval.resolve”，服务端广播“exec.approval.resolved”
-- 结果
-  - 客户端收到最终响应，UI 更新审批队列
-
-章节来源
-- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts#L18-L97)
-- [src/gateway/server-methods/exec-approval.ts](file://src/gateway/server-methods/exec-approval.ts#L98-L135)
-- [ui/src/ui/app-gateway.ts](file://ui/src/ui/app-gateway.ts#L310-L321)
-
-### 示例：系统在线状态（文本描述）
-- 客户端发送“system-presence”
-- 服务端广播“presence”事件
-- 客户端更新 UI 展示在线实例列表
-
-章节来源
-- [ui/src/ui/controllers/presence.ts](file://ui/src/ui/controllers/presence.ts#L13-L37)
-- [src/gateway/server-methods/system.ts](file://src/gateway/server-methods/system.ts#L127-L137)
-
-### 平台适配要点
-- TypeScript 客户端
-  - 浏览器前端通过 ui/src/ui/gateway.ts 发送请求，内部使用 UUID 作为 id
-- Swift 客户端
-  - 通过 GatewayChannel.swift 解码帧，等待“connect.challenge”事件并提取 nonce
-  - Swift 协议模型支持对 req/res/event 的多态解码
-
-章节来源
-- [ui/src/ui/gateway.ts](file://ui/src/ui/gateway.ts#L290-L301)
-- [apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift](file://apps/shared/OpenClawKit/Sources/OpenClawKit/GatewayChannel.swift#L498-L525)
-- [apps/macos/Sources/OpenClawMacCLI/WizardCommand.swift](file://apps/macos/Sources/OpenClawMacCLI/WizardCommand.swift#L336-L360)
-- [apps/shared/OpenClawKit/Sources/OpenClawProtocol/GatewayModels.swift](file://apps/shared/OpenClawKit/Sources/OpenClawProtocol/GatewayModels.swift#L2763-L2795)
-- [apps/macos/Sources/OpenClawProtocol/GatewayModels.swift](file://apps/macos/Sources/OpenClawProtocol/GatewayModels.swift#L2763-L2795)
+- [dist/plugin-sdk/gateway/server/ws-types.d.ts](file://dist/plugin-sdk/gateway/server/ws-types.d.ts#L1-L13)
+- [dist/plugin-sdk/gateway/ws-logging.d.ts](file://dist/plugin-sdk/gateway/ws-logging.d.ts#L1-L5)
+- [dist/plugin-sdk/infra/ws.d.ts](file://dist/plugin-sdk/infra/ws.d.ts#L1-L3)
