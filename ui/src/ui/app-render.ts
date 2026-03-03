@@ -1035,6 +1035,12 @@ export function renderApp(state: AppViewState) {
                       void loadAgentIdentities(state, agentIds);
                     }
                     await loadConfig(state);
+                    // Load the newly created agent's identity and tools catalog
+                    const newAgentId = state.agentsSelectedId;
+                    if (newAgentId) {
+                      await loadAgentIdentity(state, newAgentId);
+                      await loadToolsCatalog(state, newAgentId);
+                    }
                   }
                 },
                 onShowDeleteConfirm: (agentId) => {

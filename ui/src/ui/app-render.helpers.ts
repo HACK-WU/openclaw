@@ -1,5 +1,6 @@
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
+import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
 import { refreshChat, switchSession } from "./app-chat.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
@@ -132,34 +133,21 @@ export function renderChatControls(state: AppViewState) {
     </svg>
   `;
   const agents = state.agentsList?.agents ?? [];
-  const currentAgentId = state.chatAgentId;
+  // Derive current agent from session key
+  const parsed = parseAgentSessionKey(state.sessionKey);
+  const currentAgentId = parsed?.agentId;
+  const currentAgent = currentAgentId ? agents.find((a) => a.id === currentAgentId) : undefined;
+  const agentLabel = currentAgent?.identity?.emoji
+    ? `${currentAgent.identity.emoji} ${currentAgent.identity?.name ?? currentAgentId}`
+    : (currentAgent?.identity?.name ?? currentAgentId ?? "Default");
   return html`
     <div class="chat-controls">
       ${
-        agents.length > 1
+        agents.length > 0
           ? html`
-              <label class="field chat-controls__agent">
-                <select
-                  .value=${currentAgentId ?? ""}
-                  ?disabled=${!state.connected}
-                  @change=${(e: Event) => {
-                    const val = (e.target as HTMLSelectElement).value;
-                    state.chatAgentId = val || null;
-                  }}
-                >
-                  <option value="">Default</option>
-                  ${repeat(
-                    agents,
-                    (a) => a.id,
-                    (a) => {
-                      const label = a.identity?.emoji
-                        ? `${a.identity.emoji} ${a.identity?.name ?? a.id}`
-                        : (a.identity?.name ?? a.id);
-                      return html`<option value=${a.id}>${label}</option>`;
-                    },
-                  )}
-                </select>
-              </label>
+              <span class="field chat-controls__agent chat-controls__agent--readonly">
+                ${agentLabel}
+              </span>
             `
           : nothing
       }

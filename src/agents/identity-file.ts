@@ -59,7 +59,14 @@ export function parseIdentityMarkdown(content: string): AgentIdentityFile {
       identity.name = value;
     }
     if (label === "emoji") {
-      identity.emoji = value;
+      // Extract only the first emoji/shortcode, ignore explanatory text in parentheses
+      const emojiMatch = value.match(
+        /^([\p{Emoji}\p{Emoji_Presentation}:a-zA-Z0-9_+-]+(?:\uFE0F)?)/u,
+      );
+      const extracted = emojiMatch?.[1]?.trim();
+      if (extracted) {
+        identity.emoji = extracted;
+      }
     }
     if (label === "creature") {
       identity.creature = value;

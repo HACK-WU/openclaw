@@ -33,4 +33,16 @@ describe("parseIdentityMarkdown", () => {
       avatar: "avatars/openclaw.png",
     });
   });
+
+  it("extracts only emoji character, ignoring parenthetical explanations", () => {
+    const content = `
+- **Name:** C-3PO
+- **Emoji:** 🤖 (or ⚠️ when alarmed)
+`;
+    const parsed = parseIdentityMarkdown(content);
+    expect(parsed).toEqual({
+      name: "C-3PO",
+      emoji: "🤖",
+    });
+  });
 });
