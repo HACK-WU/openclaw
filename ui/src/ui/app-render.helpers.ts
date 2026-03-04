@@ -15,6 +15,7 @@ import { iconForTab, pathForTab, titleForTab, type Tab } from "./navigation.ts";
 import type { ThemeTransitionContext } from "./theme-transition.ts";
 import type { ThemeMode } from "./theme.ts";
 import type { SessionsListResult, GatewaySessionRow } from "./types.ts";
+import { resolveAgentConfig, resolveModelLabel } from "./views/agents-utils.ts";
 import type { DeleteSessionDialogState } from "./views/delete-session-dialog.ts";
 
 type SessionDefaultsSnapshot = {
@@ -140,13 +141,28 @@ export function renderChatControls(state: AppViewState) {
   const agentLabel = currentAgent?.identity?.emoji
     ? `${currentAgent.identity.emoji} ${currentAgent.identity?.name ?? currentAgentId}`
     : (currentAgent?.identity?.name ?? currentAgentId ?? "Default");
+  // Resolve model label from config
+  const configForm = (state as unknown as { configForm: Record<string, unknown> | null })
+    .configForm;
+  const configValue =
+    configForm ?? (state.configSnapshot?.config as Record<string, unknown> | null);
+  const agentConfig = currentAgentId ? resolveAgentConfig(configValue, currentAgentId) : null;
+  const modelLabel = agentConfig
+    ? resolveModelLabel(agentConfig.entry?.model ?? agentConfig.defaults?.model)
+    : null;
+  const hasModel = modelLabel && modelLabel !== "-";
   return html`
     <div class="chat-controls">
       ${
         agents.length > 0
           ? html`
               <span class="field chat-controls__agent chat-controls__agent--readonly">
-                ${agentLabel}
+                <span class="chat-controls__agent-name">${agentLabel}</span>
+                ${
+                  hasModel
+                    ? html`<span class="chat-controls__agent-model">${modelLabel}</span>`
+                    : nothing
+                }
               </span>
             `
           : nothing

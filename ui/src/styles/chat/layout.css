@@ -333,12 +333,45 @@
 
 .chat-controls__agent {
   min-width: 100px;
-  max-width: 180px;
+  max-width: 280px;
 }
 
 .chat-controls__agent select {
   padding: 6px 10px;
   font-size: 13px;
+  max-width: 180px;
+}
+
+.chat-controls__agent--readonly {
+  display: inline-flex !important;
+  align-items: center;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+  background: var(--bg-subtle, var(--bg-hover, rgba(0, 0, 0, 0.04)));
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 320px;
+}
+
+.chat-controls__agent-name {
+  padding: 4px 10px;
+  font-weight: 600;
+}
+
+.chat-controls__agent-model {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 400;
+  background: var(--bg-hover, rgba(0, 0, 0, 0.06));
+  border-left: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   max-width: 180px;
 }
 

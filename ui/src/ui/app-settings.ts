@@ -253,6 +253,10 @@ export async function refreshActiveTab(host: SettingsHost) {
       host as unknown as Parameters<typeof scheduleChatScroll>[0],
       !host.chatHasAutoScrolled,
     );
+    // Load config for agent model display in chat header
+    if (!(host as unknown as OpenClawApp).configSnapshot) {
+      await loadConfig(host as unknown as OpenClawApp);
+    }
   }
   if (host.tab === "config") {
     await loadConfigSchema(host as unknown as OpenClawApp);
