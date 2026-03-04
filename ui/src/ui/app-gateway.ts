@@ -34,6 +34,7 @@ import {
   handleGroupMessageEvent,
   handleGroupStreamEvent,
   handleGroupSystemEvent,
+  loadGroupList,
   type GroupChatMessage,
   type GroupStreamPayload,
   type GroupSystemPayload,
@@ -184,6 +185,7 @@ export function connectGateway(host: GatewayHost) {
       void loadToolsCatalog(host as unknown as OpenClawApp);
       void loadNodes(host as unknown as OpenClawApp, { quiet: true });
       void loadDevices(host as unknown as OpenClawApp, { quiet: true });
+      void loadGroupList(host as unknown as Parameters<typeof loadGroupList>[0]);
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
     },
     onClose: ({ code, reason, error }) => {
@@ -351,9 +353,12 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
 
   // Group chat events
   if (evt.event === "group.message") {
-    const payload = evt.payload as ({ groupId: string } & GroupChatMessage) | undefined;
-    if (payload) {
-      handleGroupMessageEvent(host as unknown as GroupChatState, payload);
+    const payload = evt.payload as { groupId: string; message?: GroupChatMessage } | undefined;
+    if (payload?.message) {
+      handleGroupMessageEvent(host as unknown as GroupChatState, {
+        groupId: payload.groupId,
+        ...payload.message,
+      });
     }
     return;
   }

@@ -259,6 +259,9 @@ export const en: Record<string, string> = {
   "chat.group.placeholder": "Type a message... (use @agentId to mention)",
   "chat.group.send": "Send",
   "chat.group.abort": "Stop",
+  "chat.group.addMember": "Add Member",
+  "chat.group.add": "Add",
+  "chat.group.noAvailableAgents": "No available agents to add.",
 
   // Errors
   "error.notFound": "Not found",

@@ -30,6 +30,7 @@ import {
   readGroupMessages,
   getTranscriptSnapshot,
 } from "../../group-chat/transcript.js";
+import type { GroupIndexEntry as RawGroupIndexEntry } from "../../group-chat/types.js";
 import type {
   GroupChatMessage,
   MessageSender,
@@ -68,7 +69,22 @@ const handleGroupCreate: GatewayRequestHandler = async ({ params, respond, conte
 
 const handleGroupList: GatewayRequestHandler = ({ respond }) => {
   const index = loadGroupIndex();
-  respond(true, index);
+  // Load full meta for each group to get memberCount and messageMode
+  const mapped = index
+    .map((entry: RawGroupIndexEntry) => {
+      const meta = loadGroupMeta(entry.groupId);
+      return {
+        groupId: entry.groupId,
+        name: entry.groupName ?? "",
+        memberCount: meta?.members.length ?? 0,
+        messageMode: meta?.messageMode ?? "unicast",
+        createdAt: meta?.createdAt ?? entry.updatedAt,
+        updatedAt: entry.updatedAt,
+        archived: entry.archived ?? false,
+      };
+    })
+    .filter((g) => !g.archived);
+  respond(true, mapped);
 };
 
 const handleGroupInfo: GatewayRequestHandler = ({ params, respond }) => {
@@ -82,7 +98,9 @@ const handleGroupInfo: GatewayRequestHandler = ({ params, respond }) => {
     respond(false, undefined, { message: "Group not found", code: 404 });
     return;
   }
-  respond(true, meta);
+  // Map groupName to name for frontend compatibility
+  const { groupName, ...rest } = meta;
+  respond(true, { ...rest, name: groupName ?? "" });
 };
 
 const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, context }) => {

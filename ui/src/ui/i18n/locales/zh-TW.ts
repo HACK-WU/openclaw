@@ -256,6 +256,9 @@ export const zhTW: Record<string, string> = {
   "chat.group.placeholder": "輸入訊息...（使用 @agentId 提及）",
   "chat.group.send": "發送",
   "chat.group.abort": "停止",
+  "chat.group.addMember": "添加成員",
+  "chat.group.add": "添加",
+  "chat.group.noAvailableAgents": "沒有可添加的智能體。",
 
   // Errors
   "error.notFound": "未找到",

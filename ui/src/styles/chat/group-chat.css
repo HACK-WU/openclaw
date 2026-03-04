@@ -144,6 +144,34 @@
   border-bottom: 1px solid var(--border);
 }
 
+.group-chat-room__body {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 12px;
+}
+
+.group-chat-room__main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.group-chat-room__members-panel {
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  background: var(--card);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.group-chat-room__info-toggle {
+  display: none;
+}
+
 .group-chat-room__header-info {
   flex: 1;
   min-width: 0;
@@ -362,7 +390,146 @@
   gap: 8px;
 }
 
-/* ─── Info Panel (slide-in side panel) ─── */
+/* ─── Right Members Panel ─── */
+
+.group-members-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Top actions bar (more menu + add member) */
+.group-members-panel__top-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Announcement section */
+.group-members-panel__announcement {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--duration-fast) ease;
+}
+
+.group-members-panel__announcement:hover {
+  background: var(--bg-hover);
+}
+
+.group-members-panel__announcement-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.group-members-panel__announcement-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.group-members-panel__announcement-content {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.group-members-panel__announcement-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Member list header */
+.group-members-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.group-members-panel__header h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.group-members-panel__count {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Member list */
+.group-members-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.group-members-panel__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  transition: background var(--duration-fast) ease;
+}
+
+.group-members-panel__item:hover {
+  background: var(--bg-hover);
+}
+
+.group-members-panel__emoji {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.group-members-panel__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.group-members-panel__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-members-panel__id {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-members-panel__role {
+  flex-shrink: 0;
+}
+
+/* ─── Info Panel (slide-in side panel, mobile/extra details) ─── */
 
 .group-info-panel {
   position: absolute;
@@ -481,32 +648,96 @@
 
 /* ─── Create Group Dialog ─── */
 
+.group-create-dialog {
+  width: min(560px, calc(100vw - 32px));
+  border-radius: 14px;
+}
+
+.group-create-dialog__header {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.group-create-dialog__sub {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.group-create-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.group-create__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.group-create__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.group-create__input {
+  height: 38px;
+  border-radius: 10px;
+}
+
 .group-create__agents {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 200px;
+  gap: 8px;
+  max-height: 220px;
   overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
 }
 
 .group-create__agent-option {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   cursor: pointer;
-  transition: background var(--duration-fast) ease;
+  transition:
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
   font-size: 13px;
   color: var(--text);
 }
 
 .group-create__agent-option:hover {
   background: var(--bg-hover);
+  border-color: var(--border);
 }
 
 .group-create__agent-option input[type="checkbox"] {
   accent-color: var(--accent);
+}
+
+.group-create__agent-emoji {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.group-create__agent-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-create-dialog__actions {
+  margin-top: 4px;
 }
 
 /* ─── Badge ─── */
@@ -703,6 +934,20 @@
 }
 
 /* ─── Responsive ─── */
+
+@media (max-width: 960px) {
+  .group-chat-room__body {
+    grid-template-columns: 1fr;
+  }
+
+  .group-chat-room__members-panel {
+    display: none;
+  }
+
+  .group-chat-room__info-toggle {
+    display: inline-flex;
+  }
+}
 
 @media (max-width: 640px) {
   .group-info-panel {

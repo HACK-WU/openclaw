@@ -58,6 +58,7 @@ import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
 import type {
   GroupCreateDialogState,
+  GroupAddMemberDialogState,
   GroupIndexEntry,
   GroupSessionMeta,
   GroupChatMessage,
@@ -205,6 +206,7 @@ export class OpenClawApp extends LitElement {
   @state() groupDraft = "";
   @state() groupError: string | null = null;
   @state() groupCreateDialog: GroupCreateDialogState | null = null;
+  @state() groupAddMemberDialog: GroupAddMemberDialogState | null = null;
   @state() groupInfoPanelOpen = false;
 
   @state() configLoading = false;

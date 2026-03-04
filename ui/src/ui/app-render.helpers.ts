@@ -796,10 +796,9 @@ export function renderNavGroupChats(state: AppViewState) {
   const activeGroupId = (state as unknown as { activeGroupId: string | null }).activeGroupId;
   const groupLabel = t("chat.group.title");
   const isCollapsed = state.settings.navGroupsCollapsed[groupLabel] ?? false;
-  const hasActiveGroup = activeGroupId !== null;
 
   return html`
-    <div class="nav-group nav-group--groupchats ${isCollapsed && !hasActiveGroup ? "nav-group--collapsed" : ""}">
+    <div class="nav-group nav-group--groupchats ${isCollapsed ? "nav-group--collapsed" : ""}">
       <div class="nav-label nav-label--groupchats">
         <button
           class="nav-label__btn"
@@ -819,20 +818,33 @@ export function renderNavGroupChats(state: AppViewState) {
         <div class="nav-label__actions">
           <button
             class="nav-label__action"
-            @click=${() => {
+            @click=${(e: Event) => {
+              e.stopPropagation();
               const host = state as unknown as {
                 activeGroupId: string | null;
+                activeGroupMeta: unknown;
+                groupMessages: unknown[];
+                groupStreams: unknown;
                 groupCreateDialog: {
                   name: string;
-                  selectedAgents: Array<{ agentId: string; role: string }>;
-                  messageMode: string;
+                  selectedAgents: Array<{ agentId: string; role: "assistant" | "member" }>;
+                  messageMode: "unicast" | "broadcast";
                   isBusy: boolean;
                   error: string | null;
                 } | null;
               };
-              if (host.activeGroupId === null) {
-                host.activeGroupId = "__list__";
-              }
+              // Clear active group meta to show list view, not room view
+              host.activeGroupId = "__list__";
+              host.activeGroupMeta = null;
+              host.groupMessages = [];
+              host.groupStreams = new Map();
+              host.groupCreateDialog = {
+                name: "",
+                selectedAgents: [],
+                messageMode: "unicast",
+                isBusy: false,
+                error: null,
+              };
               void loadGroupList(state as unknown as Parameters<typeof loadGroupList>[0]);
               if (state.tab !== "chat") {
                 state.setTab("chat");

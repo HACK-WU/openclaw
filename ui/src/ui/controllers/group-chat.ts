@@ -101,6 +101,8 @@ export type GroupChatState = {
   groupError: string | null;
   /** Create dialog state */
   groupCreateDialog: GroupCreateDialogState | null;
+  /** Add member dialog state */
+  groupAddMemberDialog: GroupAddMemberDialogState | null;
   /** Info panel open */
   groupInfoPanelOpen: boolean;
 };
@@ -109,6 +111,12 @@ export type GroupCreateDialogState = {
   name: string;
   selectedAgents: Array<{ agentId: string; role: "assistant" | "member" }>;
   messageMode: "unicast" | "broadcast";
+  isBusy: boolean;
+  error: string | null;
+};
+
+export type GroupAddMemberDialogState = {
+  selectedAgents: Array<{ agentId: string; role: "member" }>;
   isBusy: boolean;
   error: string | null;
 };
@@ -125,6 +133,7 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   groupDraft: "",
   groupError: null,
   groupCreateDialog: null,
+  groupAddMemberDialog: null,
   groupInfoPanelOpen: false,
 };
 
@@ -288,11 +297,24 @@ export async function updateGroupMembers(
   if (!host.client || !host.connected) {
     return;
   }
+  const dialog = host.groupAddMemberDialog;
+  if (dialog) {
+    dialog.isBusy = true;
+    dialog.error = null;
+  }
   try {
     const method = action === "add" ? "group.addMembers" : "group.removeMembers";
     await host.client.request(method, { groupId, ...payload });
+    if (dialog) {
+      host.groupAddMemberDialog = null;
+    }
     await loadGroupInfo(host, groupId);
+    await loadGroupList(host);
   } catch (err) {
+    if (dialog) {
+      dialog.isBusy = false;
+      dialog.error = String(err);
+    }
     host.groupError = `Failed to update members: ${String(err)}`;
   }
 }

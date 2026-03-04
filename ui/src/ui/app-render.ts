@@ -72,6 +72,7 @@ import {
   abortGroupChat,
   createGroup,
   deleteGroup,
+  updateGroupMembers,
 } from "./controllers/group-chat.ts";
 import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
@@ -1396,6 +1397,7 @@ export function renderApp(state: AppViewState) {
                 groupDraft: state.groupDraft,
                 groupError: state.groupError,
                 groupCreateDialog: state.groupCreateDialog,
+                groupAddMemberDialog: state.groupAddMemberDialog,
                 groupInfoPanelOpen: state.groupInfoPanelOpen,
                 agentsList: (state.agentsList?.agents ?? []).map((a) => ({
                   id: a.id,
@@ -1441,6 +1443,24 @@ export function renderApp(state: AppViewState) {
                   };
                 },
                 onCloseCreateDialog: () => (state.groupCreateDialog = null),
+                onOpenAddMemberDialog: () => {
+                  state.groupAddMemberDialog = {
+                    selectedAgents: [],
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseAddMemberDialog: () => (state.groupAddMemberDialog = null),
+                onAddMembers: (members) => {
+                  if (state.activeGroupId) {
+                    void updateGroupMembers(
+                      state as unknown as Parameters<typeof updateGroupMembers>[0],
+                      state.activeGroupId,
+                      "add",
+                      { members },
+                    );
+                  }
+                },
                 onToggleInfoPanel: () => (state.groupInfoPanelOpen = !state.groupInfoPanelOpen),
                 onRefresh: () =>
                   void loadGroupList(state as unknown as Parameters<typeof loadGroupList>[0]),
