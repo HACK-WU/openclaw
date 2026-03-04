@@ -454,9 +454,6 @@ function renderAgentOverview(params: {
     agentFilesList && agentFilesList.agentId === agent.id ? agentFilesList.workspace : null;
   const workspace =
     workspaceFromFiles || config.entry?.workspace || config.defaults?.workspace || "default";
-  const model = config.entry?.model
-    ? resolveModelLabel(config.entry?.model)
-    : resolveModelLabel(config.defaults?.model);
   const defaultModel = resolveModelLabel(config.defaults?.model);
   // Agent's own model primary (null if agent has no per-agent model set)
   const agentOwnPrimary = resolveModelPrimary(config.entry?.model);
@@ -471,6 +468,18 @@ function renderAgentOverview(params: {
     config.defaults?.model,
   );
   const fallbackText = modelFallbacks ? modelFallbacks.join(", ") : "";
+  // Overview "Primary Model" label: derive from the same effectivePrimary used by the select,
+  // so both always show consistent values.
+  const fallbackCount = modelFallbacks ? modelFallbacks.length : 0;
+  const overviewModelLabel = effectivePrimary
+    ? fallbackCount > 0
+      ? `${effectivePrimary} (+${fallbackCount} fallback)`
+      : effectivePrimary
+    : defaultPrimary
+      ? fallbackCount > 0
+        ? `${defaultPrimary} (+${fallbackCount} fallback) (inherited)`
+        : `${defaultPrimary} (inherited)`
+      : "-";
   const identityName =
     agentIdentity?.name?.trim() ||
     agent.identity?.name?.trim() ||
@@ -498,7 +507,7 @@ function renderAgentOverview(params: {
         </div>
         <div class="agent-kv">
           <div class="label">Primary Model</div>
-          <div class="mono">${model}</div>
+          <div class="mono">${overviewModelLabel}</div>
         </div>
         <div class="agent-kv">
           <div class="label">Identity Name</div>
