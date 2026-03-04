@@ -97,6 +97,21 @@ const BASE_METHODS = [
   "chat.history",
   "chat.abort",
   "chat.send",
+  // Group chat methods
+  "group.create",
+  "group.list",
+  "group.info",
+  "group.delete",
+  "group.addMembers",
+  "group.removeMembers",
+  "group.setAssistant",
+  "group.setMessageMode",
+  "group.setAnnouncement",
+  "group.setSkills",
+  "group.setMemberRolePrompt",
+  "group.send",
+  "group.history",
+  "group.abort",
 ];
 
 export function listGatewayMethods(): string[] {
@@ -124,4 +139,9 @@ export const GATEWAY_EVENTS = [
   "exec.approval.requested",
   "exec.approval.resolved",
   GATEWAY_EVENT_UPDATE_AVAILABLE,
+  // Group chat events
+  "group.message",
+  "group.stream",
+  "group.system",
+  "group.members_updated",
 ];

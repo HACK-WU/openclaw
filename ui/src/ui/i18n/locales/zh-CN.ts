@@ -216,6 +216,24 @@ export const zhCN: Record<string, string> = {
   "languages.zhTW": "繁體中文",
   "languages.ptBR": "Português",
 
+  // Group Chat
+  "chat.group.title": "群聊",
+  "chat.group.create": "创建群聊",
+  "chat.group.createTitle": "创建群聊",
+  "chat.group.noGroups": "暂无群聊。",
+  "chat.group.members": "名成员",
+  "chat.group.info": "群聊信息",
+  "chat.group.groupName": "群聊名称",
+  "chat.group.namePlaceholder": "输入群聊名称...",
+  "chat.group.selectAgents": "选择智能体",
+  "chat.group.messageMode": "消息模式",
+  "chat.group.announcement": "公告",
+  "chat.group.memberList": "成员列表",
+  "chat.group.settings": "设置",
+  "chat.group.placeholder": "输入消息...（使用 @agentId 提及）",
+  "chat.group.send": "发送",
+  "chat.group.abort": "停止",
+
   // Errors
   "error.notFound": "未找到",
   "error.loadFailed": "加载失败",

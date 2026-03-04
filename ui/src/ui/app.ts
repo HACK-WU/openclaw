@@ -56,6 +56,12 @@ import type { CronFieldErrors } from "./controllers/cron.ts";
 import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
+import type {
+  GroupCreateDialogState,
+  GroupIndexEntry,
+  GroupSessionMeta,
+  GroupChatMessage,
+} from "./controllers/group-chat.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
@@ -185,6 +191,21 @@ export class OpenClawApp extends LitElement {
   @state() execApprovalError: string | null = null;
   @state() pendingGatewayUrl: string | null = null;
   @state() deleteSessionDialog: DeleteSessionDialogState | null = null;
+
+  // Group chat state
+  @state() activeGroupId: string | null = null;
+  @state() activeGroupMeta: GroupSessionMeta | null = null;
+  @state() groupMessages: GroupChatMessage[] = [];
+  @state() groupStreams: Map<string, { runId: string; text: string; startedAt: number }> =
+    new Map();
+  @state() groupIndex: GroupIndexEntry[] = [];
+  @state() groupListLoading = false;
+  @state() groupChatLoading = false;
+  @state() groupSending = false;
+  @state() groupDraft = "";
+  @state() groupError: string | null = null;
+  @state() groupCreateDialog: GroupCreateDialogState | null = null;
+  @state() groupInfoPanelOpen = false;
 
   @state() configLoading = false;
   @state() configRaw = "{\n}\n";

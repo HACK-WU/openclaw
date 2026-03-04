@@ -242,6 +242,24 @@ export const en: Record<string, string> = {
   "languages.zhTW": "繁體中文",
   "languages.ptBR": "Português",
 
+  // Group Chat
+  "chat.group.title": "Group Chats",
+  "chat.group.create": "Create Group",
+  "chat.group.createTitle": "Create Group Chat",
+  "chat.group.noGroups": "No group chats yet.",
+  "chat.group.members": "members",
+  "chat.group.info": "Group Info",
+  "chat.group.groupName": "Group Name",
+  "chat.group.namePlaceholder": "Enter group name...",
+  "chat.group.selectAgents": "Select Agents",
+  "chat.group.messageMode": "Message Mode",
+  "chat.group.announcement": "Announcement",
+  "chat.group.memberList": "Members",
+  "chat.group.settings": "Settings",
+  "chat.group.placeholder": "Type a message... (use @agentId to mention)",
+  "chat.group.send": "Send",
+  "chat.group.abort": "Stop",
+
   // Errors
   "error.notFound": "Not found",
   "error.loadFailed": "Failed to load",

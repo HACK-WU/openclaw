@@ -4,6 +4,12 @@ import type { CronFieldErrors } from "./controllers/cron.ts";
 import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
+import type {
+  GroupChatMessage,
+  GroupCreateDialogState,
+  GroupIndexEntry,
+  GroupSessionMeta,
+} from "./controllers/group-chat.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
 import type { LocaleCode } from "./i18n/index.ts";
@@ -284,6 +290,19 @@ export type AppViewState = {
   client: GatewayBrowserClient | null;
   refreshSessionsAfterChat: Set<string>;
   deleteSessionDialog: DeleteSessionDialogState | null;
+  // Group chat state
+  activeGroupId: string | null;
+  activeGroupMeta: GroupSessionMeta | null;
+  groupMessages: GroupChatMessage[];
+  groupStreams: Map<string, { runId: string; text: string; startedAt: number }>;
+  groupIndex: GroupIndexEntry[];
+  groupListLoading: boolean;
+  groupChatLoading: boolean;
+  groupSending: boolean;
+  groupDraft: string;
+  groupError: string | null;
+  groupCreateDialog: GroupCreateDialogState | null;
+  groupInfoPanelOpen: boolean;
   handleDeleteSessionConfirm: () => Promise<void>;
   handleDeleteSessionCancel: () => void;
   connect: () => void;

@@ -30,6 +30,15 @@ import {
   parseExecApprovalResolved,
   removeExecApproval,
 } from "./controllers/exec-approval.ts";
+import {
+  handleGroupMessageEvent,
+  handleGroupStreamEvent,
+  handleGroupSystemEvent,
+  type GroupChatMessage,
+  type GroupStreamPayload,
+  type GroupSystemPayload,
+  type GroupChatState,
+} from "./controllers/group-chat.ts";
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import {
@@ -338,6 +347,29 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   if (evt.event === GATEWAY_EVENT_UPDATE_AVAILABLE) {
     const payload = evt.payload as GatewayUpdateAvailableEventPayload | undefined;
     host.updateAvailable = payload?.updateAvailable ?? null;
+  }
+
+  // Group chat events
+  if (evt.event === "group.message") {
+    const payload = evt.payload as ({ groupId: string } & GroupChatMessage) | undefined;
+    if (payload) {
+      handleGroupMessageEvent(host as unknown as GroupChatState, payload);
+    }
+    return;
+  }
+  if (evt.event === "group.stream") {
+    const payload = evt.payload as GroupStreamPayload | undefined;
+    if (payload) {
+      handleGroupStreamEvent(host as unknown as GroupChatState, payload);
+    }
+    return;
+  }
+  if (evt.event === "group.system" || evt.event === "group.members_updated") {
+    const payload = evt.payload as GroupSystemPayload | undefined;
+    if (payload) {
+      handleGroupSystemEvent(host as unknown as GroupChatState, payload);
+    }
+    return;
   }
 }
 

@@ -6,6 +6,7 @@ import { syncUrlWithSessionKey } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { OpenClawApp } from "./app.ts";
 import { ChatState, loadChatHistory } from "./controllers/chat.ts";
+import { loadGroupList, enterGroupChat } from "./controllers/group-chat.ts";
 import { generateSessionTitle } from "./controllers/sessions.ts";
 import { formatRelativeTimestamp } from "./format.ts";
 import { getAvailableLocales, type LocaleCode } from "./i18n/index.ts";
@@ -776,3 +777,103 @@ function renderNavSessionItem(
 
 // Note: New session button removed from nav sidebar as it's redundant
 // The chat page already has a "New session" button in the compose area
+
+// ─── Group Chats Section in Sidebar ───
+
+export function renderNavGroupChats(state: AppViewState) {
+  const groups =
+    (
+      state as unknown as {
+        groupIndex: Array<{
+          groupId: string;
+          name: string;
+          memberCount: number;
+          archived: boolean;
+        }>;
+      }
+    ).groupIndex ?? [];
+  const activeGroups = groups.filter((g) => !g.archived);
+  const activeGroupId = (state as unknown as { activeGroupId: string | null }).activeGroupId;
+  const groupLabel = t("chat.group.title");
+  const isCollapsed = state.settings.navGroupsCollapsed[groupLabel] ?? false;
+  const hasActiveGroup = activeGroupId !== null;
+
+  return html`
+    <div class="nav-group nav-group--groupchats ${isCollapsed && !hasActiveGroup ? "nav-group--collapsed" : ""}">
+      <div class="nav-label nav-label--groupchats">
+        <button
+          class="nav-label__btn"
+          @click=${() => {
+            const next = { ...state.settings.navGroupsCollapsed };
+            next[groupLabel] = !isCollapsed;
+            state.applySettings({
+              ...state.settings,
+              navGroupsCollapsed: next,
+            });
+          }}
+          aria-expanded=${!isCollapsed}
+        >
+          <span class="nav-label__text">${groupLabel}</span>
+          <span class="nav-label__chevron">${isCollapsed ? "+" : "−"}</span>
+        </button>
+        <div class="nav-label__actions">
+          <button
+            class="nav-label__action"
+            @click=${() => {
+              const host = state as unknown as {
+                activeGroupId: string | null;
+                groupCreateDialog: {
+                  name: string;
+                  selectedAgents: Array<{ agentId: string; role: string }>;
+                  messageMode: string;
+                  isBusy: boolean;
+                  error: string | null;
+                } | null;
+              };
+              if (host.activeGroupId === null) {
+                host.activeGroupId = "__list__";
+              }
+              void loadGroupList(state as unknown as Parameters<typeof loadGroupList>[0]);
+              if (state.tab !== "chat") {
+                state.setTab("chat");
+              }
+            }}
+            title=${t("chat.group.create")}
+          >
+            ${icons.plus}
+          </button>
+        </div>
+      </div>
+      <div class="nav-group__items">
+        ${
+          activeGroups.length > 0
+            ? html`
+              <ul class="nav-group-chats__list">
+                ${activeGroups.slice(0, 10).map(
+                  (g) => html`
+                    <li
+                      class="nav-group-chats__item ${activeGroupId === g.groupId ? "nav-group-chats__item--active" : ""}"
+                      title=${g.name || g.groupId}
+                      @click=${() => {
+                        void enterGroupChat(
+                          state as unknown as Parameters<typeof enterGroupChat>[0],
+                          g.groupId,
+                        );
+                        if (state.tab !== "chat") {
+                          state.setTab("chat");
+                        }
+                      }}
+                    >
+                      <span class="nav-group-chats__item-emoji">👥</span>
+                      <span class="nav-group-chats__item-name">${g.name || g.groupId.slice(0, 8)}</span>
+                    </li>
+                  `,
+                )}
+              </ul>
+            `
+            : html`<div class="nav-group-chats__empty">${t("chat.group.noGroups")}</div>`
+        }
+      </div>
+    </div>
+  `;
+}

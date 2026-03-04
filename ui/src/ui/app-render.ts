@@ -8,6 +8,7 @@ import {
   renderTab,
   renderThemeToggle,
   renderNavSessionsList,
+  renderNavGroupChats,
 } from "./app-render.helpers.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
@@ -63,6 +64,15 @@ import {
   saveExecApprovals,
   updateExecApprovalsFormValue,
 } from "./controllers/exec-approvals.ts";
+import {
+  loadGroupList,
+  enterGroupChat,
+  leaveGroupChat,
+  sendGroupMessage,
+  abortGroupChat,
+  createGroup,
+  deleteGroup,
+} from "./controllers/group-chat.ts";
 import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadPresence } from "./controllers/presence.ts";
@@ -91,6 +101,7 @@ import { renderDebug } from "./views/debug.ts";
 import { renderDeleteSessionDialog } from "./views/delete-session-dialog.ts";
 import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
+import { renderGroupChat } from "./views/group-chat.ts";
 import { renderInstances } from "./views/instances.ts";
 import { renderLogs } from "./views/logs.ts";
 import { renderNodes } from "./views/nodes.ts";
@@ -308,7 +319,7 @@ export function renderApp(state: AppViewState) {
           // 特殊处理：聊天分组显示会话列表
           if (isChatGroup) {
             return html`
-              <div class="nav-group nav-group--chat ${isGroupCollapsed && !hasActiveTab ? "nav-group--collapsed" : ""}">
+              <div class="nav-group nav-group--chat ${isGroupCollapsed ? "nav-group--collapsed" : ""}">
                 <div class="nav-label nav-label--chat">
                   <!-- 分组标题按钮，点击可折叠/展开 -->
                   <button
@@ -333,6 +344,8 @@ export function renderApp(state: AppViewState) {
                   ${renderNavSessionsList(state)}
                 </div>
               </div>
+              <!-- 群聊分组（独立分组，位于对话下方） -->
+              ${renderNavGroupChats(state)}
             `;
           }
 
@@ -410,7 +423,7 @@ export function renderApp(state: AppViewState) {
             <!-- 显示错误提示（如果有） -->
             ${state.lastError ? html`<div class="pill danger">${state.lastError}</div>` : nothing}
             <!-- 仅在聊天标签页显示聊天控制按钮 -->
-            ${isChat ? renderChatControls(state) : nothing}
+            ${isChat && state.activeGroupId === null ? renderChatControls(state) : nothing}
           </div>
         </section>
 
@@ -1208,7 +1221,7 @@ export function renderApp(state: AppViewState) {
            CHAT 标签页：聊天界面
            ======================================== -->
         ${
-          state.tab === "chat"
+          state.tab === "chat" && state.activeGroupId === null
             ? renderChat({
                 sessionKey: state.sessionKey,
                 onSessionKeyChange: (next) => {
@@ -1361,6 +1374,76 @@ export function renderApp(state: AppViewState) {
                 onSelectSession: (key) => {
                   void switchSession(state as unknown as Parameters<typeof switchSession>[0], key);
                 },
+              })
+            : nothing
+        }
+
+        <!-- ========================================
+           GROUP CHAT 视图：群聊界面（chat tab 内子视图）
+           ======================================== -->
+        ${
+          state.tab === "chat" && state.activeGroupId !== null
+            ? renderGroupChat({
+                connected: state.connected,
+                activeGroupId: state.activeGroupId,
+                activeGroupMeta: state.activeGroupMeta,
+                groupMessages: state.groupMessages,
+                groupStreams: state.groupStreams,
+                groupIndex: state.groupIndex,
+                groupListLoading: state.groupListLoading,
+                groupChatLoading: state.groupChatLoading,
+                groupSending: state.groupSending,
+                groupDraft: state.groupDraft,
+                groupError: state.groupError,
+                groupCreateDialog: state.groupCreateDialog,
+                groupInfoPanelOpen: state.groupInfoPanelOpen,
+                agentsList: (state.agentsList?.agents ?? []).map((a) => ({
+                  id: a.id,
+                  identity: a.identity as { name?: string; emoji?: string } | undefined,
+                })),
+                onEnterGroup: (groupId) =>
+                  void enterGroupChat(
+                    state as unknown as Parameters<typeof enterGroupChat>[0],
+                    groupId,
+                  ),
+                onLeaveGroup: () =>
+                  leaveGroupChat(state as unknown as Parameters<typeof leaveGroupChat>[0]),
+                onSendMessage: (message, mentions) => {
+                  if (state.activeGroupId) {
+                    void sendGroupMessage(
+                      state as unknown as Parameters<typeof sendGroupMessage>[0],
+                      state.activeGroupId,
+                      message,
+                      mentions,
+                    );
+                  }
+                },
+                onAbort: () => {
+                  if (state.activeGroupId) {
+                    void abortGroupChat(
+                      state as unknown as Parameters<typeof abortGroupChat>[0],
+                      state.activeGroupId,
+                    );
+                  }
+                },
+                onDraftChange: (next) => (state.groupDraft = next),
+                onCreateGroup: (opts) =>
+                  void createGroup(state as unknown as Parameters<typeof createGroup>[0], opts),
+                onDeleteGroup: (groupId) =>
+                  void deleteGroup(state as unknown as Parameters<typeof deleteGroup>[0], groupId),
+                onOpenCreateDialog: () => {
+                  state.groupCreateDialog = {
+                    name: "",
+                    selectedAgents: [],
+                    messageMode: "unicast",
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseCreateDialog: () => (state.groupCreateDialog = null),
+                onToggleInfoPanel: () => (state.groupInfoPanelOpen = !state.groupInfoPanelOpen),
+                onRefresh: () =>
+                  void loadGroupList(state as unknown as Parameters<typeof loadGroupList>[0]),
               })
             : nothing
         }
