@@ -448,6 +448,7 @@ function renderAgentOverview(params: {
     onModelChange,
     onModelFallbacksChange,
   } = params;
+  const isDefault = Boolean(params.defaultId && agent.id === params.defaultId);
   const config = resolveAgentConfig(configForm, agent.id);
   const workspaceFromFiles =
     agentFilesList && agentFilesList.agentId === agent.id ? agentFilesList.workspace : null;
@@ -457,12 +458,14 @@ function renderAgentOverview(params: {
     ? resolveModelLabel(config.entry?.model)
     : resolveModelLabel(config.defaults?.model);
   const defaultModel = resolveModelLabel(config.defaults?.model);
-  const modelPrimary =
-    resolveModelPrimary(config.entry?.model) || (model !== "-" ? normalizeModelValue(model) : null);
+  // Agent's own model primary (null if agent has no per-agent model set)
+  const agentOwnPrimary = resolveModelPrimary(config.entry?.model);
   const defaultPrimary =
     resolveModelPrimary(config.defaults?.model) ||
     (defaultModel !== "-" ? normalizeModelValue(defaultModel) : null);
-  const effectivePrimary = modelPrimary ?? defaultPrimary ?? null;
+  // For the select value: only use the agent's own setting, not the fallback.
+  // Non-default agents with no model set should show "Inherit default" (empty value).
+  const effectivePrimary = agentOwnPrimary ?? (isDefault ? defaultPrimary : null);
   const modelFallbacks = resolveEffectiveModelFallbacks(
     config.entry?.model,
     config.defaults?.model,
@@ -483,7 +486,6 @@ function renderAgentOverview(params: {
     : agentIdentityError
       ? "Unavailable"
       : "";
-  const isDefault = Boolean(params.defaultId && agent.id === params.defaultId);
 
   return html`
     <section class="card">
