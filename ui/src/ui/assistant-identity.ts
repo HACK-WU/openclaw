@@ -8,6 +8,7 @@ export type AssistantIdentity = {
   agentId?: string | null;
   name: string;
   avatar: string | null;
+  emoji?: string | null;
 };
 
 function coerceIdentityValue(value: string | undefined, maxLength: number): string | undefined {
@@ -29,7 +30,8 @@ export function normalizeAssistantIdentity(
 ): AssistantIdentity {
   const name = coerceIdentityValue(input?.name, MAX_ASSISTANT_NAME) ?? DEFAULT_ASSISTANT_NAME;
   const avatar = coerceIdentityValue(input?.avatar ?? undefined, MAX_ASSISTANT_AVATAR) ?? null;
+  const emoji = coerceIdentityValue(input?.emoji ?? undefined, MAX_ASSISTANT_AVATAR) ?? null;
   const agentId =
     typeof input?.agentId === "string" && input.agentId.trim() ? input.agentId.trim() : null;
-  return { agentId, name, avatar };
+  return { agentId, name, avatar, emoji };
 }

@@ -99,7 +99,7 @@ export function resolveAgentEmoji(
   if (avatar && isLikelyEmoji(avatar)) {
     return avatar;
   }
-  return "";
+  return "🤖";
 }
 
 export function agentBadgeText(agentId: string, defaultId: string | null) {

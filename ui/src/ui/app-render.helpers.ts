@@ -15,7 +15,7 @@ import { iconForTab, pathForTab, titleForTab, type Tab } from "./navigation.ts";
 import type { ThemeTransitionContext } from "./theme-transition.ts";
 import type { ThemeMode } from "./theme.ts";
 import type { SessionsListResult, GatewaySessionRow } from "./types.ts";
-import { resolveAgentConfig, resolveModelLabel } from "./views/agents-utils.ts";
+import { resolveAgentConfig, resolveModelLabel, resolveAgentEmoji } from "./views/agents-utils.ts";
 import type { DeleteSessionDialogState } from "./views/delete-session-dialog.ts";
 
 type SessionDefaultsSnapshot = {
@@ -138,9 +138,9 @@ export function renderChatControls(state: AppViewState) {
   const parsed = parseAgentSessionKey(state.sessionKey);
   const currentAgentId = parsed?.agentId;
   const currentAgent = currentAgentId ? agents.find((a) => a.id === currentAgentId) : undefined;
-  const agentLabel = currentAgent?.identity?.emoji
-    ? `${currentAgent.identity.emoji} ${currentAgent.identity?.name ?? currentAgentId}`
-    : (currentAgent?.identity?.name ?? currentAgentId ?? "Default");
+  // Resolve agent emoji and name
+  const agentEmoji = currentAgent ? resolveAgentEmoji(currentAgent, null) : "🤖";
+  const agentName = currentAgent?.identity?.name ?? currentAgentId ?? "Default";
   // Resolve model label from config
   const configForm = (state as unknown as { configForm: Record<string, unknown> | null })
     .configForm;
@@ -157,7 +157,7 @@ export function renderChatControls(state: AppViewState) {
         agents.length > 0
           ? html`
               <span class="field chat-controls__agent chat-controls__agent--readonly">
-                <span class="chat-controls__agent-name">${agentLabel}</span>
+                <span class="chat-controls__agent-emoji">${agentEmoji}</span><span class="chat-controls__agent-name">${agentName}</span>
                 ${
                   hasModel
                     ? html`<span class="chat-controls__agent-model">${modelLabel}</span>`
