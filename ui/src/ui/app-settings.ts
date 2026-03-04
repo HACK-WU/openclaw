@@ -435,9 +435,10 @@ export function syncUrlWithSessionKey(host: SettingsHost, sessionKey: string, re
  * Creates a new session with a unique key and updates the application state.
  */
 function ensureDefaultSession(host: SettingsHost): void {
+  const agentId = host.agentsList?.defaultId ?? "main";
   const timestamp = Date.now();
   const randomSuffix = Math.random().toString(36).substring(2, 8);
-  const newSessionKey = `agent:main:${timestamp}-${randomSuffix}`;
+  const newSessionKey = `agent:${agentId}:${timestamp}-${randomSuffix}`;
 
   const newSession = {
     key: newSessionKey,

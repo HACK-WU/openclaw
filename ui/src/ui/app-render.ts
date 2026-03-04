@@ -1257,6 +1257,20 @@ export function renderApp(state: AppViewState) {
                 onAbort: () => void state.handleAbortChat(),
                 onQueueRemove: (id) => state.removeQueuedMessage(id),
                 onNewSession: async () => {
+                  // Refresh agents list to get up-to-date defaultId before creating session
+                  if (state.client && state.connected && !state.agentsLoading) {
+                    try {
+                      const res = await state.client.request<import("./types.ts").AgentsListResult>(
+                        "agents.list",
+                        {},
+                      );
+                      if (res) {
+                        state.agentsList = res;
+                      }
+                    } catch {
+                      // Best-effort; fall through to use cached agentsList
+                    }
+                  }
                   // Generate a new unique session key using the default agent
                   const agentId = state.agentsList?.defaultId ?? "main";
                   const timestamp = Date.now();
@@ -1302,6 +1316,7 @@ export function renderApp(state: AppViewState) {
                   state.chatMessages = [];
                   state.chatToolMessages = [];
                   state.sessionKey = newSessionKey;
+                  state.chatAgentId = agentId;
 
                   // Sync URL with new session key
                   syncUrlWithSessionKey(
