@@ -18,8 +18,9 @@ describe("tool-policy", () => {
     expect(denied).toContain("apply_patch");
   });
 
-  it("does not deny group_reply", () => {
+  it("does not include group_reply (no longer needed in v2)", () => {
     const policy = buildGroupChatToolPolicy();
+    // In v2, agents use <<@agentId>> markers in reply text instead of group_reply tool
     expect(policy.deny).not.toContain("group_reply");
   });
 

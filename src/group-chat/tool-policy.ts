@@ -2,7 +2,8 @@
  * Group Chat — Tool Policy (Read-Only)
  *
  * Enforces read-only mode for agents in group chat.
- * Denies mutating tools; group_reply is the only write exception.
+ * Denies all mutating tools. Agents communicate via <<@agentId>> markers
+ * in their reply text; no dedicated group_reply tool is needed.
  */
 
 import type { ToolPolicyLike } from "../agents/tool-policy.js";
@@ -30,7 +31,8 @@ const GROUP_CHAT_DENY_TOOLS = [
 
 /**
  * Build the read-only tool policy for group chat agents.
- * group_reply is NOT in the deny list → allowed.
+ * All mutating tools are denied; agents use <<@agentId>> markers
+ * in their reply text to trigger routing to other agents.
  */
 export function buildGroupChatToolPolicy(): ToolPolicyLike {
   return {

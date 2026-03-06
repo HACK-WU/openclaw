@@ -68,7 +68,8 @@ export type GroupStreamPayload = {
   agentId: string;
   runId: string;
   state: "delta" | "final" | "error";
-  text?: string;
+  content?: string; // delta text (backend field name)
+  text?: string; // alias for content (frontend compatibility)
   errorMessage?: string;
 };
 
@@ -89,6 +90,8 @@ export type GroupChatState = {
   groupMessages: GroupChatMessage[];
   /** Active agent streams (agentId → current text) */
   groupStreams: Map<string, { runId: string; text: string; startedAt: number }>;
+  /** Agents that are pending response (waiting for first stream delta) */
+  groupPendingAgents: Set<string>;
   /** Group list for sidebar */
   groupIndex: GroupIndexEntry[];
   /** Loading states */
@@ -126,6 +129,7 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   activeGroupMeta: null,
   groupMessages: [],
   groupStreams: new Map(),
+  groupPendingAgents: new Set(),
   groupIndex: [],
   groupListLoading: false,
   groupChatLoading: false,
@@ -139,10 +143,177 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
 
 // ─── Helpers ───
 
-type GroupHost = {
+export type GroupHost = {
   client: GatewayBrowserClient | null;
   connected: boolean;
 } & GroupChatState;
+
+// ─── <<@>> Mention Detection & Auto-Forward ───
+
+/** Mention marker pattern: <<@agentId>> */
+const MENTION_MARKER_RE = /<<@(\S+?)>>/g;
+
+/** Per-group chain state for forward limiting */
+type ChainState = { count: number; startedAt: number };
+const groupChainStates = new Map<string, ChainState>();
+
+const MAX_CHAIN_FORWARDS = 10;
+const MAX_CHAIN_DURATION_MS = 5 * 60_000; // 5 minutes
+
+/** Reset chain state — new conversation round */
+export function resetChainState(groupId: string): void {
+  if (groupChainStates.has(groupId)) {
+    console.log(`[group-chat] chain state reset: group=${groupId}`);
+  }
+  groupChainStates.delete(groupId);
+}
+
+/**
+ * Detect <<@agentId>> markers in an agent's reply and auto-forward
+ * the message to trigger the mentioned agents.
+ *
+ * Called after a group.message event is received and rendered.
+ */
+export async function detectAndForwardMentions(
+  host: GroupHost,
+  message: GroupChatMessage,
+): Promise<void> {
+  // Only process agent messages
+  if (message.sender.type !== "agent") {
+    return;
+  }
+  if (!host.client || !host.connected || !host.activeGroupMeta) {
+    return;
+  }
+
+  const meta = host.activeGroupMeta;
+  const matches = [...message.content.matchAll(MENTION_MARKER_RE)];
+
+  if (matches.length === 0) {
+    // No markers → chain naturally ends
+    resetChainState(message.groupId);
+    return;
+  }
+
+  // Extract valid agentIds (must be current group members, exclude sender)
+  const senderAgentId = message.sender.type === "agent" ? message.sender.agentId : undefined;
+  const mentionedIds = [
+    ...new Set(
+      matches
+        .map((m) => m[1])
+        .filter((id) => id !== senderAgentId && meta.members.some((m) => m.agentId === id)),
+    ),
+  ];
+
+  if (mentionedIds.length === 0) {
+    resetChainState(message.groupId);
+    return;
+  }
+
+  // Check chain limits (count + duration)
+  const chain = groupChainStates.get(message.groupId);
+  const now = Date.now();
+
+  if (chain && chain.count >= MAX_CHAIN_FORWARDS) {
+    console.warn(
+      `[group-chat] chain count limit: group=${message.groupId} count=${chain.count}/${MAX_CHAIN_FORWARDS}`,
+    );
+    appendSystemMessageToUI(
+      host,
+      message.groupId,
+      `⚠️ Auto-forward limit reached (${MAX_CHAIN_FORWARDS} rounds). ` +
+        `Agents will no longer be automatically triggered. ` +
+        `Send a new message to start a fresh conversation.`,
+    );
+    return;
+  }
+
+  if (chain && now - chain.startedAt >= MAX_CHAIN_DURATION_MS) {
+    const elapsed = Math.round((now - chain.startedAt) / 1000);
+    console.warn(`[group-chat] chain duration limit: group=${message.groupId} elapsed=${elapsed}s`);
+    appendSystemMessageToUI(
+      host,
+      message.groupId,
+      `⚠️ Conversation chain timeout (exceeded ${MAX_CHAIN_DURATION_MS / 60_000} minutes). ` +
+        `Auto-forwarding has been stopped. ` +
+        `Send a new message to start a fresh conversation.`,
+    );
+    return;
+  }
+
+  // Update chain state
+  const nextCount = (chain?.count ?? 0) + 1;
+  groupChainStates.set(message.groupId, {
+    count: nextCount,
+    startedAt: chain?.startedAt ?? now,
+  });
+
+  // Replace <<@agentId>> → @agentId for the forwarded message
+  const forwardedText = message.content.replace(MENTION_MARKER_RE, "@$1");
+
+  console.log(
+    `[group-chat] auto-forward: group=${message.groupId} from=${senderAgentId} to=[${mentionedIds.join(",")}] chain=${nextCount}/${MAX_CHAIN_FORWARDS}`,
+  );
+
+  // Forward: reuse group.send with sender set to the replying agent
+  // skipTranscript: true → backend skips duplicate write + broadcast
+  try {
+    await host.client.request("group.send", {
+      groupId: message.groupId,
+      message: forwardedText,
+      sender: { type: "agent", agentId: senderAgentId },
+      mentions: mentionedIds,
+      skipTranscript: true,
+    });
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg.includes("Chain limit") || errMsg.includes("429")) {
+      console.warn(`[group-chat] backend chain limit: group=${message.groupId} err=${errMsg}`);
+      appendSystemMessageToUI(
+        host,
+        message.groupId,
+        `⚠️ Server-side chain limit reached. Auto-forwarding has been stopped. ` +
+          `Send a new message to start a fresh conversation.`,
+      );
+    } else {
+      console.error("[group-chat] forward mention failed:", err);
+    }
+  }
+}
+
+/** Append a local system message to the UI (not persisted to backend) */
+function appendSystemMessageToUI(host: GroupChatState, groupId: string, content: string): void {
+  const msg: GroupChatMessage = {
+    id: `sys-chain-${Date.now()}`,
+    groupId,
+    role: "system",
+    content,
+    sender: { type: "system" },
+    serverSeq: 0,
+    timestamp: Date.now(),
+  };
+  host.groupMessages = [...host.groupMessages, msg];
+}
+
+/**
+ * Predict which agents will respond to a message.
+ * Mirrors the backend dispatch logic in message-dispatch.ts.
+ */
+function resolvePendingAgents(meta: GroupSessionMeta, mentions?: string[]): string[] {
+  const validMentions = mentions?.filter((id) => meta.members.some((m) => m.agentId === id)) ?? [];
+
+  if (validMentions.length > 0) {
+    return validMentions;
+  }
+
+  if (meta.messageMode === "unicast") {
+    const assistant = meta.members.find((m) => m.role === "assistant");
+    return assistant ? [assistant.agentId] : [];
+  }
+
+  // Broadcast: all members
+  return meta.members.map((m) => m.agentId);
+}
 
 // ─── API Controllers ───
 
@@ -208,8 +379,20 @@ export async function sendGroupMessage(
   if (!host.client || !host.connected || !message.trim()) {
     return;
   }
+  // Owner sends a new message → reset chain forward counter
+  resetChainState(groupId);
   host.groupSending = true;
   host.groupError = null;
+
+  // Predict which agents will respond so we can show pending indicators immediately
+  const meta = host.activeGroupMeta;
+  if (meta) {
+    const pendingAgents = resolvePendingAgents(meta, mentions);
+    if (pendingAgents.length > 0) {
+      host.groupPendingAgents = new Set(pendingAgents);
+    }
+  }
+
   try {
     await host.client.request("group.send", {
       groupId,
@@ -219,6 +402,8 @@ export async function sendGroupMessage(
     host.groupDraft = "";
   } catch (err) {
     host.groupError = `Failed to send: ${String(err)}`;
+    // Clear pending on error
+    host.groupPendingAgents = new Set();
   } finally {
     host.groupSending = false;
   }
@@ -350,6 +535,11 @@ export function handleGroupMessageEvent(
     return;
   }
   host.groupMessages = [...host.groupMessages, payload];
+
+  // Auto-detect <<@agentId>> markers in agent replies and forward
+  if (payload.sender.type === "agent") {
+    void detectAndForwardMentions(host as GroupHost, payload);
+  }
 }
 
 const streamBuffers = new Map<string, string>();
@@ -360,10 +550,28 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     return;
   }
 
-  if (payload.state === "delta" && payload.text) {
+  // Handle both 'content' (backend) and 'text' (legacy frontend) fields
+  const deltaText = payload.content ?? payload.text;
+
+  if (payload.state === "delta" && typeof deltaText === "string") {
+    // Empty delta means "stream started but no content yet" - keep pending indicator
+    // Non-empty delta means "actual content" - switch to streaming bubble
+    if (deltaText.length === 0) {
+      // Empty delta: agent is still preparing, keep pending indicator
+      // Don't remove from pendingAgents yet
+      return;
+    }
+
+    // Non-empty delta: remove from pending and show streaming bubble
+    if (host.groupPendingAgents.has(payload.agentId)) {
+      const next = new Set(host.groupPendingAgents);
+      next.delete(payload.agentId);
+      host.groupPendingAgents = next;
+    }
+
     // Buffer stream updates, throttle at 50ms
     const key = `${payload.groupId}:${payload.agentId}`;
-    streamBuffers.set(key, payload.text);
+    streamBuffers.set(key, deltaText);
     if (!streamSyncTimer) {
       streamSyncTimer = window.setTimeout(() => {
         syncGroupStreams(host);
@@ -374,6 +582,12 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
   }
 
   if (payload.state === "final" || payload.state === "error") {
+    // Remove from pending (in case we never got non-empty delta)
+    if (host.groupPendingAgents.has(payload.agentId)) {
+      const next = new Set(host.groupPendingAgents);
+      next.delete(payload.agentId);
+      host.groupPendingAgents = next;
+    }
     // Remove stream entry
     const next = new Map(host.groupStreams);
     next.delete(payload.agentId);
@@ -423,6 +637,7 @@ export async function enterGroupChat(host: GroupHost, groupId: string): Promise<
   host.activeGroupId = groupId;
   host.groupMessages = [];
   host.groupStreams = new Map();
+  host.groupPendingAgents = new Set();
   host.groupError = null;
   host.groupDraft = "";
   await Promise.all([loadGroupInfo(host, groupId), loadGroupHistory(host, groupId)]);
@@ -434,6 +649,7 @@ export function leaveGroupChat(host: GroupChatState): void {
   host.activeGroupMeta = null;
   host.groupMessages = [];
   host.groupStreams = new Map();
+  host.groupPendingAgents = new Set();
   host.groupError = null;
   host.groupDraft = "";
 }

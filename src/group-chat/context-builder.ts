@@ -63,9 +63,9 @@ ${rolePrompt}`);
   // 5. Constraints
   sections.push(`### Important Constraints
 - You are in **read-only mode**: you cannot write files, execute commands, or modify configurations
-- Use the \`group_reply\` tool to send messages in this group chat
-- Include \`mentions\` in group_reply to @-mention specific agents when you need their help
-- Avoid circular conversations — if the task is done, stop replying
+- To mention another agent, use \`<<@agentId>>\` format (e.g. \`<<@main>>\`)
+- Plain \`@agentId\` will NOT trigger message routing — you MUST use \`<<@agentId>>\`
+- **Always respond when @-mentioned** — even for repeated questions
 - Keep responses concise and focused`);
 
   return sections.join("\n\n");

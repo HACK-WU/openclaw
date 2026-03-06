@@ -71,10 +71,13 @@ describe("context-builder", () => {
     expect(result).toContain("Broadcast");
   });
 
-  it("includes read-only constraints", () => {
+  it("includes read-only constraints with <<@agentId>> format", () => {
     const result = buildGroupChatContext({ meta: makeMeta(), agentId: "coder" });
     expect(result).toContain("read-only mode");
-    expect(result).toContain("group_reply");
+    expect(result).toContain("<<@agentId>>");
+    expect(result).toContain("<<@main>>");
+    expect(result).toContain("Always respond when @-mentioned");
+    expect(result).not.toContain("group_reply");
   });
 
   it("uses custom role prompt when provided", () => {

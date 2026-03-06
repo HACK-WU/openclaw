@@ -283,6 +283,40 @@ const handleGroupHistory: GatewayRequestHandler = ({ params, respond }) => {
   respond(true, messages);
 };
 
+// ─── Backend Agent Chain Rate Limiting ───
+// Prevents runaway agent-to-agent forwarding even if frontend misbehaves.
+// Limits are per "conversation chain" — reset when Owner sends a new message.
+
+type BackendChainState = { count: number; startedAt: number };
+const agentChainStates = new Map<string, BackendChainState>();
+
+const AGENT_CHAIN_MAX = 20; // max forwards per chain
+const AGENT_CHAIN_MAX_DURATION_MS = 5 * 60_000; // 5 minutes
+
+function resetAgentChainState(groupId: string): void {
+  agentChainStates.delete(groupId);
+}
+
+function checkAgentChainLimit(groupId: string): { ok: boolean; reason?: string } {
+  const now = Date.now();
+  const chain = agentChainStates.get(groupId);
+
+  if (chain) {
+    if (chain.count >= AGENT_CHAIN_MAX) {
+      return { ok: false, reason: "count" };
+    }
+    if (now - chain.startedAt >= AGENT_CHAIN_MAX_DURATION_MS) {
+      return { ok: false, reason: "timeout" };
+    }
+  }
+
+  agentChainStates.set(groupId, {
+    count: (chain?.count ?? 0) + 1,
+    startedAt: chain?.startedAt ?? now,
+  });
+  return { ok: true };
+}
+
 const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context }) => {
   const groupId = params.groupId as string;
   const messageText = params.message as string;
@@ -313,6 +347,27 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
     }
   }
 
+  // Owner sends a message → reset backend chain state (new conversation round)
+  if (resolvedSender.type === "owner") {
+    resetAgentChainState(groupId);
+  }
+
+  // Agent sends a message → check backend chain limit (count + duration)
+  if (resolvedSender.type === "agent") {
+    const chainCheck = checkAgentChainLimit(groupId);
+    if (!chainCheck.ok) {
+      const detail =
+        chainCheck.reason === "timeout"
+          ? "chain duration exceeded maximum time limit"
+          : "too many agent-to-agent forwards in this conversation";
+      respond(false, undefined, {
+        message: `Chain limit: ${detail}`,
+        code: 429,
+      });
+      return;
+    }
+  }
+
   // Resolve mentions (only agentIds, must be members)
   const mentions = ((params.mentions as string[]) ?? []).filter((id) =>
     meta.members.some((m) => m.agentId === id),
@@ -329,14 +384,22 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
     timestamp: Date.now(),
   };
 
-  // Write to transcript
-  const savedMsg = await appendGroupMessage(groupId, msg);
+  // When frontend forwards an agent's already-persisted reply via skipTranscript,
+  // skip duplicate transcript write and broadcast — only proceed to dispatch.
+  const skipTranscript = params.skipTranscript === true && resolvedSender.type === "agent";
 
-  // ACK to caller
-  respond(true, { messageId: savedMsg.id });
-
-  // Broadcast to UI
-  broadcastGroupMessage(context.broadcast, groupId, savedMsg);
+  let savedMsg: GroupChatMessage;
+  if (!skipTranscript) {
+    // Normal flow: write to transcript + broadcast to UI
+    savedMsg = await appendGroupMessage(groupId, msg);
+    respond(true, { messageId: savedMsg.id });
+    broadcastGroupMessage(context.broadcast, groupId, savedMsg);
+  } else {
+    // Skip write and broadcast — message was already persisted by the original reply flow.
+    // Assign a synthetic serverSeq of 0; dispatch only cares about content + mentions.
+    savedMsg = { ...msg, serverSeq: 0 } as GroupChatMessage;
+    respond(true, { messageId: savedMsg.id });
+  }
 
   // Dispatch to agents
   const dispatch = resolveDispatchTargets(meta, savedMsg);
