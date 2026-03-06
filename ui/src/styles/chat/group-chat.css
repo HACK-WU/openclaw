@@ -377,16 +377,6 @@
   flex-direction: column;
 }
 
-/* Top actions bar (more menu + add member) */
-.group-members-panel__top-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-}
-
 /* Announcement section */
 .group-members-panel__announcement {
   padding: 12px 14px;

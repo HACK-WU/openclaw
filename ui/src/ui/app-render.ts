@@ -1373,6 +1373,9 @@ export function renderApp(state: AppViewState) {
                   });
                 },
                 onSelectSession: (key) => {
+                  // Leave group chat before switching to single chat session
+                  state.activeGroupId = null;
+                  state.activeGroupMeta = null;
                   void switchSession(state as unknown as Parameters<typeof switchSession>[0], key);
                 },
               })

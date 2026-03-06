@@ -673,6 +673,10 @@ function renderNavSessionItem(
             return;
           }
 
+          // Leave group chat before switching to single chat session
+          state.activeGroupId = null;
+          state.activeGroupMeta = null;
+
           // 如果点击的不是当前会话，则切换到目标会话
           if (session.key !== state.sessionKey) {
             void switchSession(
