@@ -161,7 +161,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
   return html`
     <div class="group-chat-room">
       <div class="group-chat-room__header">
-        <button class="btn btn--sm btn--icon" @click=${() => props.onLeaveGroup()} title="Back">
+        <button class="btn btn--sm btn--icon group-chat-room__back-btn" @click=${() => props.onLeaveGroup()} title=${t("chat.group.back")}>
           ${icons.arrowLeft}
         </button>
         <div class="group-chat-room__header-info">
@@ -170,13 +170,22 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
             ${meta.members.length} ${t("chat.group.members")} · ${meta.messageMode}
           </span>
         </div>
-        <button
-          class="btn btn--sm btn--icon group-chat-room__info-toggle"
-          @click=${() => props.onToggleInfoPanel()}
-          title=${t("chat.group.info")}
-        >
-          ${icons.info}
-        </button>
+        <div class="group-chat-room__header-actions">
+          <button
+            class="btn btn--sm btn--icon"
+            @click=${() => props.onOpenAddMemberDialog()}
+            title=${t("chat.group.addMember")}
+          >
+            ${icons.userPlus}
+          </button>
+          <button
+            class="btn btn--sm btn--icon group-chat-room__info-toggle"
+            @click=${() => props.onToggleInfoPanel()}
+            title=${t("chat.group.info")}
+          >
+            ${icons.moreHorizontal}
+          </button>
+        </div>
       </div>
 
       ${groupError ? html`<div class="group-chat-room__error">${groupError}</div>` : nothing}
@@ -201,49 +210,79 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
             )}
           </div>
 
-          <div class="group-chat-room__compose">
-            <div class="group-chat-room__compose-input-wrap">
-              <textarea
-                class="group-chat-room__compose-input"
-                placeholder=${t("chat.group.placeholder")}
-                .value=${props.groupDraft}
-                @input=${(e: Event) => props.onDraftChange((e.target as HTMLTextAreaElement).value)}
-                @keydown=${(e: KeyboardEvent) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
+          <div class="chat-compose group-chat-room__compose">
+            <div class="chat-compose__row">
+              <label class="field chat-compose__field">
+                <span>${t("chat.group.message")}</span>
+                <textarea
+                  .value=${props.groupDraft}
+                  ?disabled=${!props.connected}
+                  @keydown=${(e: KeyboardEvent) => {
+                    if (e.key !== "Enter") {
+                      return;
+                    }
+                    if (e.isComposing || e.keyCode === 229) {
+                      return;
+                    }
+                    if (e.shiftKey) {
+                      return;
+                    }
+                    if (!props.connected) {
+                      return;
+                    }
                     e.preventDefault();
                     if (props.groupDraft.trim()) {
                       const { text, mentions } = parseMentions(props.groupDraft, meta.members);
                       props.onSendMessage(text, mentions);
                     }
+                  }}
+                  @input=${(e: Event) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    target.style.height = "auto";
+                    target.style.height = `${target.scrollHeight}px`;
+                    props.onDraftChange(target.value);
+                  }}
+                  placeholder=${
+                    props.connected ? t("chat.group.placeholder") : t("chat.disconnected")
                   }
-                }}
-                ?disabled=${groupSending || !props.connected}
-                rows="1"
-              ></textarea>
-            </div>
-            <div class="group-chat-room__compose-actions">
-              ${
-                hasActiveStreams
-                  ? html`
-                    <button class="btn btn--sm btn--danger" @click=${() => props.onAbort()}>
-                      ${icons.square} ${t("chat.group.abort")}
-                    </button>
-                  `
-                  : html`
-                    <button
-                      class="btn btn--sm btn--primary"
-                      ?disabled=${!props.groupDraft.trim() || groupSending || !props.connected}
-                      @click=${() => {
-                        if (props.groupDraft.trim()) {
-                          const { text, mentions } = parseMentions(props.groupDraft, meta.members);
-                          props.onSendMessage(text, mentions);
-                        }
-                      }}
-                    >
-                      ${groupSending ? icons.loader : icons.send} ${t("chat.group.send")}
-                    </button>
-                  `
-              }
+                ></textarea>
+              </label>
+              <div class="chat-compose__actions">
+                ${
+                  hasActiveStreams
+                    ? html`
+                      <button
+                        class="btn"
+                        @click=${() => props.onAbort()}
+                        title=${t("chat.group.abort")}
+                      >
+                        ${icons.square} ${t("chat.group.abort")}
+                      </button>
+                    `
+                    : html`
+                      <button
+                        class="btn"
+                        ?disabled=${!props.connected}
+                        @click=${() => props.onLeaveGroup()}
+                      >
+                        ${t("chat.group.back")}
+                      </button>
+                    `
+                }
+                <button
+                  class="btn primary"
+                  ?disabled=${!props.connected || (!props.groupDraft.trim() && !hasActiveStreams)}
+                  @click=${() => {
+                    if (props.groupDraft.trim()) {
+                      const { text, mentions } = parseMentions(props.groupDraft, meta.members);
+                      props.onSendMessage(text, mentions);
+                    }
+                  }}
+                >
+                  ${groupSending ? icons.loader : nothing}
+                  ${t("chat.group.send")}<kbd class="btn-kbd">↵</kbd>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -324,24 +363,6 @@ function renderGroupStreamBubble(
 function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewProps) {
   return html`
     <div class="group-members-panel">
-      <!-- Top actions: more menu + add member -->
-      <div class="group-members-panel__top-actions">
-        <button
-          class="btn btn--xs btn--icon"
-          @click=${() => props.onToggleInfoPanel()}
-          title=${t("chat.group.settings")}
-        >
-          ${icons.moreHorizontal}
-        </button>
-        <button
-          class="btn btn--xs btn--icon"
-          @click=${() => props.onOpenAddMemberDialog()}
-          title=${t("chat.group.addMember")}
-        >
-          ${icons.userPlus}
-        </button>
-      </div>
-
       <!-- Announcement section -->
       <div
         class="group-members-panel__announcement"
@@ -364,8 +385,17 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
 
       <!-- Member list header -->
       <div class="group-members-panel__header">
-        <h3>${t("chat.group.memberList")}</h3>
-        <span class="group-members-panel__count">${meta.members.length}</span>
+        <div class="group-members-panel__header-left">
+          <h3>${t("chat.group.memberList")}</h3>
+          <span class="group-members-panel__count">${meta.members.length}</span>
+        </div>
+        <button
+          class="btn btn--xs btn--icon"
+          @click=${() => props.onOpenAddMemberDialog()}
+          title=${t("chat.group.addMember")}
+        >
+          ${icons.userPlus}
+        </button>
       </div>
 
       <!-- Member list -->

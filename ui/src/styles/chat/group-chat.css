@@ -144,6 +144,17 @@
   border-bottom: 1px solid var(--border);
 }
 
+.group-chat-room__back-btn {
+  flex-shrink: 0;
+}
+
+.group-chat-room__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .group-chat-room__body {
   flex: 1 1 0;
   min-height: 0;
@@ -169,7 +180,7 @@
 }
 
 .group-chat-room__info-toggle {
-  display: none;
+  /* Always visible in header-actions */
 }
 
 .group-chat-room__header-info {
@@ -336,58 +347,26 @@
   }
 }
 
-/* ─── Compose Area ─── */
+/* ─── Compose Area (reuses chat-compose from single chat) ─── */
 
 .group-chat-room__compose {
-  position: sticky;
-  bottom: 0;
   flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 0 4px;
   margin-top: auto;
-  background: linear-gradient(to bottom, transparent, var(--bg) 20%);
   z-index: 10;
 }
 
-.group-chat-room__compose-input-wrap {
-  flex: 1;
+/* Ensure group chat compose inherits proper background gradient */
+.group-chat-room .chat-compose {
+  padding: 12px 16px 20px;
+  background: linear-gradient(to bottom, transparent, var(--bg) 20%);
 }
 
-.group-chat-room__compose-input {
-  width: 100%;
-  min-height: 40px;
-  max-height: 120px;
-  padding: 9px 12px;
-  font-size: 14px;
-  font-family: var(--font-body);
-  line-height: 1.45;
-  color: var(--text);
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  resize: none;
-  outline: none;
-  transition:
-    border-color var(--duration-fast) ease,
-    box-shadow var(--duration-fast) ease;
-}
-
-.group-chat-room__compose-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-subtle);
-}
-
-.group-chat-room__compose-input:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.group-chat-room__compose-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+/* Match single chat textarea height */
+.group-chat-room .chat-compose .chat-compose__field textarea {
+  height: 40px !important;
+  min-height: 40px !important;
+  max-height: 150px !important;
+  padding: 9px 12px !important;
 }
 
 /* ─── Right Members Panel ─── */
@@ -427,10 +406,19 @@
   margin-bottom: 6px;
 }
 
+.group-members-panel__announcement-header svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
 .group-members-panel__announcement-title {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-strong);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .group-members-panel__announcement-content {
@@ -455,6 +443,12 @@
   justify-content: space-between;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
+}
+
+.group-members-panel__header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .group-members-panel__header h3 {
@@ -740,6 +734,22 @@
   margin-top: 4px;
 }
 
+/* ─── Button XS variant ─── */
+
+.btn--xs {
+  padding: 4px 8px;
+  font-size: 11px;
+  height: 28px;
+  min-height: 28px;
+}
+
+.btn--xs.btn--icon {
+  padding: 4px;
+  min-width: 28px;
+  width: 28px;
+  height: 28px;
+}
+
 /* ─── Badge ─── */
 
 .badge {
@@ -901,12 +911,12 @@
 
 /* ─── Light Theme Overrides ─── */
 
-:root[data-theme="light"] .group-chat-room__compose {
+:root[data-theme="light"] .group-chat-room .chat-compose {
   background: linear-gradient(to bottom, transparent, var(--bg-content) 20%);
 }
 
 :root[data-theme="light"] .group-msg__avatar {
-  background: #f0f0f0;
+  background: var(--bg-muted);
 }
 
 :root[data-theme="light"] .group-msg--user .group-msg__avatar {
@@ -922,7 +932,7 @@
 }
 
 :root[data-theme="light"] .group-info-panel__member {
-  background: #f5f5f5;
+  background: var(--bg-muted);
 }
 
 :root[data-theme="light"] .group-chat-list__item-icon {
@@ -943,10 +953,6 @@
   .group-chat-room__members-panel {
     display: none;
   }
-
-  .group-chat-room__info-toggle {
-    display: inline-flex;
-  }
 }
 
 @media (max-width: 640px) {
@@ -958,12 +964,17 @@
     gap: 8px;
   }
 
-  .group-chat-room__compose-actions {
+  .group-chat-room .chat-compose__row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .group-chat-room .chat-compose__actions {
     flex-direction: column;
     width: 100%;
   }
 
-  .group-chat-room__compose-actions .btn {
+  .group-chat-room .chat-compose .chat-compose__actions .btn {
     width: 100%;
   }
 }

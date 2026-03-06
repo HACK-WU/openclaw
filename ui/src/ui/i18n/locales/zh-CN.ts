@@ -233,9 +233,12 @@ export const zhCN: Record<string, string> = {
   "chat.group.placeholder": "输入消息...（使用 @agentId 提及）",
   "chat.group.send": "发送",
   "chat.group.abort": "停止",
+  "chat.group.back": "返回",
+  "chat.group.message": "消息",
   "chat.group.addMember": "添加成员",
   "chat.group.add": "添加",
   "chat.group.noAvailableAgents": "没有可添加的智能体。",
+  "chat.group.noAnnouncement": "暂无公告",
 
   // Errors
   "error.notFound": "未找到",
