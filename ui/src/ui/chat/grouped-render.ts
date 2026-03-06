@@ -384,7 +384,7 @@ function renderGroupedMessage(
  *
  * All cards default to collapsed; click header to expand via DOM class toggle.
  */
-function renderInlineToolCards(
+export function renderInlineToolCards(
   classified: ReturnType<typeof classifyToolCards>,
   onOpenSidebar?: (content: string) => void,
 ) {

@@ -8,7 +8,8 @@
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import { extractToolCards, classifyToolCards, renderInlineToolCards } from "../chat/tool-cards.ts";
+import { renderInlineToolCards } from "../chat/grouped-render.ts";
+import { extractToolCards, classifyToolCards } from "../chat/tool-cards.ts";
 import { typewriter } from "../chat/typewriter-directive.ts";
 import type {
   GroupChatMessage,
