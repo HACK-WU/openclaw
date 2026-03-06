@@ -166,9 +166,7 @@ export async function triggerAgentReasoning(
     // Collect final reply parts
     let replyText = "";
     const dispatcher = createReplyDispatcher({
-      onError: (err) => {
-        console.error(`[group-chat] dispatch error for agent ${agentId}:`, err);
-      },
+      onError: () => {},
       deliver: async (payload, info) => {
         if (info.kind === "final" && payload.text?.trim()) {
           replyText += (replyText ? "\n\n" : "") + payload.text.trim();
@@ -247,13 +245,14 @@ export async function triggerAgentReasoning(
     run.status = "error";
     run.completedAt = Date.now();
 
+    const errorMessage = err instanceof Error ? err.message : String(err);
     broadcastGroupStream(broadcast, {
       groupId,
       runId,
       agentId,
       agentName: agentId,
       state: "error",
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage,
     });
 
     return { run, chainState };

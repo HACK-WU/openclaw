@@ -143,10 +143,176 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
 
 // ─── Helpers ───
 
-type GroupHost = {
+export type GroupHost = {
   client: GatewayBrowserClient | null;
   connected: boolean;
 } & GroupChatState;
+
+// ─── @agentId Mention Detection & Auto-Forward ───
+
+/** Mention pattern: @agentId (matches @ followed by alphanumeric/hyphen/underscore) */
+const MENTION_PATTERN_RE = /@([a-zA-Z0-9_-]+)/g;
+
+/** Track which messages have been processed to avoid duplicate forwards */
+const forwardedMessageIds = new Set<string>();
+/** Track in-flight forward requests to prevent duplicate sends */
+const forwardingInFlight = new Set<string>();
+
+/** Per-group chain state for forward limiting */
+type ChainState = { count: number; startedAt: number };
+const groupChainStates = new Map<string, ChainState>();
+
+const MAX_CHAIN_FORWARDS = 10;
+const MAX_CHAIN_DURATION_MS = 5 * 60_000; // 5 minutes
+
+/** Reset chain state — new conversation round */
+export function resetChainState(groupId: string): void {
+  if (groupChainStates.has(groupId)) {
+    console.log(`[group-chat] chain state reset: group=${groupId}`);
+  }
+  groupChainStates.delete(groupId);
+}
+
+/**
+ * Detect @agentId mentions in an agent's reply and auto-forward
+ * the message to trigger the mentioned agents.
+ *
+ * Called after a group.message event is received and rendered.
+ */
+export async function detectAndForwardMentions(
+  host: GroupHost,
+  message: GroupChatMessage,
+): Promise<void> {
+  // Only process agent messages
+  if (message.sender.type !== "agent") {
+    return;
+  }
+  if (!host.client || !host.connected || !host.activeGroupMeta) {
+    return;
+  }
+
+  // Deduplicate: each message only processed once
+  if (forwardedMessageIds.has(message.id)) {
+    console.log(`[group-chat] already forwarded, skip: messageId=${message.id}`);
+    return;
+  }
+
+  // Prevent concurrent forwarding of the same message
+  if (forwardingInFlight.has(message.id)) {
+    console.log(`[group-chat] forward in flight, skip: messageId=${message.id}`);
+    return;
+  }
+
+  const meta = host.activeGroupMeta;
+  const matches = [...message.content.matchAll(MENTION_PATTERN_RE)];
+
+  if (matches.length === 0) {
+    // No mentions → chain naturally ends
+    resetChainState(message.groupId);
+    return;
+  }
+
+  // Extract valid agentIds (must be current group members, exclude sender)
+  const senderAgentId = message.sender.agentId;
+  const mentionedIds = [
+    ...new Set(
+      matches
+        .map((m) => m[1])
+        .filter((id) => id !== senderAgentId && meta.members.some((m) => m.agentId === id)),
+    ),
+  ];
+
+  if (mentionedIds.length === 0) {
+    resetChainState(message.groupId);
+    return;
+  }
+
+  // Check chain limits (count + duration)
+  const chain = groupChainStates.get(message.groupId);
+  const now = Date.now();
+
+  if (chain && chain.count >= MAX_CHAIN_FORWARDS) {
+    console.warn(
+      `[group-chat] chain count limit: group=${message.groupId} count=${chain.count}/${MAX_CHAIN_FORWARDS}`,
+    );
+    appendSystemMessageToUI(
+      host,
+      message.groupId,
+      `⚠️ Auto-forward limit reached (${MAX_CHAIN_FORWARDS} rounds). ` +
+        `Agents will no longer be automatically triggered. ` +
+        `Send a new message to start a fresh conversation.`,
+    );
+    return;
+  }
+
+  if (chain && now - chain.startedAt >= MAX_CHAIN_DURATION_MS) {
+    const elapsed = Math.round((now - chain.startedAt) / 1000);
+    console.warn(`[group-chat] chain duration limit: group=${message.groupId} elapsed=${elapsed}s`);
+    appendSystemMessageToUI(
+      host,
+      message.groupId,
+      `⚠️ Conversation chain timeout (exceeded ${MAX_CHAIN_DURATION_MS / 60_000} minutes). ` +
+        `Auto-forwarding has been stopped. ` +
+        `Send a new message to start a fresh conversation.`,
+    );
+    return;
+  }
+
+  // Mark as forwarded BEFORE the async call to prevent races
+  forwardedMessageIds.add(message.id);
+  forwardingInFlight.add(message.id);
+
+  // Update chain state
+  const nextCount = (chain?.count ?? 0) + 1;
+  groupChainStates.set(message.groupId, {
+    count: nextCount,
+    startedAt: chain?.startedAt ?? now,
+  });
+
+  console.log(
+    `[group-chat] auto-forward: messageId=${message.id} group=${message.groupId} from=${senderAgentId} to=[${mentionedIds.join(",")}] chain=${nextCount}/${MAX_CHAIN_FORWARDS}`,
+  );
+
+  // Use dedicated triggerMention RPC — no message creation, no transcript write, no broadcast
+  // Backend only dispatches reasoning to the target agents using the existing message as context
+  try {
+    await host.client.request("group.triggerMention", {
+      groupId: message.groupId,
+      triggerMessageId: message.id,
+      targetAgentIds: mentionedIds,
+    });
+    console.log(`[group-chat] triggerMention success: messageId=${message.id}`);
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg.includes("Chain limit") || errMsg.includes("429")) {
+      console.warn(`[group-chat] backend chain limit: group=${message.groupId} err=${errMsg}`);
+      appendSystemMessageToUI(
+        host,
+        message.groupId,
+        `⚠️ Server-side chain limit reached. Auto-forwarding has been stopped. ` +
+          `Send a new message to start a fresh conversation.`,
+      );
+    } else {
+      console.error(`[group-chat] triggerMention failed: messageId=${message.id} err=`, err);
+    }
+  } finally {
+    forwardingInFlight.delete(message.id);
+  }
+}
+
+/** Append a local system message to the UI (not persisted to backend) */
+function appendSystemMessageToUI(host: GroupChatState, groupId: string, content: string): void {
+  const msg: GroupChatMessage = {
+    id: `sys-chain-${Date.now()}`,
+    groupId,
+    role: "system",
+    content,
+    sender: { type: "system" },
+    serverSeq: 0,
+    timestamp: Date.now(),
+  };
+  host.groupMessages = [...host.groupMessages, msg];
+}
 
 /**
  * Predict which agents will respond to a message.
@@ -232,6 +398,8 @@ export async function sendGroupMessage(
   if (!host.client || !host.connected || !message.trim()) {
     return;
   }
+  // Owner sends a new message → reset chain forward counter
+  resetChainState(groupId);
   host.groupSending = true;
   host.groupError = null;
 
@@ -383,9 +551,20 @@ export function handleGroupMessageEvent(
   }
   // Deduplicate by message id
   if (host.groupMessages.some((m) => m.id === payload.id)) {
+    console.log(`[group-chat] duplicate message event, skip: messageId=${payload.id}`);
     return;
   }
+
+  console.log(
+    `[group-chat] message event: messageId=${payload.id} sender=${payload.sender.type} existing=${host.groupMessages.length}`,
+  );
+
   host.groupMessages = [...host.groupMessages, payload];
+
+  // Auto-detect @agentId mentions in agent replies and forward
+  if (payload.sender.type === "agent") {
+    void detectAndForwardMentions(host as GroupHost, payload);
+  }
 }
 
 const streamBuffers = new Map<string, string>();
@@ -480,6 +659,11 @@ export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSyste
 
 /** Enter a group chat view */
 export async function enterGroupChat(host: GroupHost, groupId: string): Promise<void> {
+  // Clear forward tracking for fresh state
+  forwardedMessageIds.clear();
+  forwardingInFlight.clear();
+  groupChainStates.delete(groupId);
+
   host.activeGroupId = groupId;
   host.groupMessages = [];
   host.groupStreams = new Map();

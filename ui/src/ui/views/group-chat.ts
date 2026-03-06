@@ -498,7 +498,7 @@ function renderGroupMessage(
   const toolCards = extractToolCards(msg as unknown as Record<string, unknown>);
   const classified = toolCards.length > 0 ? classifyToolCards(toolCards) : null;
 
-  // Render markdown content
+  // Render markdown content — @agentId is already in the correct format
   const contentHtml = toSanitizedMarkdownHtml(msg.content);
 
   return html`

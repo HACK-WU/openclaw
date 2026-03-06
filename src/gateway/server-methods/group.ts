@@ -329,13 +329,9 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
     timestamp: Date.now(),
   };
 
-  // Write to transcript
+  // Write message to transcript and broadcast
   const savedMsg = await appendGroupMessage(groupId, msg);
-
-  // ACK to caller
   respond(true, { messageId: savedMsg.id });
-
-  // Broadcast to UI
   broadcastGroupMessage(context.broadcast, groupId, savedMsg);
 
   // Dispatch to agents
@@ -356,6 +352,7 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
     if (dispatch.mode === "broadcast") {
       // Parallel trigger all targets
       const transcriptSnapshot = getTranscriptSnapshot(groupId);
+
       const promises = dispatch.targets.map((target) => {
         const check = canTriggerAgent(chainState, target.agentId, meta);
         if (!check.allowed) {
@@ -377,6 +374,7 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
       await Promise.allSettled(promises.filter(Boolean));
     } else {
       // Serial trigger for unicast/mention
+
       let currentChainState = chainState;
       for (const target of dispatch.targets) {
         const check = canTriggerAgent(currentChainState, target.agentId, meta);
@@ -402,6 +400,87 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
     }
   } finally {
     unregisterGroupAbort(groupId, savedMsg.id);
+  }
+};
+
+/**
+ * group.triggerMention — Frontend-driven @mention forwarding
+ *
+ * When an agent's reply contains @agentId mentions, the frontend detects them
+ * and calls this method to trigger the mentioned agents. Unlike group.send,
+ * this does NOT create a new message or write to transcript — it only
+ * dispatches reasoning to the specified agents using the existing message
+ * as context.
+ */
+const handleGroupTriggerMention: GatewayRequestHandler = async ({ params, respond, context }) => {
+  const groupId = params.groupId as string;
+  const triggerMessageId = params.triggerMessageId as string;
+  const targetAgentIds = params.targetAgentIds as string[];
+
+  if (
+    !groupId ||
+    !triggerMessageId ||
+    !Array.isArray(targetAgentIds) ||
+    targetAgentIds.length === 0
+  ) {
+    respond(false, undefined, {
+      message: "groupId, triggerMessageId, and targetAgentIds are required",
+      code: 400,
+    });
+    return;
+  }
+
+  const meta = loadGroupMeta(groupId);
+  if (!meta || meta.archived) {
+    respond(false, undefined, { message: "Group not found or archived", code: 404 });
+    return;
+  }
+
+  // Validate all target agents are group members
+  const validTargets = targetAgentIds.filter((id) => meta.members.some((m) => m.agentId === id));
+  if (validTargets.length === 0) {
+    respond(false, undefined, { message: "No valid target agents found in group", code: 400 });
+    return;
+  }
+
+  // Respond immediately — reasoning happens async
+  respond(true, { ok: true, targets: validTargets });
+
+  // Find the trigger message from transcript
+  const transcript = getTranscriptSnapshot(groupId);
+  const triggerMessage = transcript.find((m) => m.id === triggerMessageId);
+  if (!triggerMessage) {
+    return;
+  }
+
+  const chainState = createChainState(triggerMessageId);
+  const abortController = new AbortController();
+  registerGroupAbort(groupId, triggerMessageId, abortController);
+
+  try {
+    // Serial trigger for mention targets
+    let currentChainState = chainState;
+    for (const agentId of validTargets) {
+      const check = canTriggerAgent(currentChainState, agentId, meta);
+      if (!check.allowed) {
+        break;
+      }
+
+      const result = await triggerAgentReasoning({
+        groupId,
+        agentId,
+        meta,
+        transcriptSnapshot: getTranscriptSnapshot(groupId),
+        triggerMessage,
+        chainState: currentChainState,
+        broadcast: context.broadcast,
+        signal: abortController.signal,
+      });
+
+      currentChainState = result.chainState;
+    }
+  } finally {
+    unregisterGroupAbort(groupId, triggerMessageId);
   }
 };
 
@@ -431,6 +510,7 @@ export const groupHandlers: GatewayRequestHandlers = {
   "group.setSkills": handleGroupSetSkills,
   "group.setMemberRolePrompt": handleGroupSetMemberRolePrompt,
   "group.send": handleGroupSend,
+  "group.triggerMention": handleGroupTriggerMention,
   "group.history": handleGroupHistory,
   "group.abort": handleGroupAbort,
 };
