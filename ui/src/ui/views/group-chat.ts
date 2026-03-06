@@ -31,6 +31,30 @@ let mentionDropdownState = {
   onSelect: null as ((agentId: string, agentName: string) => void) | null,
 };
 
+// ─── Scroll Helpers ───
+
+/**
+ * Scroll the group chat messages container to bottom.
+ * Uses smooth scroll if reduced motion is not preferred.
+ */
+function scrollGroupChatToBottom(smooth = false) {
+  const container = document.querySelector(".group-chat-room__messages");
+  if (!container) {
+    return;
+  }
+  const scrollTop = container.scrollHeight;
+  const smoothEnabled =
+    smooth &&
+    (typeof window === "undefined" ||
+      typeof window.matchMedia !== "function" ||
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  if (typeof container.scrollTo === "function") {
+    container.scrollTo({ top: scrollTop, behavior: smoothEnabled ? "smooth" : "auto" });
+  } else {
+    container.scrollTop = scrollTop;
+  }
+}
+
 function showMentionDropdown(
   members: Array<{ agentId: string; role: string }>,
   filter: string,
@@ -92,6 +116,7 @@ export type GroupChatViewProps = {
   activeGroupMeta: GroupSessionMeta | null;
   groupMessages: GroupChatMessage[];
   groupStreams: Map<string, { runId: string; text: string; startedAt: number }>;
+  groupPendingAgents: Set<string>;
   groupIndex: GroupIndexEntry[];
   groupListLoading: boolean;
   groupChatLoading: boolean;
@@ -216,12 +241,23 @@ function renderGroupListItem(entry: GroupIndexEntry, props: GroupChatViewProps) 
 // ─── Group Chat Room ───
 
 function renderGroupChatRoom(props: GroupChatViewProps) {
-  const { activeGroupMeta: meta, groupMessages, groupStreams, groupSending, groupError } = props;
+  const {
+    activeGroupMeta: meta,
+    groupMessages,
+    groupStreams,
+    groupPendingAgents,
+    groupSending,
+    groupError,
+  } = props;
   if (!meta) {
     return nothing;
   }
 
   const hasActiveStreams = groupStreams.size > 0;
+  const hasPendingAgents = groupPendingAgents.size > 0;
+
+  // Pending agents that are NOT yet streaming (exclude agents already in groupStreams)
+  const pendingOnly = [...groupPendingAgents].filter((id) => !groupStreams.has(id));
 
   return html`
     <div class="group-chat-room">
@@ -272,6 +308,10 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
 
             ${Array.from(groupStreams.entries()).map(([agentId, stream]) =>
               renderGroupStreamBubble(agentId, stream, meta, props.agentsList),
+            )}
+
+            ${pendingOnly.map((agentId) =>
+              renderPendingAgentIndicator(agentId, meta, props.agentsList),
             )}
           </div>
 
@@ -338,6 +378,8 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                     if (props.groupDraft.trim()) {
                       const { text, mentions } = parseMentions(props.groupDraft, meta.members);
                       props.onSendMessage(text, mentions);
+                      // Scroll to bottom after sending
+                      scrollGroupChatToBottom(true);
                     }
                   }}
                   @input=${(e: Event) => {
@@ -376,7 +418,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
               ${renderMentionDropdown()}
               <div class="chat-compose__actions">
                 ${
-                  hasActiveStreams
+                  hasActiveStreams || hasPendingAgents
                     ? html`
                       <button
                         class="btn"
@@ -398,11 +440,13 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                 }
                 <button
                   class="btn primary"
-                  ?disabled=${!props.connected || (!props.groupDraft.trim() && !hasActiveStreams)}
+                  ?disabled=${!props.connected || (!props.groupDraft.trim() && !hasActiveStreams && !hasPendingAgents)}
                   @click=${() => {
                     if (props.groupDraft.trim()) {
                       const { text, mentions } = parseMentions(props.groupDraft, meta.members);
                       props.onSendMessage(text, mentions);
+                      // Scroll to bottom after sending
+                      scrollGroupChatToBottom(true);
                     }
                   }}
                 >
@@ -498,6 +542,37 @@ function renderGroupStreamBubble(
         <div class="chat-group-footer">
           <span class="chat-sender-name">${senderName}</span>
           <span class="chat-group-timestamp">${timestamp}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render a "pending" indicator for an agent that is about to respond
+ * but hasn't started streaming yet. Shows reading-indicator dots animation.
+ */
+function renderPendingAgentIndicator(
+  agentId: string,
+  meta: GroupSessionMeta,
+  agentsList: GroupChatViewProps["agentsList"],
+) {
+  const sender: { type: "agent"; agentId: string } = { type: "agent", agentId };
+  const senderName = resolveSenderName(sender, meta, agentsList);
+  const senderEmoji = resolveSenderEmoji(sender, meta, agentsList);
+
+  return html`
+    <div class="chat-group assistant group-pending-indicator">
+      <div class="chat-avatar assistant">${senderEmoji}</div>
+      <div class="chat-group-messages">
+        <div class="chat-bubble chat-reading-indicator">
+          <span class="chat-reading-indicator__dots">
+            <span></span><span></span><span></span>
+          </span>
+        </div>
+        <div class="chat-group-footer">
+          <span class="chat-sender-name">${senderName}</span>
+          <span class="group-pending-indicator__label">${t("status.loading")}</span>
         </div>
       </div>
     </div>

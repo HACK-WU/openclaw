@@ -1393,6 +1393,7 @@ export function renderApp(state: AppViewState) {
                 activeGroupMeta: state.activeGroupMeta,
                 groupMessages: state.groupMessages,
                 groupStreams: state.groupStreams,
+                groupPendingAgents: state.groupPendingAgents,
                 groupIndex: state.groupIndex,
                 groupListLoading: state.groupListLoading,
                 groupChatLoading: state.groupChatLoading,

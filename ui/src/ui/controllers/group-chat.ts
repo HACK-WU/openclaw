@@ -68,7 +68,8 @@ export type GroupStreamPayload = {
   agentId: string;
   runId: string;
   state: "delta" | "final" | "error";
-  text?: string;
+  content?: string; // delta text (backend field name)
+  text?: string; // alias for content (frontend compatibility)
   errorMessage?: string;
 };
 
@@ -89,6 +90,8 @@ export type GroupChatState = {
   groupMessages: GroupChatMessage[];
   /** Active agent streams (agentId → current text) */
   groupStreams: Map<string, { runId: string; text: string; startedAt: number }>;
+  /** Agents that are pending response (waiting for first stream delta) */
+  groupPendingAgents: Set<string>;
   /** Group list for sidebar */
   groupIndex: GroupIndexEntry[];
   /** Loading states */
@@ -126,6 +129,7 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   activeGroupMeta: null,
   groupMessages: [],
   groupStreams: new Map(),
+  groupPendingAgents: new Set(),
   groupIndex: [],
   groupListLoading: false,
   groupChatLoading: false,
@@ -143,6 +147,26 @@ type GroupHost = {
   client: GatewayBrowserClient | null;
   connected: boolean;
 } & GroupChatState;
+
+/**
+ * Predict which agents will respond to a message.
+ * Mirrors the backend dispatch logic in message-dispatch.ts.
+ */
+function resolvePendingAgents(meta: GroupSessionMeta, mentions?: string[]): string[] {
+  const validMentions = mentions?.filter((id) => meta.members.some((m) => m.agentId === id)) ?? [];
+
+  if (validMentions.length > 0) {
+    return validMentions;
+  }
+
+  if (meta.messageMode === "unicast") {
+    const assistant = meta.members.find((m) => m.role === "assistant");
+    return assistant ? [assistant.agentId] : [];
+  }
+
+  // Broadcast: all members
+  return meta.members.map((m) => m.agentId);
+}
 
 // ─── API Controllers ───
 
@@ -210,6 +234,16 @@ export async function sendGroupMessage(
   }
   host.groupSending = true;
   host.groupError = null;
+
+  // Predict which agents will respond so we can show pending indicators immediately
+  const meta = host.activeGroupMeta;
+  if (meta) {
+    const pendingAgents = resolvePendingAgents(meta, mentions);
+    if (pendingAgents.length > 0) {
+      host.groupPendingAgents = new Set(pendingAgents);
+    }
+  }
+
   try {
     await host.client.request("group.send", {
       groupId,
@@ -219,6 +253,8 @@ export async function sendGroupMessage(
     host.groupDraft = "";
   } catch (err) {
     host.groupError = `Failed to send: ${String(err)}`;
+    // Clear pending on error
+    host.groupPendingAgents = new Set();
   } finally {
     host.groupSending = false;
   }
@@ -360,10 +396,28 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     return;
   }
 
-  if (payload.state === "delta" && payload.text) {
+  // Handle both 'content' (backend) and 'text' (legacy frontend) fields
+  const deltaText = payload.content ?? payload.text;
+
+  if (payload.state === "delta" && typeof deltaText === "string") {
+    // Empty delta means "stream started but no content yet" - keep pending indicator
+    // Non-empty delta means "actual content" - switch to streaming bubble
+    if (deltaText.length === 0) {
+      // Empty delta: agent is still preparing, keep pending indicator
+      // Don't remove from pendingAgents yet
+      return;
+    }
+
+    // Non-empty delta: remove from pending and show streaming bubble
+    if (host.groupPendingAgents.has(payload.agentId)) {
+      const next = new Set(host.groupPendingAgents);
+      next.delete(payload.agentId);
+      host.groupPendingAgents = next;
+    }
+
     // Buffer stream updates, throttle at 50ms
     const key = `${payload.groupId}:${payload.agentId}`;
-    streamBuffers.set(key, payload.text);
+    streamBuffers.set(key, deltaText);
     if (!streamSyncTimer) {
       streamSyncTimer = window.setTimeout(() => {
         syncGroupStreams(host);
@@ -374,6 +428,12 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
   }
 
   if (payload.state === "final" || payload.state === "error") {
+    // Remove from pending (in case we never got non-empty delta)
+    if (host.groupPendingAgents.has(payload.agentId)) {
+      const next = new Set(host.groupPendingAgents);
+      next.delete(payload.agentId);
+      host.groupPendingAgents = next;
+    }
     // Remove stream entry
     const next = new Map(host.groupStreams);
     next.delete(payload.agentId);
@@ -423,6 +483,7 @@ export async function enterGroupChat(host: GroupHost, groupId: string): Promise<
   host.activeGroupId = groupId;
   host.groupMessages = [];
   host.groupStreams = new Map();
+  host.groupPendingAgents = new Set();
   host.groupError = null;
   host.groupDraft = "";
   await Promise.all([loadGroupInfo(host, groupId), loadGroupHistory(host, groupId)]);
@@ -434,6 +495,7 @@ export function leaveGroupChat(host: GroupChatState): void {
   host.activeGroupMeta = null;
   host.groupMessages = [];
   host.groupStreams = new Map();
+  host.groupPendingAgents = new Set();
   host.groupError = null;
   host.groupDraft = "";
 }

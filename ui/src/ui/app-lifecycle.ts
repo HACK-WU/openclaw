@@ -197,6 +197,8 @@ export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unk
   if (host.tab === "chat" && host.chatManualRefreshInFlight) {
     return;
   }
+
+  // Single chat scroll scheduling
   if (
     host.tab === "chat" &&
     (changed.has("chatMessages") ||
@@ -212,6 +214,46 @@ export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unk
       host as unknown as Parameters<typeof scheduleChatScroll>[0],
       forcedByTab || forcedByLoad || !host.chatHasAutoScrolled,
     );
+  }
+
+  // Group chat scroll scheduling
+  if (
+    host.tab === "chat" &&
+    (changed.has("groupMessages") ||
+      changed.has("groupStreams") ||
+      changed.has("groupPendingAgents") ||
+      changed.has("groupChatLoading") ||
+      changed.has("activeGroupId"))
+  ) {
+    // Check if this is initial load (messages went from empty to non-empty)
+    const prevMessages = changed.get("groupMessages") as unknown[] | undefined;
+    const isInitialLoad = prevMessages?.length === 0 && host.groupMessages.length > 0;
+    const isGroupEnter = changed.has("activeGroupId");
+
+    // Use requestAnimationFrame to scroll after Lit renders
+    requestAnimationFrame(() => {
+      const container = document.querySelector(".group-chat-room__messages");
+      if (!container) {
+        return;
+      }
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      const isNearBottom = distanceFromBottom < 450;
+      // Auto-scroll if near bottom, on initial group enter, or on initial message load
+      if (isNearBottom || isGroupEnter || isInitialLoad) {
+        // Use instant scroll for initial load/enter, smooth for subsequent updates
+        const smooth = !isGroupEnter && !isInitialLoad;
+        const smoothEnabled =
+          smooth &&
+          (typeof window === "undefined" ||
+            typeof window.matchMedia !== "function" ||
+            !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: smoothEnabled ? "smooth" : "auto",
+        });
+      }
+    });
   }
 
   // Auto-sync sidebar content when PTY output updates
