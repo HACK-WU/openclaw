@@ -7,6 +7,8 @@
 
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { extractToolCards, classifyToolCards, renderInlineToolCards } from "../chat/tool-cards.ts";
 import { typewriter } from "../chat/typewriter-directive.ts";
 import type {
   GroupChatMessage,
@@ -17,6 +19,50 @@ import type {
 } from "../controllers/group-chat.ts";
 import { t } from "../i18n/index.ts";
 import { icons } from "../icons.ts";
+import { toSanitizedMarkdownHtml } from "../markdown.ts";
+
+// ─── Mention Dropdown State ───
+let mentionDropdownState = {
+  visible: false,
+  filter: "",
+  selectedIndex: 0,
+  members: [] as Array<{ agentId: string; role: string }>,
+  onSelect: null as ((agentId: string, agentName: string) => void) | null,
+};
+
+function showMentionDropdown(
+  members: Array<{ agentId: string; role: string }>,
+  filter: string,
+  onSelect: (agentId: string, agentName: string) => void,
+) {
+  mentionDropdownState = {
+    visible: true,
+    filter: filter.toLowerCase(),
+    selectedIndex: 0,
+    members,
+    onSelect,
+  };
+}
+
+function hideMentionDropdown() {
+  mentionDropdownState.visible = false;
+}
+
+function moveMentionSelection(delta: number) {
+  const filtered = mentionDropdownState.members.filter((m) =>
+    m.agentId.toLowerCase().includes(mentionDropdownState.filter),
+  );
+  mentionDropdownState.selectedIndex =
+    (mentionDropdownState.selectedIndex + delta + filtered.length) % filtered.length;
+}
+
+function getSelectedMention(): { agentId: string; agentName: string } | null {
+  const filtered = mentionDropdownState.members.filter((m) =>
+    m.agentId.toLowerCase().includes(mentionDropdownState.filter),
+  );
+  const selected = filtered[mentionDropdownState.selectedIndex];
+  return selected ? { agentId: selected.agentId, agentName: selected.agentId } : null;
+}
 
 // ─── Props ───
 
@@ -211,13 +257,55 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
           </div>
 
           <div class="chat-compose group-chat-room__compose">
-            <div class="chat-compose__row">
+            <div class="chat-compose__row" style="position: relative;">
               <label class="field chat-compose__field">
                 <span>${t("chat.group.message")}</span>
                 <textarea
+                  id="group-chat-textarea"
                   .value=${props.groupDraft}
                   ?disabled=${!props.connected}
                   @keydown=${(e: KeyboardEvent) => {
+                    // Handle mention dropdown navigation
+                    if (mentionDropdownState.visible) {
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        moveMentionSelection(1);
+                        props.onDraftChange(props.groupDraft); // Trigger re-render
+                        return;
+                      }
+                      if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        moveMentionSelection(-1);
+                        props.onDraftChange(props.groupDraft); // Trigger re-render
+                        return;
+                      }
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const selected = getSelectedMention();
+                        if (selected && mentionDropdownState.onSelect) {
+                          const cursorPos = (e.target as HTMLTextAreaElement).selectionStart;
+                          const textBefore = props.groupDraft.slice(0, cursorPos);
+                          const textAfter = props.groupDraft.slice(cursorPos);
+                          // Find the @ pattern and replace it
+                          const lastAtIndex = textBefore.lastIndexOf("@");
+                          if (lastAtIndex >= 0) {
+                            const newText =
+                              textBefore.slice(0, lastAtIndex) +
+                              `@${selected.agentName} ` +
+                              textAfter;
+                            props.onDraftChange(newText);
+                            hideMentionDropdown();
+                          }
+                        }
+                        return;
+                      }
+                      if (e.key === "Escape") {
+                        hideMentionDropdown();
+                        props.onDraftChange(props.groupDraft); // Trigger re-render
+                        return;
+                      }
+                    }
+
                     if (e.key !== "Enter") {
                       return;
                     }
@@ -240,13 +328,36 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                     const target = e.target as HTMLTextAreaElement;
                     target.style.height = "auto";
                     target.style.height = `${target.scrollHeight}px`;
-                    props.onDraftChange(target.value);
+                    const value = target.value;
+                    const cursorPos = target.selectionStart;
+                    props.onDraftChange(value);
+
+                    // Check for @ mention trigger
+                    const textBeforeCursor = value.slice(0, cursorPos);
+                    const lastAtIndex = textBeforeCursor.lastIndexOf("@");
+                    if (lastAtIndex >= 0) {
+                      const textAfterAt = textBeforeCursor.slice(lastAtIndex + 1);
+                      // Check if there's a space after @ (if so, close dropdown)
+                      if (!textAfterAt.includes(" ")) {
+                        showMentionDropdown(meta.members, textAfterAt, (agentId, agentName) => {
+                          const newText =
+                            value.slice(0, lastAtIndex) + `@${agentName} ` + value.slice(cursorPos);
+                          props.onDraftChange(newText);
+                          hideMentionDropdown();
+                        });
+                      } else {
+                        hideMentionDropdown();
+                      }
+                    } else {
+                      hideMentionDropdown();
+                    }
                   }}
                   placeholder=${
                     props.connected ? t("chat.group.placeholder") : t("chat.disconnected")
                   }
                 ></textarea>
               </label>
+              ${renderMentionDropdown()}
               <div class="chat-compose__actions">
                 ${
                   hasActiveStreams
@@ -318,17 +429,30 @@ function renderGroupMessage(
   const senderName = resolveSenderName(msg.sender, meta, agentsList);
   const senderEmoji = resolveSenderEmoji(msg.sender, meta, agentsList);
   const roleClass = isUser ? "user" : "assistant";
-  const timestamp = new Date(msg.timestamp).toLocaleTimeString();
+  const timestamp = new Date(msg.timestamp).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  // Extract tool cards from message
+  const toolCards = extractToolCards(msg as unknown as Record<string, unknown>);
+  const classified = toolCards.length > 0 ? classifyToolCards(toolCards) : null;
+
+  // Render markdown content
+  const contentHtml = toSanitizedMarkdownHtml(msg.content);
 
   return html`
-    <div class="group-msg group-msg--${roleClass}">
-      <div class="group-msg__avatar">${senderEmoji}</div>
-      <div class="group-msg__body">
-        <div class="group-msg__header">
-          <span class="group-msg__sender">${senderName}</span>
-          <span class="group-msg__time">${timestamp}</span>
+    <div class="chat-group ${roleClass}">
+      <div class="chat-avatar ${roleClass}">${isUser ? "U" : senderEmoji}</div>
+      <div class="chat-group-messages">
+        <div class="chat-bubble ${isUser ? "" : "assistant"}">
+          <div class="chat-text">${unsafeHTML(contentHtml)}</div>
         </div>
-        <div class="group-msg__content">${msg.content}</div>
+        ${classified ? renderInlineToolCards(classified, undefined) : nothing}
+        <div class="chat-group-footer">
+          <span class="chat-sender-name">${isUser ? "You" : senderName}</span>
+          <span class="chat-group-timestamp">${timestamp}</span>
+        </div>
       </div>
     </div>
   `;
@@ -343,16 +467,22 @@ function renderGroupStreamBubble(
   const sender: { type: "agent"; agentId: string } = { type: "agent", agentId };
   const senderName = resolveSenderName(sender, meta, agentsList);
   const senderEmoji = resolveSenderEmoji(sender, meta, agentsList);
+  const timestamp = new Date(stream.startedAt).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 
   return html`
-    <div class="group-msg group-msg--assistant group-msg--streaming">
-      <div class="group-msg__avatar">${senderEmoji}</div>
-      <div class="group-msg__body">
-        <div class="group-msg__header">
-          <span class="group-msg__sender">${senderName}</span>
-          <span class="group-msg__streaming-indicator">${icons.loader}</span>
+    <div class="chat-group assistant streaming">
+      <div class="chat-avatar assistant">${senderEmoji}</div>
+      <div class="chat-group-messages">
+        <div class="chat-bubble streaming">
+          <div class="chat-text chat-text-streaming" ${typewriter(stream.text || "...")}></div>
         </div>
-        <div class="group-msg__content" ${typewriter(stream.text || "...")}></div>
+        <div class="chat-group-footer">
+          <span class="chat-sender-name">${senderName}</span>
+          <span class="chat-group-timestamp">${timestamp}</span>
+        </div>
       </div>
     </div>
   `;
@@ -724,6 +854,45 @@ function parseMentions(
     }
   }
   return { text, mentions: [...new Set(mentions)] };
+}
+
+function renderMentionDropdown() {
+  if (!mentionDropdownState.visible) {
+    return nothing;
+  }
+
+  const filtered = mentionDropdownState.members.filter((m) =>
+    m.agentId.toLowerCase().includes(mentionDropdownState.filter),
+  );
+
+  if (filtered.length === 0) {
+    return nothing;
+  }
+
+  return html`
+    <div class="mention-dropdown">
+      ${filtered.map(
+        (m, i) => html`
+          <div
+            class="mention-item ${i === mentionDropdownState.selectedIndex ? "mention-item--selected" : ""}"
+            @click=${() => {
+              if (mentionDropdownState.onSelect) {
+                mentionDropdownState.onSelect(m.agentId, m.agentId);
+              }
+              hideMentionDropdown();
+            }}
+            @mouseenter=${() => {
+              mentionDropdownState.selectedIndex = i;
+            }}
+          >
+            <span class="mention-item__emoji">🤖</span>
+            <span class="mention-item__name">${m.agentId}</span>
+            <span class="mention-item__role badge badge--${m.role}">${m.role}</span>
+          </div>
+        `,
+      )}
+    </div>
+  `;
 }
 
 function formatTimeAgo(ts: number): string {
