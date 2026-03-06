@@ -29,14 +29,12 @@ let mentionDropdownState = {
   selectedIndex: 0,
   members: [] as Array<{ agentId: string; role: string }>,
   onSelect: null as ((agentId: string, agentName: string) => void) | null,
-  onRerender: null as (() => void) | null,
 };
 
 function showMentionDropdown(
   members: Array<{ agentId: string; role: string }>,
   filter: string,
   onSelect: (agentId: string, agentName: string) => void,
-  onRerender: () => void,
 ) {
   mentionDropdownState = {
     visible: true,
@@ -44,23 +42,37 @@ function showMentionDropdown(
     selectedIndex: 0,
     members,
     onSelect,
-    onRerender,
   };
 }
 
 function hideMentionDropdown() {
   mentionDropdownState.visible = false;
-  mentionDropdownState.onRerender?.();
 }
 
 function moveMentionSelection(delta: number) {
   const filtered = mentionDropdownState.members.filter((m) =>
     m.agentId.toLowerCase().includes(mentionDropdownState.filter),
   );
-  mentionDropdownState.selectedIndex =
-    (mentionDropdownState.selectedIndex + delta + filtered.length) % filtered.length;
-  // Trigger quick re-render without full state update
-  mentionDropdownState.onRerender?.();
+  const newIndex = (mentionDropdownState.selectedIndex + delta + filtered.length) % filtered.length;
+  mentionDropdownState.selectedIndex = newIndex;
+  // Direct DOM update for instant feedback
+  updateMentionDropdownSelection(newIndex);
+}
+
+function updateMentionDropdownSelection(selectedIndex: number) {
+  const dropdown = document.querySelector(".mention-dropdown");
+  if (!dropdown) {
+    return;
+  }
+  const items = dropdown.querySelectorAll(".mention-item");
+  items.forEach((item, index) => {
+    if (index === selectedIndex) {
+      item.classList.add("mention-item--selected");
+      item.scrollIntoView({ block: "nearest" });
+    } else {
+      item.classList.remove("mention-item--selected");
+    }
+  });
 }
 
 function getSelectedMention(): { agentId: string; agentName: string } | null {
@@ -343,27 +355,12 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                       const textAfterAt = textBeforeCursor.slice(lastAtIndex + 1);
                       // Check if there's a space after @ (if so, close dropdown)
                       if (!textAfterAt.includes(" ")) {
-                        showMentionDropdown(
-                          meta.members,
-                          textAfterAt,
-                          (agentId, agentName) => {
-                            const newText =
-                              value.slice(0, lastAtIndex) +
-                              `@${agentName} ` +
-                              value.slice(cursorPos);
-                            props.onDraftChange(newText);
-                            hideMentionDropdown();
-                          },
-                          () => {
-                            // Quick re-render by updating a dummy property
-                            const textarea = document.getElementById(
-                              "group-chat-textarea",
-                            ) as HTMLTextAreaElement;
-                            if (textarea) {
-                              textarea.dataset.mentionRefresh = String(Date.now());
-                            }
-                          },
-                        );
+                        showMentionDropdown(meta.members, textAfterAt, (agentId, agentName) => {
+                          const newText =
+                            value.slice(0, lastAtIndex) + `@${agentName} ` + value.slice(cursorPos);
+                          props.onDraftChange(newText);
+                          hideMentionDropdown();
+                        });
                       } else {
                         hideMentionDropdown();
                       }

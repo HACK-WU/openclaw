@@ -938,8 +938,9 @@
 .mention-dropdown {
   position: absolute;
   bottom: 100%;
-  left: 12px;
-  right: 12px;
+  left: 16px;
+  width: 280px;
+  max-width: calc(100% - 140px);
   background: #1a1a1a;
   border: 1px solid #333;
   border-radius: 8px;
