@@ -29,12 +29,14 @@ let mentionDropdownState = {
   selectedIndex: 0,
   members: [] as Array<{ agentId: string; role: string }>,
   onSelect: null as ((agentId: string, agentName: string) => void) | null,
+  onRerender: null as (() => void) | null,
 };
 
 function showMentionDropdown(
   members: Array<{ agentId: string; role: string }>,
   filter: string,
   onSelect: (agentId: string, agentName: string) => void,
+  onRerender: () => void,
 ) {
   mentionDropdownState = {
     visible: true,
@@ -42,11 +44,13 @@ function showMentionDropdown(
     selectedIndex: 0,
     members,
     onSelect,
+    onRerender,
   };
 }
 
 function hideMentionDropdown() {
   mentionDropdownState.visible = false;
+  mentionDropdownState.onRerender?.();
 }
 
 function moveMentionSelection(delta: number) {
@@ -55,6 +59,8 @@ function moveMentionSelection(delta: number) {
   );
   mentionDropdownState.selectedIndex =
     (mentionDropdownState.selectedIndex + delta + filtered.length) % filtered.length;
+  // Trigger quick re-render without full state update
+  mentionDropdownState.onRerender?.();
 }
 
 function getSelectedMention(): { agentId: string; agentName: string } | null {
@@ -271,13 +277,11 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                       if (e.key === "ArrowDown") {
                         e.preventDefault();
                         moveMentionSelection(1);
-                        props.onDraftChange(props.groupDraft); // Trigger re-render
                         return;
                       }
                       if (e.key === "ArrowUp") {
                         e.preventDefault();
                         moveMentionSelection(-1);
-                        props.onDraftChange(props.groupDraft); // Trigger re-render
                         return;
                       }
                       if (e.key === "Enter") {
@@ -302,7 +306,6 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                       }
                       if (e.key === "Escape") {
                         hideMentionDropdown();
-                        props.onDraftChange(props.groupDraft); // Trigger re-render
                         return;
                       }
                     }
@@ -340,12 +343,27 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                       const textAfterAt = textBeforeCursor.slice(lastAtIndex + 1);
                       // Check if there's a space after @ (if so, close dropdown)
                       if (!textAfterAt.includes(" ")) {
-                        showMentionDropdown(meta.members, textAfterAt, (agentId, agentName) => {
-                          const newText =
-                            value.slice(0, lastAtIndex) + `@${agentName} ` + value.slice(cursorPos);
-                          props.onDraftChange(newText);
-                          hideMentionDropdown();
-                        });
+                        showMentionDropdown(
+                          meta.members,
+                          textAfterAt,
+                          (agentId, agentName) => {
+                            const newText =
+                              value.slice(0, lastAtIndex) +
+                              `@${agentName} ` +
+                              value.slice(cursorPos);
+                            props.onDraftChange(newText);
+                            hideMentionDropdown();
+                          },
+                          () => {
+                            // Quick re-render by updating a dummy property
+                            const textarea = document.getElementById(
+                              "group-chat-textarea",
+                            ) as HTMLTextAreaElement;
+                            if (textarea) {
+                              textarea.dataset.mentionRefresh = String(Date.now());
+                            }
+                          },
+                        );
                       } else {
                         hideMentionDropdown();
                       }
