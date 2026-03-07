@@ -630,6 +630,48 @@
   color: var(--text);
 }
 
+.group-info-panel__editable {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.group-info-panel__input,
+.group-info-panel__textarea {
+  width: 100%;
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  transition:
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
+}
+
+.group-info-panel__input:focus,
+.group-info-panel__textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-subtle);
+}
+
+.group-info-panel__textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.group-info-panel__section--danger {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+
+.group-info-panel__section--danger label {
+  color: var(--danger);
+}
+
 /* ─── Create Group Dialog ─── */
 
 .group-create-dialog {
@@ -962,7 +1004,8 @@
 }
 
 @keyframes group-pending-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.6;
   }
   50% {

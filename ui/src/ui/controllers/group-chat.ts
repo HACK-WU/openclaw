@@ -154,14 +154,36 @@ export type GroupHost = {
 const MENTION_MARKER_RE = /<<@(\S+?)>>/g;
 
 /**
- * Extract mentions from the LAST LINE of a message only.
- * Mentions in the middle of text are for display purposes and do NOT trigger routing.
+ * Extract mentions from lines that contain ONLY mentions (no other content).
+ * These "dedicated mention lines" trigger routing to other agents.
+ *
+ * Examples:
+ * - "<<@dev>>" → triggers routing (line has only mention)
+ * - "<<@dev>> <<@test>>" → triggers routing (line has only mentions)
+ * - "请回答 <<@dev>>" → does NOT trigger (line has other content)
  */
-export function extractLastLineMentions(content: string): string[] {
+export function extractDedicatedMentions(content: string): string[] {
   const lines = content.trim().split("\n");
-  const lastLine = lines[lines.length - 1] || "";
-  const matches = [...lastLine.matchAll(MENTION_MARKER_RE)];
-  return [...new Set(matches.map((m) => m[1]))];
+  const mentions: string[] = [];
+
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+    if (!trimmedLine) {
+      continue;
+    }
+
+    // Check if line contains only mentions (and whitespace)
+    // Remove all mention markers and see if anything remains
+    const lineWithoutMentions = trimmedLine.replace(MENTION_MARKER_RE, "").trim();
+
+    if (lineWithoutMentions === "") {
+      // Line contains only mentions → extract them
+      const matches = [...trimmedLine.matchAll(MENTION_MARKER_RE)];
+      mentions.push(...matches.map((m) => m[1]));
+    }
+  }
+
+  return [...new Set(mentions)];
 }
 
 /** Per-group chain state for forward limiting */
@@ -183,8 +205,8 @@ export function resetChainState(groupId: string): void {
  * Detect <<@agentId>> markers in an agent's reply and auto-forward
  * the message to trigger the mentioned agents.
  *
- * IMPORTANT: Only mentions on the LAST LINE trigger routing.
- * Mentions in the middle of text are for display only.
+ * IMPORTANT: Only mentions on DEDICATED LINES (lines with only mentions)
+ * trigger routing. Mentions on lines with other content are for display only.
  *
  * Called after a group.message event is received and rendered.
  */
@@ -202,11 +224,11 @@ export async function detectAndForwardMentions(
 
   const meta = host.activeGroupMeta;
 
-  // Only extract mentions from the LAST LINE
-  const lastLineMentions = extractLastLineMentions(message.content);
+  // Only extract mentions from DEDICATED LINES (lines with only mentions)
+  const dedicatedMentions = extractDedicatedMentions(message.content);
 
-  if (lastLineMentions.length === 0) {
-    // No markers on last line → chain naturally ends
+  if (dedicatedMentions.length === 0) {
+    // No dedicated mention lines → chain naturally ends
     resetChainState(message.groupId);
     return;
   }
@@ -215,7 +237,7 @@ export async function detectAndForwardMentions(
   const senderAgentId = message.sender.type === "agent" ? message.sender.agentId : undefined;
   const mentionedIds = [
     ...new Set(
-      lastLineMentions.filter(
+      dedicatedMentions.filter(
         (id) => id !== senderAgentId && meta.members.some((m) => m.agentId === id),
       ),
     ),
@@ -264,11 +286,16 @@ export async function detectAndForwardMentions(
     startedAt: chain?.startedAt ?? now,
   });
 
-  // Replace <<@agentId>> → @agentId ONLY on the last line for the forwarded message
-  // (mentions in the middle are preserved as-is for display)
+  // Replace <<@agentId>> → @agentId on DEDICATED LINES for the forwarded message
+  // (mentions on lines with other content are preserved as-is for display)
   const lines = message.content.split("\n");
-  if (lines.length > 0) {
-    lines[lines.length - 1] = lines[lines.length - 1].replace(MENTION_MARKER_RE, "@$1");
+  for (let i = 0; i < lines.length; i++) {
+    const trimmedLine = lines[i].trim();
+    const lineWithoutMentions = trimmedLine.replace(MENTION_MARKER_RE, "").trim();
+    // If line contains only mentions (no other content), convert them
+    if (trimmedLine && lineWithoutMentions === "") {
+      lines[i] = lines[i].replace(MENTION_MARKER_RE, "@$1");
+    }
   }
   const forwardedText = lines.join("\n");
 
@@ -544,9 +571,38 @@ export async function updateGroupSettings(
   try {
     await host.client.request(`group.${setting}`, { groupId, ...((value ?? {}) as object) });
     await loadGroupInfo(host, groupId);
+    await loadGroupList(host);
   } catch (err) {
     host.groupError = `Failed to update setting: ${String(err)}`;
   }
+}
+
+export async function updateGroupName(
+  host: GroupHost,
+  groupId: string,
+  name: string,
+): Promise<void> {
+  return updateGroupSettings(host, groupId, "setName", { name });
+}
+
+export async function updateGroupMessageMode(
+  host: GroupHost,
+  groupId: string,
+  mode: "unicast" | "broadcast",
+): Promise<void> {
+  return updateGroupSettings(host, groupId, "setMessageMode", { mode });
+}
+
+export async function updateGroupAnnouncement(
+  host: GroupHost,
+  groupId: string,
+  content: string,
+): Promise<void> {
+  return updateGroupSettings(host, groupId, "setAnnouncement", { content });
+}
+
+export async function disbandGroup(host: GroupHost, groupId: string): Promise<void> {
+  return deleteGroup(host, groupId);
 }
 
 // ─── Event Handlers ───

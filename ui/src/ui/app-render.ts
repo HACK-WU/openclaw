@@ -1386,7 +1386,7 @@ export function renderApp(state: AppViewState) {
            GROUP CHAT 视图：群聊界面（chat tab 内子视图）
            ======================================== -->
         ${
-          state.tab === "chat" && state.activeGroupId !== null
+          state.tab === "chat"
             ? renderGroupChat({
                 connected: state.connected,
                 activeGroupId: state.activeGroupId,
@@ -1468,6 +1468,57 @@ export function renderApp(state: AppViewState) {
                 onToggleInfoPanel: () => (state.groupInfoPanelOpen = !state.groupInfoPanelOpen),
                 onRefresh: () =>
                   void loadGroupList(state as unknown as Parameters<typeof loadGroupList>[0]),
+                // Group settings callbacks
+                onUpdateGroupName: (name) => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { updateGroupName } = await import("./controllers/group-chat.ts");
+                      await updateGroupName(
+                        state as unknown as Parameters<typeof updateGroupName>[0],
+                        state.activeGroupId!,
+                        name,
+                      );
+                    })();
+                  }
+                },
+                onUpdateMessageMode: (mode) => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { updateGroupMessageMode } =
+                        await import("./controllers/group-chat.ts");
+                      await updateGroupMessageMode(
+                        state as unknown as Parameters<typeof updateGroupMessageMode>[0],
+                        state.activeGroupId!,
+                        mode,
+                      );
+                    })();
+                  }
+                },
+                onUpdateAnnouncement: (content) => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { updateGroupAnnouncement } =
+                        await import("./controllers/group-chat.ts");
+                      await updateGroupAnnouncement(
+                        state as unknown as Parameters<typeof updateGroupAnnouncement>[0],
+                        state.activeGroupId!,
+                        content,
+                      );
+                    })();
+                  }
+                },
+                onDisbandGroup: () => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { disbandGroup } = await import("./controllers/group-chat.ts");
+                      await disbandGroup(
+                        state as unknown as Parameters<typeof disbandGroup>[0],
+                        state.activeGroupId!,
+                      );
+                      state.groupInfoPanelOpen = false;
+                    })();
+                  }
+                },
               })
             : nothing
         }

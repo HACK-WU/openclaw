@@ -244,6 +244,23 @@ const handleGroupSetSkills: GatewayRequestHandler = async ({ params, respond, co
   broadcastGroupSystem(context.broadcast, groupId, "skills_changed", { skills });
 };
 
+const handleGroupSetName: GatewayRequestHandler = async ({ params, respond, context }) => {
+  const groupId = params.groupId as string;
+  const name = params.name as string;
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  await updateGroupMeta(groupId, (meta) => ({ ...meta, groupName: (name ?? "").slice(0, 100) }));
+  respond(true, { ok: true });
+  await appendSystemMessage(
+    groupId,
+    name ? `Group name changed to "${name}"` : "Group name cleared",
+  );
+  broadcastGroupSystem(context.broadcast, groupId, "name_changed", { name });
+};
+
 const handleGroupSetMemberRolePrompt: GatewayRequestHandler = async ({ params, respond }) => {
   const groupId = params.groupId as string;
   const agentId = params.agentId as string;
@@ -489,6 +506,7 @@ export const groupHandlers: GatewayRequestHandlers = {
   "group.addMembers": handleGroupAddMembers,
   "group.removeMembers": handleGroupRemoveMembers,
   "group.setAssistant": handleGroupSetAssistant,
+  "group.setName": handleGroupSetName,
   "group.setMessageMode": handleGroupSetMessageMode,
   "group.setAnnouncement": handleGroupSetAnnouncement,
   "group.setSkills": handleGroupSetSkills,

@@ -265,6 +265,11 @@ export const en: Record<string, string> = {
   "chat.group.add": "Add",
   "chat.group.noAvailableAgents": "No available agents to add.",
   "chat.group.noAnnouncement": "No announcement",
+  "chat.group.announcementPlaceholder": "Enter group announcement...",
+  "chat.group.dangerZone": "Danger Zone",
+  "chat.group.disband": "Disband Group",
+  "chat.group.disbandConfirm":
+    "Are you sure you want to disband this group? This action cannot be undone.",
 
   // Errors
   "error.notFound": "Not found",

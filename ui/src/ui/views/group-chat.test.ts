@@ -2,47 +2,60 @@ import { describe, expect, it } from "vitest";
 import { formatMentionsForDisplay } from "./group-chat.ts";
 
 describe("formatMentionsForDisplay", () => {
-  describe("last line highlighting", () => {
-    it("highlights mention on last line with markdown bold", () => {
-      const content = "Hello <<@dev>>";
+  describe("dedicated line highlighting", () => {
+    it("highlights mentions on dedicated line (line with only mentions)", () => {
+      const content = `Please answer.
+<<@dev>>`;
       const result = formatMentionsForDisplay(content);
-      expect(result).toBe("Hello **@dev**");
+      expect(result).toBe(`Please answer.
+**@dev**`);
     });
 
-    it("highlights multiple mentions on last line", () => {
-      const content = "Question. <<@dev>> <<@test>>";
+    it("highlights mentions on dedicated line at the beginning", () => {
+      const content = `<<@dev>> <<@test>>
+各位请分享一下你们使用的模型配置。`;
       const result = formatMentionsForDisplay(content);
-      expect(result).toBe("Question. **@dev** **@test**");
+      expect(result).toBe(`**@dev** **@test**
+各位请分享一下你们使用的模型配置。`);
+    });
+
+    it("highlights multiple mentions on dedicated line", () => {
+      const content = `请各位分享一下本周的工作进展。
+<<@dev>> <<@test>> <<@backend>>`;
+      const result = formatMentionsForDisplay(content);
+      expect(result).toBe(`请各位分享一下本周的工作进展。
+**@dev** **@test** **@backend**`);
     });
   });
 
-  describe("middle line handling", () => {
-    it("converts middle line mentions to plain @ without highlighting", () => {
-      const content = `First line <<@dev>>
-Second line`;
+  describe("inline mention handling", () => {
+    it("converts inline mentions to plain @ without highlighting", () => {
+      const content = "这个问题请 <<@dev>> 帮忙看看。";
       const result = formatMentionsForDisplay(content);
-      expect(result).toBe(`First line @dev
-Second line`);
+      expect(result).toBe("这个问题请 @dev 帮忙看看。");
     });
 
-    it("handles multiline with mentions in middle and end", () => {
-      const content = `<<@first>> is on line 1
-<<@second>> is on line 2
-<<@third>> is on line 3`;
+    it("handles multiline with mixed dedicated and inline mentions", () => {
+      // Note: `<<@test>> 请你也分享一下你的配置。` has other content on the same line,
+      // so it's NOT a dedicated mention line and should be converted to plain @
+      const content = `我刚才检查了 <<@dev>> 的配置，发现它使用的是 GPT-4。
+<<@test>> 请你也分享一下你的配置。`;
       const result = formatMentionsForDisplay(content);
-      expect(result).toBe(`@first is on line 1
-@second is on line 2
-**@third** is on line 3`);
+      // Both lines have other content, so both are converted to plain @
+      expect(result).toBe(`我刚才检查了 @dev 的配置，发现它使用的是 GPT-4。
+@test 请你也分享一下你的配置。`);
     });
   });
 
   describe("mixed scenarios", () => {
-    it("handles mentions only in middle lines (no highlight)", () => {
-      const content = `<<@dev>> on first line
-No mentions here`;
+    it("handles multiple dedicated lines", () => {
+      const content = `<<@dev>>
+Some text here
+<<@test>>`;
       const result = formatMentionsForDisplay(content);
-      expect(result).toBe(`@dev on first line
-No mentions here`);
+      expect(result).toBe(`**@dev**
+Some text here
+**@test**`);
     });
 
     it("handles empty content", () => {
@@ -72,70 +85,67 @@ Line 3`;
       expect(result).toBe("Hey @dev and @test");
     });
 
-    it("handles mixed <<@>> and plain @ on same line", () => {
-      const content = "Plain @dev vs <<@real>>";
+    it("handles mixed <<@>> and plain @ on same line with other content", () => {
+      const content = "Plain @dev vs <<@real>> here";
       const result = formatMentionsForDisplay(content);
-      expect(result).toBe("Plain @dev vs **@real**");
+      expect(result).toBe("Plain @dev vs @real here");
     });
 
-    it("handles mention at very start of last line", () => {
-      const content = `Some context
-<<@dev>>`;
+    it("handles dedicated line with whitespace", () => {
+      const content = `  <<@dev>>  `;
       const result = formatMentionsForDisplay(content);
-      expect(result).toBe(`Some context
-**@dev**`);
+      expect(result).toBe("  **@dev**  ");
     });
 
-    it("handles mention at very end of last line", () => {
-      const content = `Context before
-Please respond <<@dev>>`;
+    it("handles multiple identical mentions on dedicated line", () => {
+      const content = `<<@dev>> <<@dev>>`;
       const result = formatMentionsForDisplay(content);
-      expect(result).toBe(`Context before
-Please respond **@dev**`);
-    });
-
-    it("handles multiple identical mentions on last line", () => {
-      const content = "<<@dev>> and <<@dev>> again";
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe("**@dev** and **@dev** again");
+      expect(result).toBe("**@dev** **@dev**");
     });
 
     it("preserves line breaks exactly", () => {
       const content = `Line 1
 
-Line 3 with <<@dev>>`;
+<<@dev>>`;
       const result = formatMentionsForDisplay(content);
       expect(result).toBe(`Line 1
 
-Line 3 with **@dev**`);
+**@dev**`);
     });
   });
 
   describe("real-world scenarios", () => {
-    it("formats agent asking another agent", () => {
+    it("formats agent asking another agent at end", () => {
       const content = `I need to check with the backend team.
-<<@backend>> can you verify the API status?`;
+<<@backend>>`;
       const result = formatMentionsForDisplay(content);
       expect(result).toBe(`I need to check with the backend team.
-**@backend** can you verify the API status?`);
+**@backend**`);
+    });
+
+    it("formats agent asking multiple agents at beginning", () => {
+      const content = `<<@frontend>> <<@backend>>
+Please coordinate on this feature.`;
+      const result = formatMentionsForDisplay(content);
+      expect(result).toBe(`**@frontend** **@backend**
+Please coordinate on this feature.`);
     });
 
     it("formats agent telling owner about another agent (no routing)", () => {
-      const content = `I checked with @dev and they confirmed the issue.
+      const content = `I checked with <<@dev>> and they confirmed the issue.
 No further action needed.`;
       const result = formatMentionsForDisplay(content);
-      // Both lines have no <<@>> mentions, so no transformation
-      expect(result).toBe(content);
+      // Inline mention is converted to plain @
+      expect(result).toBe(`I checked with @dev and they confirmed the issue.
+No further action needed.`);
     });
 
-    it("formats agent mentioning multiple agents at end", () => {
+    it("formats dedicated line with only one mention", () => {
       const content = `The issue involves multiple components.
-Please coordinate.
-<<@frontend>> <<@backend>> <<@devops>>`;
+<<@frontend>>`;
       const result = formatMentionsForDisplay(content);
       expect(result).toBe(`The issue involves multiple components.
-Please coordinate.
-**@frontend** **@backend** **@devops**`);
+**@frontend**`);
     });
   });
 });

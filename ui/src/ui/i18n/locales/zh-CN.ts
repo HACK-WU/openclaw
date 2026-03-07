@@ -239,6 +239,10 @@ export const zhCN: Record<string, string> = {
   "chat.group.add": "添加",
   "chat.group.noAvailableAgents": "没有可添加的智能体。",
   "chat.group.noAnnouncement": "暂无公告",
+  "chat.group.announcementPlaceholder": "输入群公告...",
+  "chat.group.dangerZone": "危险区域",
+  "chat.group.disband": "解散群聊",
+  "chat.group.disbandConfirm": "确定要解散该群聊吗？此操作无法撤销。",
 
   // Errors
   "error.notFound": "未找到",

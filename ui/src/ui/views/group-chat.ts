@@ -160,6 +160,11 @@ export type GroupChatViewProps = {
   onAddMembers: (members: Array<{ agentId: string; role: "member" }>) => void;
   onToggleInfoPanel: () => void;
   onRefresh: () => void;
+  // Group settings callbacks
+  onUpdateGroupName: (name: string) => void;
+  onUpdateMessageMode: (mode: "unicast" | "broadcast") => void;
+  onUpdateAnnouncement: (content: string) => void;
+  onDisbandGroup: () => void;
 };
 
 // ─── Main Render ───
@@ -668,24 +673,58 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
         </button>
       </div>
       <div class="group-info-panel__body">
+        <!-- Group Name (editable) -->
         <div class="group-info-panel__section">
           <label>${t("chat.group.groupName")}</label>
-          <div>${meta.name || "-"}</div>
+          <div class="group-info-panel__editable">
+            <input
+              type="text"
+              class="field group-info-panel__input"
+              .value=${meta.name || ""}
+              placeholder=${t("chat.group.namePlaceholder")}
+              @change=${(e: Event) => {
+                const value = (e.target as HTMLInputElement).value.trim();
+                props.onUpdateGroupName(value);
+              }}
+            />
+          </div>
         </div>
+
+        <!-- Message Mode (editable) -->
         <div class="group-info-panel__section">
           <label>${t("chat.group.messageMode")}</label>
-          <div>${meta.messageMode}</div>
+          <div class="group-info-panel__editable">
+            <select
+              class="field group-info-panel__input"
+              @change=${(e: Event) => {
+                const value = (e.target as HTMLSelectElement).value as "unicast" | "broadcast";
+                props.onUpdateMessageMode(value);
+              }}
+            >
+              <option value="unicast" ?selected=${meta.messageMode === "unicast"}>Unicast</option>
+              <option value="broadcast" ?selected=${meta.messageMode === "broadcast"}>Broadcast</option>
+            </select>
+          </div>
         </div>
-        ${
-          meta.announcement
-            ? html`
-              <div class="group-info-panel__section">
-                <label>${t("chat.group.announcement")}</label>
-                <div>${meta.announcement}</div>
-              </div>
-            `
-            : nothing
-        }
+
+        <!-- Announcement (editable) -->
+        <div class="group-info-panel__section">
+          <label>${t("chat.group.announcement")}</label>
+          <div class="group-info-panel__editable">
+            <textarea
+              class="field group-info-panel__textarea"
+              .value=${meta.announcement || ""}
+              placeholder=${t("chat.group.announcementPlaceholder") || "Enter group announcement..."}
+              rows="3"
+              @change=${(e: Event) => {
+                const value = (e.target as HTMLTextAreaElement).value.trim();
+                props.onUpdateAnnouncement(value);
+              }}
+            ></textarea>
+          </div>
+        </div>
+
+        <!-- Member List -->
         <div class="group-info-panel__section">
           <label>${t("chat.group.memberList")}</label>
           <ul class="group-info-panel__members">
@@ -706,12 +745,34 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
             )}
           </ul>
         </div>
+
+        <!-- Settings (read-only) -->
         <div class="group-info-panel__section">
           <label>${t("chat.group.settings")}</label>
           <div class="group-info-panel__settings">
             <span>Max rounds: ${meta.maxRounds}</span>
             <span>Max consecutive: ${meta.maxConsecutive}</span>
           </div>
+        </div>
+
+        <!-- Danger Zone -->
+        <div class="group-info-panel__section group-info-panel__section--danger">
+          <label>${t("chat.group.dangerZone") || "Danger Zone"}</label>
+          <button
+            class="btn btn--danger btn--sm"
+            @click=${() => {
+              if (
+                confirm(
+                  t("chat.group.disbandConfirm") ||
+                    "Are you sure you want to disband this group? This action cannot be undone.",
+                )
+              ) {
+                props.onDisbandGroup();
+              }
+            }}
+          >
+            ${icons.trash} ${t("chat.group.disband") || "Disband Group"}
+          </button>
         </div>
       </div>
     </div>
@@ -917,8 +978,8 @@ const MENTION_MARKER_RE = /<<@(\S+?)>>/g;
 
 /**
  * Format mentions for display:
- * - Last line <<@agentId>> → highlighted mention pill (routing target)
- * - Middle <<@agentId>> → plain @agentId (display only)
+ * - Mentions on DEDICATED LINES (lines with only mentions) → highlighted mention pill (routing target)
+ * - Mentions on lines with other content → plain @agentId (display only)
  */
 export function formatMentionsForDisplay(content: string): string {
   const lines = content.split("\n");
@@ -926,15 +987,20 @@ export function formatMentionsForDisplay(content: string): string {
     return content;
   }
 
-  // Replace mentions in middle lines (all except last) with plain @agentId
-  for (let i = 0; i < lines.length - 1; i++) {
-    lines[i] = lines[i].replace(MENTION_MARKER_RE, "@$1");
-  }
+  // Process each line
+  for (let i = 0; i < lines.length; i++) {
+    const trimmedLine = lines[i].trim();
+    // Check if line contains only mentions (and whitespace)
+    const lineWithoutMentions = trimmedLine.replace(MENTION_MARKER_RE, "").trim();
 
-  // Replace mentions on the last line with highlighted mentions
-  // Using markdown **@agentId** for highlighting (will be rendered as bold)
-  const lastLineIdx = lines.length - 1;
-  lines[lastLineIdx] = lines[lastLineIdx].replace(MENTION_MARKER_RE, "**@$1**");
+    if (trimmedLine && lineWithoutMentions === "") {
+      // Line contains only mentions → highlight them (routing targets)
+      lines[i] = lines[i].replace(MENTION_MARKER_RE, "**@$1**");
+    } else {
+      // Line has other content → convert to plain @agentId (display only)
+      lines[i] = lines[i].replace(MENTION_MARKER_RE, "@$1");
+    }
+  }
 
   return lines.join("\n");
 }

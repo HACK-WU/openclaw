@@ -78,7 +78,7 @@ describe("context-builder", () => {
     expect(result).toContain("<<@dev>>"); // Example in Communication Guide
     expect(result).toContain("Always respond when @-mentioned");
     expect(result).toContain("Communication Guide");
-    expect(result).toContain("Place mentions at the END");
+    expect(result).toContain("Place mentions on their OWN LINE");
     expect(result).not.toContain("group_reply");
   });
 

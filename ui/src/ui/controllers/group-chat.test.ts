@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_GROUP_CHAT_STATE,
-  extractLastLineMentions,
+  extractDedicatedMentions,
   handleGroupMessageEvent,
   handleGroupStreamEvent,
   handleGroupSystemEvent,
@@ -151,85 +151,79 @@ describe("group-chat controller", () => {
     });
   });
 
-  describe("extractLastLineMentions", () => {
-    it("extracts mentions from single-line message on last line", () => {
-      const content = "Hello <<@dev>>";
-      const mentions = extractLastLineMentions(content);
+  describe("extractDedicatedMentions", () => {
+    it("extracts mentions from dedicated line (line with only mentions)", () => {
+      const content = `Please answer.
+<<@dev>>`;
+      const mentions = extractDedicatedMentions(content);
       expect(mentions).toEqual(["dev"]);
     });
 
-    it("extracts mentions only from last line, ignoring middle lines", () => {
-      const content = `First line with <<@ignored>>
-Second line with <<@also_ignored>>
-Last line with <<@dev>> and <<@test>>`;
-      const mentions = extractLastLineMentions(content);
+    it("extracts mentions from dedicated line at the beginning", () => {
+      const content = `<<@dev>> <<@test>>
+各位请分享一下你们使用的模型配置。`;
+      const mentions = extractDedicatedMentions(content);
       expect(mentions).toEqual(["dev", "test"]);
     });
 
-    it("returns empty array when no mentions on last line", () => {
-      const content = `<<@dev>> is on first line
-But the last line has no mentions`;
-      const mentions = extractLastLineMentions(content);
-      expect(mentions).toEqual([]);
-    });
-
-    it("handles multiple mentions on last line", () => {
-      const content = `Please answer.
+    it("extracts multiple mentions from dedicated line", () => {
+      const content = `请各位分享一下本周的工作进展。
 <<@dev>> <<@test>> <<@backend>>`;
-      const mentions = extractLastLineMentions(content);
+      const mentions = extractDedicatedMentions(content);
       expect(mentions).toEqual(["dev", "test", "backend"]);
     });
 
+    it("does NOT extract mentions from lines with other content", () => {
+      const content = "这个问题请 <<@dev>> 帮忙看看。";
+      const mentions = extractDedicatedMentions(content);
+      expect(mentions).toEqual([]);
+    });
+
+    it("extracts only from dedicated lines, ignoring inline mentions", () => {
+      // Note: `<<@test>> 请你也分享一下你的配置。` has other content on the same line,
+      // so it's NOT a dedicated mention line and should NOT be extracted
+      const content = `我刚才检查了 @dev 的配置，发现它使用的是 GPT-4。
+<<@test>> 请你也分享一下你的配置。`;
+      const mentions = extractDedicatedMentions(content);
+      // Expected: empty array, because neither line is a dedicated mention line
+      expect(mentions).toEqual([]);
+    });
+
     it("deduplicates mentions", () => {
-      const content = `Question for <<@dev>> <<@dev>> <<@test>>`;
-      const mentions = extractLastLineMentions(content);
+      const content = `<<@dev>> <<@dev>> <<@test>>`;
+      const mentions = extractDedicatedMentions(content);
       expect(mentions).toEqual(["dev", "test"]);
     });
 
     it("returns empty array for empty content", () => {
-      const mentions = extractLastLineMentions("");
+      const mentions = extractDedicatedMentions("");
       expect(mentions).toEqual([]);
     });
 
     it("handles content with no mentions", () => {
       const content = "Just a regular message with no mentions";
-      const mentions = extractLastLineMentions(content);
+      const mentions = extractDedicatedMentions(content);
       expect(mentions).toEqual([]);
     });
 
     it("handles plain @ mentions (not in <<>> format) - should NOT extract", () => {
       const content = "Hey @dev and @test";
-      const mentions = extractLastLineMentions(content);
+      const mentions = extractDedicatedMentions(content);
       expect(mentions).toEqual([]);
     });
 
-    it("handles mixed format - only extracts <<@>> format", () => {
-      const content = "Hey @plain but also <<@real>>";
-      const mentions = extractLastLineMentions(content);
-      expect(mentions).toEqual(["real"]);
+    it("handles multiple dedicated lines", () => {
+      const content = `<<@dev>>
+Some text here
+<<@test>>`;
+      const mentions = extractDedicatedMentions(content);
+      expect(mentions).toEqual(["dev", "test"]);
     });
 
-    it("trims whitespace before parsing", () => {
+    it("handles content with only whitespace and mentions", () => {
       const content = `  <<@dev>>  `;
-      const mentions = extractLastLineMentions(content);
+      const mentions = extractDedicatedMentions(content);
       expect(mentions).toEqual(["dev"]);
-    });
-
-    it("handles multiline with trailing newlines (trimmed)", () => {
-      // trim() removes trailing whitespace, so <<@dev>> becomes the last line
-      const content = `<<@dev>> is here
-
-`;
-      const mentions = extractLastLineMentions(content);
-      // After trim(), the content is "<<@dev>> is here" which is the last line
-      expect(mentions).toEqual(["dev"]);
-    });
-
-    it("handles multiline where last non-empty line has no mentions", () => {
-      const content = `<<@dev>> is here
-but this line has no mentions`;
-      const mentions = extractLastLineMentions(content);
-      expect(mentions).toEqual([]);
     });
   });
 });

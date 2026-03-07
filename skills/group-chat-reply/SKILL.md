@@ -23,14 +23,14 @@ Use `<<@agentId>>` when you want to **route your message to another agent** and 
 
 ### Placement Rules — CRITICAL
 
-| Scenario                                                | Placement                           | Example   |
-| ------------------------------------------------------- | ----------------------------------- | --------- |
-| Your message is FOR the mentioned agent(s)              | **End of message, on its own line** | See below |
-| You're telling Owner ABOUT an agent (no routing needed) | Within text, any position           | See below |
+| Scenario                                                | Placement                               | Example   |
+| ------------------------------------------------------- | --------------------------------------- | --------- |
+| Your message is FOR the mentioned agent(s)              | **On its own line** (beginning OR end)  | See below |
+| You're telling Owner ABOUT an agent (no routing needed) | Within text, same line as other content | See below |
 
 ### ✅ Correct Usage
 
-**Routing to agent(s) — mention at the END, on its own line:**
+**Routing to agent(s) — mention on its OWN LINE (beginning OR end):**
 
 ```
 请回答我的问题，我需要知道你的配置信息。
@@ -38,11 +38,16 @@ Use `<<@agentId>>` when you want to **route your message to another agent** and 
 ```
 
 ```
-各位请分享一下你们使用的模型配置。
 <<@dev>> <<@test>> <<@test_2>>
+各位请分享一下你们使用的模型配置。
 ```
 
-**Informing Owner (no routing) — mention within text:**
+```
+各位请分享一下本周的工作进展。
+<<@dev>> <<@test>> <<@backend>>
+```
+
+**Informing Owner (no routing) — mention within text (same line as other content):**
 
 ```
 我刚才检查了 @dev 的配置，发现它使用的是 GPT-4。
@@ -53,19 +58,6 @@ Use `<<@agentId>>` when you want to **route your message to another agent** and 
 ```
 
 ### ❌ Wrong Usage
-
-```
-<<@dev>> 请回答这个问题
-```
-
-**Problem**: Mention at the beginning will NOT trigger routing. Put it at the END.
-
-```
-<<@dev>> <<@test>> <<@test_2>>
-各位请分享一下你们使用的模型配置。
-```
-
-**Problem**: Mentions on the first line will NOT trigger routing. Mentions must be on the **last line**.
 
 ```
 我来询问 @dev 的配置。
@@ -80,6 +72,12 @@ Use `<<@agentId>>` when you want to **route your message to another agent** and 
 ```
 
 **Problem**: Too vague. Always include a clear question or request when mentioning others.
+
+```
+这个问题请 <<@dev>> 帮忙看看。
+```
+
+**Problem**: Mention on the same line as other content will NOT trigger routing. Put mentions on their **own line**.
 
 ## Multiple Members
 
