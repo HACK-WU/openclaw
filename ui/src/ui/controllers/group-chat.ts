@@ -179,21 +179,27 @@ export type GroupHost = {
   connected: boolean;
 } & GroupChatState;
 
-// ─── <<@>> Mention Detection & Auto-Forward ───
-
-/** Mention marker pattern: <<@agentId>> */
-const MENTION_MARKER_RE = /<<@(\S+?)>>/g;
+// ─── @mention Detection & Auto-Forward ───
 
 /**
- * Extract mentions from lines that contain ONLY mentions (no other content).
- * These "dedicated mention lines" trigger routing to other agents.
+ * Extract routing targets from lines that contain ONLY @mentions.
+ * Uses exact matching based on member IDs (not regex patterns).
  *
- * Examples:
- * - "<<@dev>>" → triggers routing (line has only mention)
- * - "<<@dev>> <<@test>>" → triggers routing (line has only mentions)
- * - "请回答 <<@dev>>" → does NOT trigger (line has other content)
+ * @param content - The message content to parse
+ * @param memberIds - List of valid member agentIds for exact matching
+ * @returns Array of member IDs mentioned on dedicated lines
+ *
+ * Examples (with memberIds = ["dev", "test"]):
+ * - "@dev" → ["dev"] (triggers routing)
+ * - "@dev @test" → ["dev", "test"] (triggers routing to both)
+ * - "请回答 @dev" → [] (same line has other content, no routing)
+ * - "@unknown" → [] (not a member, no routing)
  */
-export function extractDedicatedMentions(content: string): string[] {
+export function extractDedicatedMentions(content: string, memberIds: string[]): string[] {
+  if (!memberIds.length) {
+    return [];
+  }
+
   const lines = content.trim().split("\n");
   const mentions: string[] = [];
 
@@ -203,18 +209,84 @@ export function extractDedicatedMentions(content: string): string[] {
       continue;
     }
 
-    // Check if line contains only mentions (and whitespace)
-    // Remove all mention markers and see if anything remains
-    const lineWithoutMentions = trimmedLine.replace(MENTION_MARKER_RE, "").trim();
+    // Check if line is ONLY @mentions (possibly multiple, separated by spaces)
+    // Pattern: "@id1 @id2 @id3" where each id is a valid member
+    const parts = trimmedLine.split(/\s+/);
+    let allPartsAreMentions = true;
+    const lineMentions: string[] = [];
 
-    if (lineWithoutMentions === "") {
-      // Line contains only mentions → extract them
-      const matches = [...trimmedLine.matchAll(MENTION_MARKER_RE)];
-      mentions.push(...matches.map((m) => m[1]));
+    for (const part of parts) {
+      if (part.startsWith("@")) {
+        const agentId = part.slice(1);
+        // Only count as mention if it's a valid member
+        if (memberIds.includes(agentId)) {
+          lineMentions.push(agentId);
+        } else {
+          // Not a valid member, so this part is just regular text
+          allPartsAreMentions = false;
+          break;
+        }
+      } else {
+        // Not a mention at all
+        allPartsAreMentions = false;
+        break;
+      }
+    }
+
+    // Only add mentions if the ENTIRE line is made of valid @mentions
+    if (allPartsAreMentions && lineMentions.length > 0) {
+      mentions.push(...lineMentions);
     }
   }
 
   return [...new Set(mentions)];
+}
+
+/**
+ * Process message content for display:
+ * 1. Convert \@ to @ (escape handling)
+ * 2. Highlight @mentions for valid members
+ *
+ * @param content - The message content to process
+ * @param memberIds - List of valid member agentIds for mention highlighting
+ * @returns Processed content with escapes resolved and mentions wrapped
+ *
+ * Examples (with memberIds = ["dev", "test"]):
+ * - "请 @dev 回答" → "请 <mark>@dev</mark> 回答"
+ * - "邮箱 a\\@b.com" → "邮箱 a@b.com"
+ * - "联系 user@example.com" → "联系 user@example.com" (unchanged, not a member)
+ */
+export function processMentionDisplay(content: string, memberIds: string[]): string {
+  if (!content) {
+    return content;
+  }
+
+  // Step 1: Replace \@ with a placeholder to protect it during mention processing
+  const ESCAPE_PLACEHOLDER = "\x00ESC_AT\x00";
+  let result = content.replace(/\\@/g, ESCAPE_PLACEHOLDER);
+
+  // Step 2: Highlight @mentions for valid members only
+  if (memberIds.length > 0) {
+    // Sort by length descending to match longer IDs first (avoid partial matches)
+    const sortedIds = [...memberIds].toSorted((a, b) => b.length - a.length);
+
+    for (const agentId of sortedIds) {
+      // Match @agentId that's not part of a longer word
+      // This ensures @dev doesn't match inside @devops
+      const pattern = new RegExp(`@${escapeRegExp(agentId)}(?![a-zA-Z0-9_-])`, "g");
+      result = result.replace(pattern, `<mark class="mention">@${agentId}</mark>`);
+    }
+  }
+
+  // Step 3: Convert escape placeholder back to @
+  result = result.replace(new RegExp(ESCAPE_PLACEHOLDER, "g"), "@");
+
+  return result;
+}
+
+/** Escape special regex characters in a string */
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** Per-group chain state for forward limiting */
@@ -233,10 +305,10 @@ export function resetChainState(groupId: string): void {
 }
 
 /**
- * Detect <<@agentId>> markers in an agent's reply and auto-forward
+ * Detect @agentId markers in an agent's reply and auto-forward
  * the message to trigger the mentioned agents.
  *
- * IMPORTANT: Only mentions on DEDICATED LINES (lines with only mentions)
+ * IMPORTANT: Only mentions on DEDICATED LINES (lines with only @mentions)
  * trigger routing. Mentions on lines with other content are for display only.
  *
  * Called after a group.message event is received and rendered.
@@ -254,9 +326,10 @@ export async function detectAndForwardMentions(
   }
 
   const meta = host.activeGroupMeta;
+  const memberIds = meta.members.map((m) => m.agentId);
 
-  // Only extract mentions from DEDICATED LINES (lines with only mentions)
-  const dedicatedMentions = extractDedicatedMentions(message.content);
+  // Only extract mentions from DEDICATED LINES (lines with only @mentions)
+  const dedicatedMentions = extractDedicatedMentions(message.content, memberIds);
 
   if (dedicatedMentions.length === 0) {
     // No dedicated mention lines → chain naturally ends
@@ -264,15 +337,9 @@ export async function detectAndForwardMentions(
     return;
   }
 
-  // Extract valid agentIds (must be current group members, exclude sender)
+  // Exclude sender from mentions
   const senderAgentId = message.sender.type === "agent" ? message.sender.agentId : undefined;
-  const mentionedIds = [
-    ...new Set(
-      dedicatedMentions.filter(
-        (id) => id !== senderAgentId && meta.members.some((m) => m.agentId === id),
-      ),
-    ),
-  ];
+  const mentionedIds = [...new Set(dedicatedMentions.filter((id) => id !== senderAgentId))];
 
   if (mentionedIds.length === 0) {
     resetChainState(message.groupId);
@@ -317,18 +384,27 @@ export async function detectAndForwardMentions(
     startedAt: chain?.startedAt ?? now,
   });
 
-  // Replace <<@agentId>> → @agentId on DEDICATED LINES for the forwarded message
-  // (mentions on lines with other content are preserved as-is for display)
+  // Remove dedicated mention lines from forwarded message (they're routing markers, not content)
+  // Keep inline mentions as-is for display
   const lines = message.content.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const trimmedLine = lines[i].trim();
-    const lineWithoutMentions = trimmedLine.replace(MENTION_MARKER_RE, "").trim();
-    // If line contains only mentions (no other content), convert them
-    if (trimmedLine && lineWithoutMentions === "") {
-      lines[i] = lines[i].replace(MENTION_MARKER_RE, "@$1");
+  const contentLines = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return false;
     }
-  }
-  const forwardedText = lines.join("\n");
+    // Check if line is ONLY @mentions
+    const parts = trimmed.split(/\s+/);
+    const isAllMentions = parts.every((part) => {
+      if (!part.startsWith("@")) {
+        return false;
+      }
+      const id = part.slice(1);
+      return memberIds.includes(id);
+    });
+    // Keep lines that are NOT all mentions (those are the content)
+    return !isAllMentions;
+  });
+  const forwardedText = contentLines.join("\n");
 
   console.log(
     `[group-chat] auto-forward: group=${message.groupId} from=${senderAgentId} to=[${mentionedIds.join(",")}] chain=${nextCount}/${MAX_CHAIN_FORWARDS}`,

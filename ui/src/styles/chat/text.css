@@ -124,6 +124,19 @@
 }
 
 /* =============================================
+   MENTION HIGHLIGHT
+   ============================================= */
+
+.chat-text mark.mention {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-weight: 600;
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  font-size: 0.95em;
+}
+
+/* =============================================
    RTL (Right-to-Left) SUPPORT
    ============================================= */
 

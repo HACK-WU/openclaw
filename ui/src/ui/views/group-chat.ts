@@ -548,10 +548,13 @@ function renderGroupMessage(
   const classified = toolCards.length > 0 ? classifyToolCards(toolCards) : null;
 
   // Render markdown content with mention highlighting
-  // - Last line <<@agentId>> → highlighted mention pill (routing target)
-  // - Middle <<@agentId>> → plain @agentId (display only)
-  const displayContent = formatMentionsForDisplay(msg.content);
-  const contentHtml = toSanitizedMarkdownHtml(displayContent);
+  // Step 1: Handle escapes (\@ → @) before markdown processing
+  // Step 2: Convert markdown to HTML
+  // Step 3: Highlight @mentions in the HTML
+  const memberIds = meta.members.map((m) => m.agentId);
+  const contentWithEscapes = msg.content.replace(/\\@/g, "@");
+  const markdownHtml = toSanitizedMarkdownHtml(contentWithEscapes);
+  const contentHtml = highlightMentionsInHtml(markdownHtml, memberIds);
 
   return html`
     <div class="chat-group ${roleClass}">
@@ -1088,38 +1091,6 @@ function renderAddMemberDialog(props: GroupChatViewProps) {
 
 // ─── Helpers ───
 
-/** Mention marker pattern: <<@agentId>> */
-const MENTION_MARKER_RE = /<<@(\S+?)>>/g;
-
-/**
- * Format mentions for display:
- * - Mentions on DEDICATED LINES (lines with only mentions) → highlighted mention pill (routing target)
- * - Mentions on lines with other content → plain @agentId (display only)
- */
-export function formatMentionsForDisplay(content: string): string {
-  const lines = content.split("\n");
-  if (lines.length === 0) {
-    return content;
-  }
-
-  // Process each line
-  for (let i = 0; i < lines.length; i++) {
-    const trimmedLine = lines[i].trim();
-    // Check if line contains only mentions (and whitespace)
-    const lineWithoutMentions = trimmedLine.replace(MENTION_MARKER_RE, "").trim();
-
-    if (trimmedLine && lineWithoutMentions === "") {
-      // Line contains only mentions → highlight them (routing targets)
-      lines[i] = lines[i].replace(MENTION_MARKER_RE, "**@$1**");
-    } else {
-      // Line has other content → convert to plain @agentId (display only)
-      lines[i] = lines[i].replace(MENTION_MARKER_RE, "@$1");
-    }
-  }
-
-  return lines.join("\n");
-}
-
 function resolveSenderName(
   sender: GroupChatMessage["sender"],
   _meta: GroupSessionMeta,
@@ -1237,4 +1208,34 @@ function formatTimeAgo(ts: number): string {
     return `${Math.floor(diff / 3_600_000)}h ago`;
   }
   return `${Math.floor(diff / 86_400_000)}d ago`;
+}
+
+/**
+ * Highlight @mentions in HTML content.
+ * Replaces @agentId with <mark class="mention">@agentId</mark> for valid members.
+ * Avoids replacing inside HTML tags or attributes.
+ */
+function highlightMentionsInHtml(html: string, memberIds: string[]): string {
+  if (!memberIds.length) {
+    return html;
+  }
+
+  // Sort by length descending to match longer IDs first
+  const sortedIds = [...memberIds].toSorted((a, b) => b.length - a.length);
+
+  // Process each member ID
+  let result = html;
+  for (const agentId of sortedIds) {
+    // Match @agentId that's not part of a longer word and not inside HTML tags
+    // Use a regex that avoids matching inside <...>
+    const pattern = new RegExp(`@${escapeRegExp(agentId)}(?![a-zA-Z0-9_-])(?![^<]*>)`, "g");
+    result = result.replace(pattern, `<mark class="mention">@${agentId}</mark>`);
+  }
+
+  return result;
+}
+
+/** Escape special regex characters */
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

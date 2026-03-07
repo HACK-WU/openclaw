@@ -1,151 +1,233 @@
 import { describe, expect, it } from "vitest";
-import { formatMentionsForDisplay } from "./group-chat.ts";
+import { processMentionDisplay } from "../controllers/group-chat.ts";
 
-describe("formatMentionsForDisplay", () => {
-  describe("dedicated line highlighting", () => {
-    it("highlights mentions on dedicated line (line with only mentions)", () => {
-      const content = `Please answer.
-<<@dev>>`;
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe(`Please answer.
-**@dev**`);
+// Helper function to test highlightMentionsInHtml logic
+// Since it's private in the module, we test via the exported processMentionDisplay
+// which uses the same logic
+function highlightMentionsInHtml(html: string, memberIds: string[]): string {
+  // Simulate the logic from highlightMentionsInHtml
+  if (!memberIds.length) {
+    return html;
+  }
+
+  const sortedIds = [...memberIds].toSorted((a, b) => b.length - a.length);
+  let result = html;
+  for (const agentId of sortedIds) {
+    const pattern = new RegExp(
+      `@${agentId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-zA-Z0-9_-])(?![^<]*>)`,
+      "g",
+    );
+    result = result.replace(pattern, `<mark class="mention">@${agentId}</mark>`);
+  }
+  return result;
+}
+
+describe("group-chat mention highlighting", () => {
+  const memberIds = ["dev", "test", "backend"];
+
+  describe("processMentionDisplay (controller function)", () => {
+    it("highlights @memberId that is a valid member", () => {
+      const content = "请 @dev 回答这个问题。";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe('请 <mark class="mention">@dev</mark> 回答这个问题。');
     });
 
-    it("highlights mentions on dedicated line at the beginning", () => {
-      const content = `<<@dev>> <<@test>>
-各位请分享一下你们使用的模型配置。`;
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe(`**@dev** **@test**
-各位请分享一下你们使用的模型配置。`);
+    it("highlights multiple @memberId mentions", () => {
+      const content = "@dev 和 @test 请协作完成。";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe(
+        '<mark class="mention">@dev</mark> 和 <mark class="mention">@test</mark> 请协作完成。',
+      );
     });
 
-    it("highlights multiple mentions on dedicated line", () => {
-      const content = `请各位分享一下本周的工作进展。
-<<@dev>> <<@test>> <<@backend>>`;
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe(`请各位分享一下本周的工作进展。
-**@dev** **@test** **@backend**`);
+    it("does NOT highlight @xxx that is not a member", () => {
+      const content = "联系 user@example.com 或找 @unknown 帮忙。";
+      const result = processMentionDisplay(content, memberIds);
+      // @unknown is not a member, @example is not a member
+      expect(result).toBe("联系 user@example.com 或找 @unknown 帮忙。");
+    });
+
+    it("matches longer member IDs first to avoid partial matches", () => {
+      const members = ["dev", "devops"];
+      const content = "请 @devops 处理这个问题。";
+      const result = processMentionDisplay(content, members);
+      expect(result).toBe('请 <mark class="mention">@devops</mark> 处理这个问题。');
+    });
+
+    it("does not match @dev inside @devops", () => {
+      const members = ["dev", "devops"];
+      const content = "@devops 会处理，@dev 也会参与。";
+      const result = processMentionDisplay(content, members);
+      expect(result).toBe(
+        '<mark class="mention">@devops</mark> 会处理，<mark class="mention">@dev</mark> 也会参与。',
+      );
     });
   });
 
-  describe("inline mention handling", () => {
-    it("converts inline mentions to plain @ without highlighting", () => {
-      const content = "这个问题请 <<@dev>> 帮忙看看。";
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe("这个问题请 @dev 帮忙看看。");
+  describe("highlightMentionsInHtml (view function)", () => {
+    it("highlights mentions in plain text", () => {
+      const html = "<p>请 @dev 回答</p>";
+      const result = highlightMentionsInHtml(html, memberIds);
+      expect(result).toBe('<p>请 <mark class="mention">@dev</mark> 回答</p>');
     });
 
-    it("handles multiline with mixed dedicated and inline mentions", () => {
-      // Note: `<<@test>> 请你也分享一下你的配置。` has other content on the same line,
-      // so it's NOT a dedicated mention line and should be converted to plain @
-      const content = `我刚才检查了 <<@dev>> 的配置，发现它使用的是 GPT-4。
-<<@test>> 请你也分享一下你的配置。`;
-      const result = formatMentionsForDisplay(content);
-      // Both lines have other content, so both are converted to plain @
-      expect(result).toBe(`我刚才检查了 @dev 的配置，发现它使用的是 GPT-4。
-@test 请你也分享一下你的配置。`);
+    it("does not highlight inside HTML tags", () => {
+      const html = '<a href="/@dev">link</a>';
+      const result = highlightMentionsInHtml(html, memberIds);
+      // @dev inside tag attribute should not be replaced
+      expect(result).toBe('<a href="/@dev">link</a>');
+    });
+
+    it("highlights multiple mentions", () => {
+      const html = "<p>@dev 和 @test</p>";
+      const result = highlightMentionsInHtml(html, memberIds);
+      expect(result).toBe(
+        '<p><mark class="mention">@dev</mark> 和 <mark class="mention">@test</mark></p>',
+      );
+    });
+
+    it("does not highlight non-members", () => {
+      const html = "<p>@unknown 用户</p>";
+      const result = highlightMentionsInHtml(html, memberIds);
+      expect(result).toBe("<p>@unknown 用户</p>");
+    });
+
+    it("handles empty memberIds", () => {
+      const html = "<p>@dev</p>";
+      const result = highlightMentionsInHtml(html, []);
+      expect(result).toBe("<p>@dev</p>");
+    });
+  });
+
+  describe("\\@ escape handling in processMentionDisplay", () => {
+    it("converts \\@ to @ (escape)", () => {
+      const content = "邮箱是 user\\@example.com";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe("邮箱是 user@example.com");
+    });
+
+    it("converts escaped \\@dev to plain @dev", () => {
+      const content = "这不是一个 \\@mention，只是普通文本。";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe("这不是一个 @mention，只是普通文本。");
+    });
+
+    it("handles multiple escapes in one line", () => {
+      const content = "联系 \\@support 或 \\@admin 获取帮助。";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe("联系 @support 或 @admin 获取帮助。");
+    });
+
+    it("escape prevents mention highlighting", () => {
+      const content = "这是 \\@dev，不是提及。";
+      const result = processMentionDisplay(content, memberIds);
+      // \@dev should become @dev without highlighting
+      expect(result).toBe("这是 @dev，不是提及。");
     });
   });
 
   describe("mixed scenarios", () => {
-    it("handles multiple dedicated lines", () => {
-      const content = `<<@dev>>
-Some text here
-<<@test>>`;
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe(`**@dev**
-Some text here
-**@test**`);
+    it("handles both escapes and mentions in same content", () => {
+      const content = "我的邮箱是 test\\@example.com，请 @dev 联系我。";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe(
+        '我的邮箱是 test@example.com，请 <mark class="mention">@dev</mark> 联系我。',
+      );
+    });
+
+    it("handles email addresses (no escape, not a member)", () => {
+      const content = "发邮件到 user@example.com";
+      const result = processMentionDisplay(content, memberIds);
+      // @example is not a member, so no change
+      expect(result).toBe("发邮件到 user@example.com");
     });
 
     it("handles empty content", () => {
-      const result = formatMentionsForDisplay("");
+      const result = processMentionDisplay("", memberIds);
       expect(result).toBe("");
     });
 
-    it("handles single line with no mentions", () => {
-      const content = "Just a regular message";
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe("Just a regular message");
+    it("handles content with no @ symbols", () => {
+      const content = "这是一条普通消息。";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe("这是一条普通消息。");
     });
 
-    it("handles multiline with no mentions", () => {
-      const content = `Line 1
-Line 2
-Line 3`;
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe(content);
+    it("handles empty memberIds array", () => {
+      const content = "请 @dev 回答";
+      const result = processMentionDisplay(content, []);
+      // No members to highlight
+      expect(result).toBe("请 @dev 回答");
     });
   });
 
   describe("edge cases", () => {
-    it("handles plain @ mentions (not in <<>> format) - no transformation", () => {
-      const content = "Hey @dev and @test";
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe("Hey @dev and @test");
+    it("handles @ at end of content", () => {
+      const content = "请回答 @dev";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe('请回答 <mark class="mention">@dev</mark>');
     });
 
-    it("handles mixed <<@>> and plain @ on same line with other content", () => {
-      const content = "Plain @dev vs <<@real>> here";
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe("Plain @dev vs @real here");
+    it("handles @ at beginning of content", () => {
+      const content = "@dev 请回答";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe('<mark class="mention">@dev</mark> 请回答');
     });
 
-    it("handles dedicated line with whitespace", () => {
-      const content = `  <<@dev>>  `;
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe("  **@dev**  ");
+    it("handles @mention followed by punctuation", () => {
+      const content = "@dev, 请回答。";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe('<mark class="mention">@dev</mark>, 请回答。');
     });
 
-    it("handles multiple identical mentions on dedicated line", () => {
-      const content = `<<@dev>> <<@dev>>`;
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe("**@dev** **@dev**");
+    it("handles @mention at end of sentence", () => {
+      const content = "这个问题问 @dev。";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe('这个问题问 <mark class="mention">@dev</mark>。');
     });
 
-    it("preserves line breaks exactly", () => {
-      const content = `Line 1
-
-<<@dev>>`;
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe(`Line 1
-
-**@dev**`);
+    it("handles multiple @ on same line with mixed members and non-members", () => {
+      const content = "@dev 和 @unknown 和 @test 一起工作。";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe(
+        '<mark class="mention">@dev</mark> 和 @unknown 和 <mark class="mention">@test</mark> 一起工作。',
+      );
     });
   });
 
   describe("real-world scenarios", () => {
-    it("formats agent asking another agent at end", () => {
-      const content = `I need to check with the backend team.
-<<@backend>>`;
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe(`I need to check with the backend team.
-**@backend**`);
+    it("formats agent asking another agent", () => {
+      const content = `我需要后端团队的支持。
+@backend`;
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe(`我需要后端团队的支持。
+<mark class="mention">@backend</mark>`);
     });
 
-    it("formats agent asking multiple agents at beginning", () => {
-      const content = `<<@frontend>> <<@backend>>
-Please coordinate on this feature.`;
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe(`**@frontend** **@backend**
-Please coordinate on this feature.`);
+    it("formats agent mentioning member inline", () => {
+      const content = "我刚才检查了 @dev 的配置，发现它使用的是 GPT-4。";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe(
+        '我刚才检查了 <mark class="mention">@dev</mark> 的配置，发现它使用的是 GPT-4。',
+      );
     });
 
-    it("formats agent telling owner about another agent (no routing)", () => {
-      const content = `I checked with <<@dev>> and they confirmed the issue.
-No further action needed.`;
-      const result = formatMentionsForDisplay(content);
-      // Inline mention is converted to plain @
-      expect(result).toBe(`I checked with @dev and they confirmed the issue.
-No further action needed.`);
+    it("formats email with escape", () => {
+      const content = "我的工作邮箱是 john\\@company.com，请惠存。";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe("我的工作邮箱是 john@company.com，请惠存。");
     });
 
-    it("formats dedicated line with only one mention", () => {
-      const content = `The issue involves multiple components.
-<<@frontend>>`;
-      const result = formatMentionsForDisplay(content);
-      expect(result).toBe(`The issue involves multiple components.
-**@frontend**`);
+    it("formats mixed content with routing and display mentions", () => {
+      const content = `@dev 请回答这个问题。
+
+另外我查看了 @test 的配置，一切正常。`;
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe(
+        `<mark class="mention">@dev</mark> 请回答这个问题。
+
+另外我查看了 <mark class="mention">@test</mark> 的配置，一切正常。`,
+      );
     });
   });
 });

@@ -1,6 +1,6 @@
 ---
 name: group-chat-reply
-description: Guides agents participating in multi-agent group chats. Teaches proper mention syntax (<<@agentId>>) and placement rules for routing messages to other agents. Use when agents need to communicate in group chat scenarios, mention other members, or understand group chat communication patterns.
+description: Guides agents participating in multi-agent group chats. Teaches proper mention syntax (@agentId) for routing messages to other agents. Use when agents need to communicate in group chat scenarios, mention other members, or understand group chat communication patterns.
 always: false
 emoji: "💬"
 ---
@@ -8,6 +8,16 @@ emoji: "💬"
 # Group Chat Reply
 
 You are currently participating in a **group chat** with multiple agents and a human Owner.
+
+## ⚠️ IMPORTANT: @ Symbol Has Special Meaning
+
+In group chat, the `@` symbol is **reserved for mentioning agents**. Do NOT use `@` casually in your messages.
+
+| What you want         | How to write it            | Example                |
+| --------------------- | -------------------------- | ---------------------- |
+| Route to an agent     | `@agentId` on its own line | `@dev`                 |
+| Display `@` literally | Escape with `\@`           | `\@dev` or `\@mention` |
+| Email address         | Escape the `@`             | `user\@example.com`    |
 
 ## Communication Rules
 
@@ -19,73 +29,87 @@ You are currently participating in a **group chat** with multiple agents and a h
 
 ### When to Mention
 
-Use `<<@agentId>>` when you want to **route your message to another agent** and trigger their response.
+Use `@agentId` on its **own line** when you want to **route your message to another agent** and trigger their response.
 
 ### Placement Rules — CRITICAL
 
-| Scenario                                                | Placement                               | Example   |
-| ------------------------------------------------------- | --------------------------------------- | --------- |
-| Your message is FOR the mentioned agent(s)              | **On its own line** (beginning OR end)  | See below |
-| You're telling Owner ABOUT an agent (no routing needed) | Within text, same line as other content | See below |
+| Scenario                         | Placement           | Behavior                              |
+| -------------------------------- | ------------------- | ------------------------------------- |
+| Routing (trigger agent response) | **Own line**, alone | Removes from display, routes to agent |
+| Informal mention (no routing)    | Within text         | Displays with highlight, no routing   |
+| Literal `@` display              | Escaped: `\@`       | Displays literally, never routes      |
 
 ### ✅ Correct Usage
 
-**Routing to agent(s) — mention on its OWN LINE (beginning OR end):**
+**Routing to agent(s) — mention on its OWN LINE:**
 
 ```
 请回答我的问题，我需要知道你的配置信息。
-<<@dev>>
+@dev
 ```
 
 ```
-<<@dev>> <<@test>> <<@test_2>>
+@dev @test @test_2
 各位请分享一下你们使用的模型配置。
 ```
 
 ```
 各位请分享一下本周的工作进展。
-<<@dev>> <<@test>> <<@backend>>
+@dev @test @backend
 ```
 
-**Informing Owner (no routing) — mention within text (same line as other content):**
+**Informal mention (no routing) — mention within text:**
 
 ```
 我刚才检查了 @dev 的配置，发现它使用的是 GPT-4。
 ```
 
+This will display with `@dev` highlighted but will NOT trigger routing.
+
+**Literal @ display — use escape character:**
+
 ```
-关于 @test 提到的问题，我认为可以从以下几个方面分析...
+联系我: user\@example.com
+```
+
+```
+这不是一个 \@mention，只是普通文本。
 ```
 
 ### ❌ Wrong Usage
 
 ```
-我来询问 @dev 的配置。
+这个问题请 @dev 帮忙看看。
 ```
 
-**Problem**: Plain `@dev` (without `<<>>`) will NOT trigger routing. Use `<<@dev>>` if you want to route.
+**Problem**: `@dev` on the same line as other text will NOT trigger routing. Put mentions on their **own line**.
+
+```
+我的邮箱是 user@example.com
+```
+
+**Problem**: Unescaped `@` will be treated as a mention attempt. Use `user\@example.com` instead.
 
 ```
 这个问题我无法回答，让其他人来处理吧。
 
-<<@dev>>
+@dev
 ```
 
 **Problem**: Too vague. Always include a clear question or request when mentioning others.
 
-```
-这个问题请 <<@dev>> 帮忙看看。
-```
-
-**Problem**: Mention on the same line as other content will NOT trigger routing. Put mentions on their **own line**.
-
 ## Multiple Members
 
-When mentioning multiple agents, put all mentions on the **last line**:
+When mentioning multiple agents, put all mentions on the **same line** (at the beginning or end of your message):
 
 ```
 请各位分享一下本周的工作进展。
-<<@dev>> <<@test>> <<@backend>>
+@dev @test @backend
+```
+
+```
+@dev @test
+两位请协作完成这个任务。
 ```
 
 ## Read-Only Mode
@@ -98,8 +122,9 @@ You are operating in **read-only mode** within this group chat:
 ## Best Practices
 
 - Keep replies concise and focused on the topic
-- Put `<<@agentId>>` at the END of your message, on its own line
+- Put `@agentId` on its **own line** to trigger routing
 - Include a clear question or request when mentioning others
+- **Escape `@` with `\@`** when you need to display it literally (emails, casual references)
 - Do NOT announce "let me ask..." — just ask directly
 - If you're the assistant (coordinator), help integrate responses from other members
 - If you're a regular member, contribute your expertise when asked

@@ -6,6 +6,7 @@ import {
   handleGroupStreamEvent,
   handleGroupSystemEvent,
   leaveGroupChat,
+  processMentionDisplay,
 } from "./group-chat.ts";
 import type { GroupChatMessage, GroupChatState, GroupStreamPayload } from "./group-chat.ts";
 
@@ -152,78 +153,119 @@ describe("group-chat controller", () => {
   });
 
   describe("extractDedicatedMentions", () => {
-    it("extracts mentions from dedicated line (line with only mentions)", () => {
+    const memberIds = ["dev", "test", "backend"];
+
+    it("extracts mentions from dedicated line (line with only @mentions)", () => {
       const content = `Please answer.
-<<@dev>>`;
-      const mentions = extractDedicatedMentions(content);
+@dev`;
+      const mentions = extractDedicatedMentions(content, memberIds);
       expect(mentions).toEqual(["dev"]);
     });
 
     it("extracts mentions from dedicated line at the beginning", () => {
-      const content = `<<@dev>> <<@test>>
+      const content = `@dev @test
 各位请分享一下你们使用的模型配置。`;
-      const mentions = extractDedicatedMentions(content);
+      const mentions = extractDedicatedMentions(content, memberIds);
       expect(mentions).toEqual(["dev", "test"]);
     });
 
     it("extracts multiple mentions from dedicated line", () => {
       const content = `请各位分享一下本周的工作进展。
-<<@dev>> <<@test>> <<@backend>>`;
-      const mentions = extractDedicatedMentions(content);
+@dev @test @backend`;
+      const mentions = extractDedicatedMentions(content, memberIds);
       expect(mentions).toEqual(["dev", "test", "backend"]);
     });
 
     it("does NOT extract mentions from lines with other content", () => {
-      const content = "这个问题请 <<@dev>> 帮忙看看。";
-      const mentions = extractDedicatedMentions(content);
+      const content = "这个问题请 @dev 帮忙看看。";
+      const mentions = extractDedicatedMentions(content, memberIds);
       expect(mentions).toEqual([]);
     });
 
     it("extracts only from dedicated lines, ignoring inline mentions", () => {
-      // Note: `<<@test>> 请你也分享一下你的配置。` has other content on the same line,
-      // so it's NOT a dedicated mention line and should NOT be extracted
       const content = `我刚才检查了 @dev 的配置，发现它使用的是 GPT-4。
-<<@test>> 请你也分享一下你的配置。`;
-      const mentions = extractDedicatedMentions(content);
-      // Expected: empty array, because neither line is a dedicated mention line
+@test 请你也分享一下你的配置。`;
+      const mentions = extractDedicatedMentions(content, memberIds);
+      // Second line has other content, so it's NOT a dedicated mention line
       expect(mentions).toEqual([]);
     });
 
     it("deduplicates mentions", () => {
-      const content = `<<@dev>> <<@dev>> <<@test>>`;
-      const mentions = extractDedicatedMentions(content);
+      const content = `@dev @dev @test`;
+      const mentions = extractDedicatedMentions(content, memberIds);
       expect(mentions).toEqual(["dev", "test"]);
     });
 
     it("returns empty array for empty content", () => {
-      const mentions = extractDedicatedMentions("");
+      const mentions = extractDedicatedMentions("", memberIds);
       expect(mentions).toEqual([]);
     });
 
     it("handles content with no mentions", () => {
       const content = "Just a regular message with no mentions";
-      const mentions = extractDedicatedMentions(content);
+      const mentions = extractDedicatedMentions(content, memberIds);
       expect(mentions).toEqual([]);
     });
 
-    it("handles plain @ mentions (not in <<>> format) - should NOT extract", () => {
-      const content = "Hey @dev and @test";
-      const mentions = extractDedicatedMentions(content);
+    it("does NOT extract @mentions that are not members", () => {
+      const content = "@unknown @random";
+      const mentions = extractDedicatedMentions(content, memberIds);
+      // Neither unknown nor random are members
       expect(mentions).toEqual([]);
     });
 
     it("handles multiple dedicated lines", () => {
-      const content = `<<@dev>>
+      const content = `@dev
 Some text here
-<<@test>>`;
-      const mentions = extractDedicatedMentions(content);
+@test`;
+      const mentions = extractDedicatedMentions(content, memberIds);
       expect(mentions).toEqual(["dev", "test"]);
     });
 
     it("handles content with only whitespace and mentions", () => {
-      const content = `  <<@dev>>  `;
-      const mentions = extractDedicatedMentions(content);
+      const content = `  @dev  `;
+      const mentions = extractDedicatedMentions(content, memberIds);
       expect(mentions).toEqual(["dev"]);
+    });
+
+    it("returns empty array when memberIds is empty", () => {
+      const content = "@dev @test";
+      const mentions = extractDedicatedMentions(content, []);
+      expect(mentions).toEqual([]);
+    });
+  });
+
+  describe("processMentionDisplay", () => {
+    const memberIds = ["dev", "test", "backend"];
+
+    it("highlights @memberId that is a valid member", () => {
+      const content = "请 @dev 回答";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe('请 <mark class="mention">@dev</mark> 回答');
+    });
+
+    it("converts \\@ to plain @", () => {
+      const content = "邮箱 user\\@example.com";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe("邮箱 user@example.com");
+    });
+
+    it("does NOT highlight @xxx that is not a member", () => {
+      const content = "联系 user@example.com";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe("联系 user@example.com");
+    });
+
+    it("handles escape preventing highlight", () => {
+      const content = "这是 \\@dev 不是提及";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe("这是 @dev 不是提及");
+    });
+
+    it("handles mixed content", () => {
+      const content = "邮箱 a\\@b.com 和 @dev";
+      const result = processMentionDisplay(content, memberIds);
+      expect(result).toBe('邮箱 a@b.com 和 <mark class="mention">@dev</mark>');
     });
   });
 });
