@@ -289,12 +289,167 @@ function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Per-group chain state for forward limiting */
-type ChainState = { count: number; startedAt: number };
+// ─── Initiator Summary Mechanism ───
+
+/** Per-group chain state for forward limiting and initiator tracking */
+type ChainState = {
+  count: number;
+  startedAt: number;
+  initiators: string[]; // Ordered list of agents who @mentioned others (deduped)
+  pendingAgents: Set<string>; // Agents triggered but not yet replied
+  lastMessageAt: number; // Timestamp of last message
+};
+
 const groupChainStates = new Map<string, ChainState>();
+
+// Summary timers and counters
+const summaryTimers = new Map<string, number>();
+const summaryRounds = new Map<string, number>();
 
 const MAX_CHAIN_FORWARDS = 10;
 const MAX_CHAIN_DURATION_MS = 5 * 60_000; // 5 minutes
+const SUMMARY_DELAY_MS = 10_000; // Wait after all agents replied
+const MAX_PENDING_WAIT_MS = 30_000; // Max wait for pending agents
+const MAX_SUMMARY_ROUNDS = 3;
+
+/** Get or create chain state for a group */
+function getOrCreateChainState(groupId: string): ChainState {
+  let chain = groupChainStates.get(groupId);
+  if (!chain) {
+    const now = Date.now();
+    chain = {
+      count: 0,
+      startedAt: now,
+      initiators: [],
+      pendingAgents: new Set(),
+      lastMessageAt: now,
+    };
+    groupChainStates.set(groupId, chain);
+  }
+  return chain;
+}
+
+/** Add initiator to list (deduped, ordered) */
+function addInitiator(chain: ChainState, agentId: string): void {
+  if (!chain.initiators.includes(agentId)) {
+    chain.initiators.push(agentId);
+  }
+}
+
+/** Cancel summary timer for a group */
+function cancelSummaryTimer(groupId: string): void {
+  const timer = summaryTimers.get(groupId);
+  if (timer) {
+    clearTimeout(timer);
+    summaryTimers.delete(groupId);
+  }
+}
+
+/** Schedule a summary check */
+function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
+  const chain = groupChainStates.get(groupId);
+  if (!chain || chain.initiators.length === 0) {
+    return;
+  }
+
+  // Cancel existing timer
+  cancelSummaryTimer(groupId);
+
+  const now = Date.now();
+  const elapsed = now - chain.lastMessageAt;
+  const totalWait = now - chain.startedAt;
+
+  let delay: number;
+
+  if (chain.pendingAgents.size === 0) {
+    // All agents replied, wait SUMMARY_DELAY_MS
+    delay = Math.max(0, SUMMARY_DELAY_MS - elapsed);
+  } else {
+    // Some agents pending
+    if (totalWait >= MAX_PENDING_WAIT_MS) {
+      // Waited too long, trigger summary immediately
+      delay = 0;
+    } else {
+      // Continue waiting
+      delay = Math.min(SUMMARY_DELAY_MS, MAX_PENDING_WAIT_MS - totalWait);
+    }
+  }
+
+  const timer = window.setTimeout(() => {
+    void sendSummaryMessage(host, groupId);
+  }, delay);
+  summaryTimers.set(groupId, timer);
+}
+
+/** Send summary message to trigger initiators */
+async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<void> {
+  const chain = groupChainStates.get(groupId);
+  if (!chain || chain.initiators.length === 0) {
+    return;
+  }
+
+  // Check summary rounds limit
+  const rounds = summaryRounds.get(groupId) ?? 0;
+  if (rounds >= MAX_SUMMARY_ROUNDS) {
+    console.log(`[group-chat] summary rounds limit: group=${groupId} rounds=${rounds}`);
+    return;
+  }
+
+  // Filter out initiators who left the group
+  const meta = host.activeGroupMeta;
+  if (!meta || !host.client || !host.connected) {
+    return;
+  }
+
+  const validInitiators = chain.initiators.filter((id) =>
+    meta.members.some((m) => m.agentId === id),
+  );
+
+  if (validInitiators.length === 0) {
+    return;
+  }
+
+  // Increment summary rounds
+  summaryRounds.set(groupId, rounds + 1);
+
+  // Show summary trigger notification
+  appendSystemMessageToUI(
+    host,
+    groupId,
+    `📢 已触发汇总，等待 ${validInitiators.map((id) => `@${id}`).join(" ")} 回复...`,
+  );
+
+  // Summary message
+  const summaryMessage = `请确认是否有新的想法或补充。
+
+如果当前讨论已结束或没有新内容，可以：
+- 不回复（跳过）
+- 回复简单语句，如"收到"、"明白"、"了解"`;
+
+  try {
+    await host.client.request("group.send", {
+      groupId,
+      message: summaryMessage,
+      mentions: validInitiators,
+      sender: { type: "owner" },
+      skipTranscript: true,
+    });
+
+    // Reset chain state after summary (clear initiators for new round)
+    const now = Date.now();
+    groupChainStates.set(groupId, {
+      count: 0,
+      startedAt: now,
+      initiators: [], // Clear for new round
+      pendingAgents: new Set(validInitiators), // Track who was triggered
+      lastMessageAt: now,
+    });
+
+    console.log(`[group-chat] summary sent: group=${groupId} to=[${validInitiators.join(",")}]`);
+  } catch (err) {
+    console.error(`[group-chat] summary failed: group=${groupId}`, err);
+  }
+}
 
 /** Reset chain state — new conversation round */
 export function resetChainState(groupId: string): void {
@@ -302,6 +457,23 @@ export function resetChainState(groupId: string): void {
     console.log(`[group-chat] chain state reset: group=${groupId}`);
   }
   groupChainStates.delete(groupId);
+  cancelSummaryTimer(groupId);
+}
+
+/** Cancel summary manually */
+export function cancelSummary(host: GroupHost, groupId: string): void {
+  cancelSummaryTimer(groupId);
+  appendSystemMessageToUI(host, groupId, "已取消自动汇总。");
+}
+
+/** Trigger summary manually */
+export async function triggerSummary(host: GroupHost, groupId: string): Promise<void> {
+  const chain = groupChainStates.get(groupId);
+  if (!chain || chain.initiators.length === 0) {
+    return;
+  }
+  cancelSummaryTimer(groupId);
+  await sendSummaryMessage(host, groupId);
 }
 
 /**
@@ -347,10 +519,10 @@ export async function detectAndForwardMentions(
   }
 
   // Check chain limits (count + duration)
-  const chain = groupChainStates.get(message.groupId);
+  const chain = getOrCreateChainState(message.groupId);
   const now = Date.now();
 
-  if (chain && chain.count >= MAX_CHAIN_FORWARDS) {
+  if (chain.count >= MAX_CHAIN_FORWARDS) {
     console.warn(
       `[group-chat] chain count limit: group=${message.groupId} count=${chain.count}/${MAX_CHAIN_FORWARDS}`,
     );
@@ -361,10 +533,11 @@ export async function detectAndForwardMentions(
         `Agents will no longer be automatically triggered. ` +
         `Send a new message to start a fresh conversation.`,
     );
+    // Don't trigger summary when chain limit reached
     return;
   }
 
-  if (chain && now - chain.startedAt >= MAX_CHAIN_DURATION_MS) {
+  if (now - chain.startedAt >= MAX_CHAIN_DURATION_MS) {
     const elapsed = Math.round((now - chain.startedAt) / 1000);
     console.warn(`[group-chat] chain duration limit: group=${message.groupId} elapsed=${elapsed}s`);
     appendSystemMessageToUI(
@@ -374,15 +547,23 @@ export async function detectAndForwardMentions(
         `Auto-forwarding has been stopped. ` +
         `Send a new message to start a fresh conversation.`,
     );
+    // Don't trigger summary when duration limit reached
     return;
   }
 
   // Update chain state
-  const nextCount = (chain?.count ?? 0) + 1;
-  groupChainStates.set(message.groupId, {
-    count: nextCount,
-    startedAt: chain?.startedAt ?? now,
-  });
+  chain.count += 1;
+  chain.lastMessageAt = now;
+
+  // Track initiator (agent who @mentioned others)
+  if (senderAgentId) {
+    addInitiator(chain, senderAgentId);
+  }
+
+  // Track pending agents (who will be triggered)
+  for (const id of mentionedIds) {
+    chain.pendingAgents.add(id);
+  }
 
   // Remove dedicated mention lines from forwarded message (they're routing markers, not content)
   // Keep inline mentions as-is for display
@@ -407,7 +588,7 @@ export async function detectAndForwardMentions(
   const forwardedText = contentLines.join("\n");
 
   console.log(
-    `[group-chat] auto-forward: group=${message.groupId} from=${senderAgentId} to=[${mentionedIds.join(",")}] chain=${nextCount}/${MAX_CHAIN_FORWARDS}`,
+    `[group-chat] auto-forward: group=${message.groupId} from=${senderAgentId} to=[${mentionedIds.join(",")}] chain=${chain.count}/${MAX_CHAIN_FORWARDS}`,
   );
 
   // Forward: reuse group.send with sender set to the replying agent
@@ -541,8 +722,27 @@ export async function sendGroupMessage(
   if (!host.client || !host.connected || !message.trim()) {
     return;
   }
-  // Owner sends a new message → reset chain forward counter
-  resetChainState(groupId);
+
+  // Owner sends a new message → reset chain state but preserve initiators
+  const existingChain = groupChainStates.get(groupId);
+  const existingInitiators = existingChain?.initiators ?? [];
+
+  // Cancel any pending summary timer
+  cancelSummaryTimer(groupId);
+
+  // Reset summary rounds (new conversation)
+  summaryRounds.delete(groupId);
+
+  // Reset chain state with preserved initiators
+  const now = Date.now();
+  groupChainStates.set(groupId, {
+    count: 0,
+    startedAt: now,
+    initiators: existingInitiators, // Keep previous initiators
+    pendingAgents: new Set(),
+    lastMessageAt: now,
+  });
+
   host.groupSending = true;
   host.groupError = null;
 
@@ -552,6 +752,13 @@ export async function sendGroupMessage(
     const pendingAgents = resolvePendingAgents(meta, mentions);
     if (pendingAgents.length > 0) {
       host.groupPendingAgents = new Set(pendingAgents);
+      // Also add to chain's pendingAgents
+      const chain = groupChainStates.get(groupId);
+      if (chain) {
+        for (const id of pendingAgents) {
+          chain.pendingAgents.add(id);
+        }
+      }
     }
   }
 
@@ -786,9 +993,20 @@ export function handleGroupMessageEvent(
   }
   host.groupMessages = [...host.groupMessages, payload];
 
-  // Auto-detect <<@agentId>> markers in agent replies and forward
+  // Track agent reply and schedule summary check
   if (payload.sender.type === "agent") {
+    const chain = groupChainStates.get(payload.groupId);
+    if (chain) {
+      // Remove from pending agents (they replied)
+      chain.pendingAgents.delete(payload.sender.agentId);
+      chain.lastMessageAt = Date.now();
+    }
+
+    // Auto-detect @mentions and forward
     void detectAndForwardMentions(host as GroupHost, payload);
+
+    // Schedule summary check after message processed
+    scheduleSummaryCheck(host as GroupHost, payload.groupId);
   }
 }
 
