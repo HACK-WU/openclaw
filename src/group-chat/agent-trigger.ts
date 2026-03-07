@@ -48,13 +48,75 @@ export type TriggerAgentParams = {
 type ToolCollectorState = {
   messages: GroupToolMessage[];
   seenToolCallIds: Set<string>;
+  pendingToolCalls: Map<string, { toolName: string; toolArgs: Record<string, unknown> }>;
 };
 
 function createToolCollector(): ToolCollectorState {
   return {
     messages: [],
     seenToolCallIds: new Set(),
+    pendingToolCalls: new Map(),
   };
+}
+
+function addToolCall(
+  collector: ToolCollectorState,
+  params: {
+    groupId: string;
+    agentId: string;
+    runId: string;
+    toolCallId: string;
+    toolName: string;
+    toolArgs: Record<string, unknown>;
+  },
+): GroupToolMessage {
+  const message: GroupToolMessage = {
+    id: `tool-call-${params.toolCallId}`,
+    groupId: params.groupId,
+    agentId: params.agentId,
+    runId: params.runId,
+    role: "tool_call",
+    toolCallId: params.toolCallId,
+    toolName: params.toolName,
+    toolArgs: params.toolArgs,
+    timestamp: Date.now(),
+  };
+  collector.messages.push(message);
+  collector.seenToolCallIds.add(params.toolCallId);
+  collector.pendingToolCalls.set(params.toolCallId, {
+    toolName: params.toolName,
+    toolArgs: params.toolArgs,
+  });
+  return message;
+}
+
+function addToolResult(
+  collector: ToolCollectorState,
+  params: {
+    groupId: string;
+    agentId: string;
+    runId: string;
+    toolCallId: string;
+    content: string;
+  },
+): GroupToolMessage | null {
+  // Only add result if we have the corresponding tool call
+  if (!collector.seenToolCallIds.has(params.toolCallId)) {
+    return null;
+  }
+  const message: GroupToolMessage = {
+    id: `tool-result-${params.toolCallId}`,
+    groupId: params.groupId,
+    agentId: params.agentId,
+    runId: params.runId,
+    role: "tool",
+    toolCallId: params.toolCallId,
+    content: params.content,
+    timestamp: Date.now(),
+  };
+  collector.messages.push(message);
+  collector.pendingToolCalls.delete(params.toolCallId);
+  return message;
 }
 
 export type TriggerAgentResult = {
@@ -224,17 +286,40 @@ export async function triggerAgentReasoning(
         },
         onToolStart: (toolInfo) => {
           // Tool call started - add to collector and broadcast
-          if (toolInfo.name && toolInfo.phase === "start") {
-            // Note: We need toolCallId and args from somewhere
-            // This is a placeholder - actual implementation may need to parse from stream
-            // or modify the callback signature
+          if (toolInfo.name && toolInfo.phase === "start" && toolInfo.toolCallId) {
+            addToolCall(toolCollector, {
+              groupId,
+              agentId,
+              runId,
+              toolCallId: toolInfo.toolCallId,
+              toolName: toolInfo.name,
+              toolArgs: toolInfo.args ?? {},
+            });
+            // Broadcast immediately so UI shows tool call
+            broadcastStream(undefined, toolCollector.messages);
           }
         },
         onToolResult: (payload) => {
-          // Tool result received
-          if (payload.text) {
-            // Try to parse tool result and add to collector
-            // This is a simplified version - actual implementation may need more context
+          // Tool result received - try to extract result content
+          // The payload.text contains the formatted tool result text
+          // We need to find the corresponding tool call and create a result message
+          if (payload.text && toolCollector.pendingToolCalls.size > 0) {
+            // Find the most recent pending tool call that matches this result
+            // This is a heuristic - the text often contains the tool name or result
+            const pendingEntries = Array.from(toolCollector.pendingToolCalls.entries());
+            const lastPending = pendingEntries[pendingEntries.length - 1];
+            if (lastPending) {
+              const [toolCallId] = lastPending;
+              addToolResult(toolCollector, {
+                groupId,
+                agentId,
+                runId,
+                toolCallId,
+                content: payload.text,
+              });
+              // Broadcast updated tool messages
+              broadcastStream(undefined, toolCollector.messages);
+            }
           }
         },
       },
