@@ -740,21 +740,6 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
       const newToolMap = new Map(existingTools.map((t) => [t.id, t]));
       for (const toolMsg of payload.toolMessages) {
         newToolMap.set(toolMsg.id, toolMsg);
-        // Log tool messages with detailed args
-        if (toolMsg.role === "tool_call") {
-          const argsStr = toolMsg.toolArgs
-            ? Object.entries(toolMsg.toolArgs)
-                .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-                .join(", ")
-            : "no args";
-          console.log(
-            `[group-chat] Tool call: agent=${payload.agentId} tool=${toolMsg.toolName} callId=${toolMsg.toolCallId} args={${argsStr}}`,
-          );
-        } else if (toolMsg.role === "tool") {
-          console.log(
-            `[group-chat] Tool result: agent=${payload.agentId} tool=${toolMsg.toolName ?? "unknown"} callId=${toolMsg.toolCallId}`,
-          );
-        }
       }
       host.groupToolMessages = new Map(currentToolMessages).set(
         streamKey,

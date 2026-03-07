@@ -36,37 +36,12 @@ export function extractToolCards(message: unknown): ToolCard[] {
 
   // Check for group chat toolCalls field first (simplified format)
   if (Array.isArray(m.toolCalls) && m.toolCalls.length > 0) {
-    console.log(`[tool-cards] Extracting ${m.toolCalls.length} toolCalls from group chat message`);
     for (const tc of m.toolCalls) {
       const tcRecord = tc as Record<string, unknown>;
       const name = typeof tcRecord.name === "string" ? tcRecord.name : "tool";
       const args = coerceArgs(tcRecord.args);
       const result = typeof tcRecord.result === "string" ? tcRecord.result : undefined;
       const isPty = isPtyFromArgs(args);
-
-      // Log detailed tool info
-      const argsRecord = args as Record<string, unknown> | undefined;
-      const cmd =
-        typeof argsRecord?.command === "string"
-          ? `"${argsRecord.command.slice(0, 50)}${argsRecord.command.length > 50 ? "..." : ""}"`
-          : undefined;
-      const action = typeof argsRecord?.action === "string" ? argsRecord.action : undefined;
-      const path = typeof argsRecord?.path === "string" ? argsRecord.path : undefined;
-
-      let detailLog = "";
-      if (cmd) {
-        detailLog += ` command=${cmd}`;
-      }
-      if (action) {
-        detailLog += ` action=${action}`;
-      }
-      if (path) {
-        detailLog += ` path=${path}`;
-      }
-
-      console.log(
-        `[tool-cards] Tool: name=${name} hasResult=${!!result} isPty=${isPty}${detailLog}`,
-      );
 
       // Add tool call card
       cards.push({

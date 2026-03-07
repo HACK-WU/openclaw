@@ -262,33 +262,13 @@ export async function triggerAgentReasoning(
         onToolStart: (toolInfo) => {
           // Tool call started - add to collector and broadcast
           if (toolInfo.name && toolInfo.phase === "start" && toolInfo.toolCallId) {
-            // Log detailed tool call info
-            const args = toolInfo.args ?? {};
-            const commandStr = typeof args.command === "string" ? args.command : undefined;
-            const actionStr = typeof args.action === "string" ? args.action : undefined;
-            const pathStr = typeof args.path === "string" ? args.path : undefined;
-
-            let detailLog = "";
-            if (commandStr) {
-              detailLog = ` command="${commandStr.slice(0, 100)}${commandStr.length > 100 ? "..." : ""}"`;
-            } else if (actionStr && pathStr) {
-              detailLog = ` action=${actionStr} path=${pathStr}`;
-            } else if (pathStr) {
-              detailLog = ` path=${pathStr}`;
-            }
-
-            console.log(
-              `[group-chat] Tool call started: agent=${agentId} tool=${toolInfo.name} callId=${toolInfo.toolCallId}${detailLog}`,
-            );
-            console.log(`[group-chat] Tool args:`, JSON.stringify(args, null, 2));
-
             addToolCall(toolCollector, {
               groupId,
               agentId,
               runId,
               toolCallId: toolInfo.toolCallId,
               toolName: toolInfo.name,
-              toolArgs: args,
+              toolArgs: toolInfo.args ?? {},
             });
             // Broadcast immediately so UI shows tool call
             broadcastStream(undefined, toolCollector.messages);
@@ -335,21 +315,6 @@ export async function triggerAgentReasoning(
     }
 
     toolCalls.push(...toolCallMap.values());
-
-    if (toolCalls.length > 0) {
-      const toolSummary = toolCalls
-        .map((tc) => {
-          const cmdValue = typeof tc.args?.command === "string" ? tc.args.command : "";
-          const cmd = cmdValue
-            ? ` "${cmdValue.slice(0, 40)}${cmdValue.length > 40 ? "..." : ""}"`
-            : "";
-          return `${tc.name}${cmd}`;
-        })
-        .join(", ");
-      console.log(
-        `[group-chat] Saving message with ${toolCalls.length} tool calls: agent=${agentId} tools=[${toolSummary}]`,
-      );
-    }
 
     // Write reply to transcript
     const replyMessage = await appendGroupMessage(groupId, {
