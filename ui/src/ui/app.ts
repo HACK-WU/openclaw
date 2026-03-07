@@ -17,6 +17,7 @@ import {
   handleAbortChat as handleAbortChatInternal,
   handleSendChat as handleSendChatInternal,
   removeQueuedMessage as removeQueuedMessageInternal,
+  switchSession,
 } from "./app-chat.ts";
 import { DEFAULT_CRON_FORM, DEFAULT_LOG_LEVEL_FILTERS } from "./app-defaults.ts";
 import type { EventLogEntry } from "./app-events.ts";
@@ -676,7 +677,6 @@ export class OpenClawApp extends LitElement {
    */
   async handleDeleteSessionConfirm() {
     // 前置条件检查
-    // 确保删除对话框存在、客户端对象已初始化、已连接到服务器
     if (!this.deleteSessionDialog || !this.client || !this.connected) {
       return;
     }
@@ -684,17 +684,12 @@ export class OpenClawApp extends LitElement {
     // 获取要删除的会话唯一标识
     const sessionKeyToDelete = this.deleteSessionDialog.sessionKey;
 
-    // 更新对话框状态：
-    // 1. 设置 isDeleting=true 触发UI显示加载动画并禁用按钮
-    // 2. 清空之前的错误信息（如果有）
+    // 更新对话框状态
     this.deleteSessionDialog.isDeleting = true;
     this.deleteSessionDialog.error = null;
 
     try {
       // 调用后端API删除会话
-      // 参数说明：
-      // - key: 要删除的会话唯一标识
-      // - deleteTranscript: true 表示同时删除该会话的聊天记录
       await this.client.request("sessions.delete", {
         key: sessionKeyToDelete,
         deleteTranscript: true,
@@ -704,27 +699,29 @@ export class OpenClawApp extends LitElement {
       this.deleteSessionDialog = null;
 
       // 重新加载会话列表以更新UI
-      // loadSessions 会查询后端获取最新的会话列表并更新 this.sessionsResult
       await loadSessions(this);
 
       // 特殊处理：如果删除的是当前选中的会话
-      // 需要切换到其他可用会话，避免UI停留在已删除的会话上
+      // 需要切换到其他可用单聊会话（过滤掉群聊会话）
       if (this.sessionKey === sessionKeyToDelete) {
-        // 获取会话列表中的第一个会话
-        const firstSession = this.sessionsResult?.sessions[0];
+        // 过滤掉群聊会话，只获取单聊会话
+        const singleChatSessions =
+          this.sessionsResult?.sessions.filter((s) => s.key && !s.key.includes(":group:")) ?? [];
+        const firstSession = singleChatSessions[0];
         if (firstSession) {
-          // 切换当前会话到第一个可用会话
-          // 这会触发UI更新并加载该会话的聊天记录
-          this.sessionKey = firstSession.key;
+          // 使用 switchSession 正确切换到第一个可用单聊会话
+          await switchSession(this, firstSession.key);
+        } else {
+          // 没有其他单聊会话，清空当前会话
+          this.sessionKey = "";
+          this.transcript = [];
+          this.messages = [];
         }
       }
     } catch (err) {
       // 删除失败时的错误处理
-      // 只有在对话框仍然存在时才更新错误状态（防止用户已关闭对话框后出现异常）
       if (this.deleteSessionDialog) {
-        // 恢复按钮状态（允许用户重新尝试）
         this.deleteSessionDialog.isDeleting = false;
-        // 显示错误信息，提示用户删除失败的原因
         this.deleteSessionDialog.error = String(err);
       }
     }

@@ -562,6 +562,12 @@ function renderGroupStreamBubble(
         </div>
         <div class="chat-group-footer">
           <span class="chat-sender-name">${senderName}</span>
+          <span class="group-stream-indicator">
+            <span class="group-stream-indicator__label">${t("chat.group.generating")}</span>
+            <span class="group-stream-indicator__dots">
+              <span></span><span></span><span></span>
+            </span>
+          </span>
           <span class="chat-group-timestamp">${timestamp}</span>
         </div>
       </div>

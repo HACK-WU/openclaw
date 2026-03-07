@@ -243,6 +243,7 @@ export const zhCN: Record<string, string> = {
   "chat.group.dangerZone": "危险区域",
   "chat.group.disband": "解散群聊",
   "chat.group.disbandConfirm": "确定要解散该群聊吗？此操作无法撤销。",
+  "chat.group.generating": "生成中",
 
   // Errors
   "error.notFound": "未找到",

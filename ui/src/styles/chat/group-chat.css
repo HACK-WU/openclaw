@@ -996,11 +996,57 @@
   border-color: var(--accent-2-subtle);
 }
 
-.group-pending-indicator__label {
+.group-pending-indicator__label,
+.group-stream-indicator__label {
   font-size: 11px;
   color: var(--accent-2);
   font-style: italic;
-  animation: group-pending-pulse 1.5s ease-in-out infinite;
+}
+
+/* Stream indicator with dots animation */
+.group-stream-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.group-stream-indicator__dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.group-stream-indicator__dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  animation: stream-dots-bounce 1.4s ease-in-out infinite;
+}
+
+.group-stream-indicator__dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.group-stream-indicator__dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.group-stream-indicator__dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes stream-dots-bounce {
+  0%,
+  60%,
+  100% {
+    opacity: 0.4;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
 }
 
 @keyframes group-pending-pulse {

@@ -1386,7 +1386,7 @@ export function renderApp(state: AppViewState) {
            GROUP CHAT 视图：群聊界面（chat tab 内子视图）
            ======================================== -->
         ${
-          state.tab === "chat"
+          state.tab === "chat" && state.activeGroupId !== null
             ? renderGroupChat({
                 connected: state.connected,
                 activeGroupId: state.activeGroupId,

@@ -587,9 +587,21 @@ export function renderNavSessionsList(state: AppViewState) {
   const isLoading = state.sessionsLoading; // 是否正在加载会话
   const isConnected = state.connected; // 是否已连接到 Gateway
 
+  // 过滤掉无效的会话数据和群聊会话（群聊有单独的列表）
+  const validSessions = sessions.filter((s) => {
+    if (!s || typeof s.key !== "string" || s.key.length === 0) {
+      return false;
+    }
+    // 过滤掉群聊会话（key 中包含 :group:）
+    if (s.key.includes(":group:")) {
+      return false;
+    }
+    return true;
+  });
+
   // 为性能考虑，限制显示的会话数量
-  const displaySessions = sessions.slice(0, NAV_SESSIONS_LIMIT); // 仅显示前 N 个会话
-  const hasMore = sessions.length > NAV_SESSIONS_LIMIT; // 是否还有更多会话未显示
+  const displaySessions = validSessions.slice(0, NAV_SESSIONS_LIMIT); // 仅显示前 N 个会话
+  const hasMore = validSessions.length > NAV_SESSIONS_LIMIT; // 是否还有更多会话未显示
 
   return html`
     <!-- 导航栏会话列表容器 -->
@@ -612,12 +624,12 @@ export function renderNavSessionsList(state: AppViewState) {
                     displaySessions, // 要渲染的数据数组
                     (session) => session.key, // 唯一标识符（用于 diff 算法）
                     (session) =>
-                      // 渲染单个会话项
-                      renderNavSessionItem(session, currentSessionKey, state, sessions.length),
+                      // 渲染单个会话项（传入有效会话总数用于删除按钮判断）
+                      renderNavSessionItem(session, currentSessionKey, state, validSessions.length),
                   )}
                 </ul>
                 <!-- 如果有更多会话未显示，显示提示信息 -->
-                ${hasMore ? html`<div class="nav-sessions__more">${t("chat.sidebar.moreCount", { count: sessions.length - NAV_SESSIONS_LIMIT })}</div>` : nothing}
+                ${hasMore ? html`<div class="nav-sessions__more">${t("chat.sidebar.moreCount", { count: validSessions.length - NAV_SESSIONS_LIMIT })}</div>` : nothing}
               `
       }
     </div>
@@ -644,6 +656,15 @@ function renderNavSessionItem(
   state: AppViewState & { sessionsGeneratingTitle?: Set<string> },
   totalSessions: number,
 ) {
+  // 防御性检查：如果会话数据异常，返回占位符
+  if (!session || typeof session.key !== "string") {
+    return html`
+      <li class="nav-sessions__item nav-sessions__item--invalid">
+        <div class="nav-sessions__item-main">Invalid session data</div>
+      </li>
+    `;
+  }
+
   // 检查是否正在生成标题
   const isGeneratingTitle = state.sessionsGeneratingTitle?.has(session.key) ?? false;
   // 判断当前会话是否处于激活状态
@@ -749,6 +770,11 @@ function renderNavSessionItem(
                 @click=${(e: Event) => {
                   // 阻止事件冒泡，避免触发会话切换点击事件
                   e.stopPropagation();
+
+                  // 验证会话 key 有效性
+                  if (!session.key || typeof session.key !== "string") {
+                    return;
+                  }
 
                   // 未连接状态下不允许删除会话
                   if (!state.connected) {
