@@ -304,6 +304,11 @@ export async function runAgentTurnWithFallback(params: {
             runId,
             authProfile,
           });
+          // Override thinking levels from replyOptions (used by group chat)
+          const overriddenThinkLevel = params.opts?.thinkLevel ?? runBaseParams.thinkLevel;
+          const overriddenReasoningLevel =
+            params.opts?.reasoningLevel ?? runBaseParams.reasoningLevel;
+          const overriddenVerboseLevel = params.opts?.verboseLevel ?? runBaseParams.verboseLevel;
           return runEmbeddedPiAgent({
             ...embeddedContext,
             groupId: resolveGroupSessionKey(params.sessionCtx)?.id,
@@ -312,6 +317,9 @@ export async function runAgentTurnWithFallback(params: {
             groupSpace: params.sessionCtx.GroupSpace?.trim() ?? undefined,
             ...senderContext,
             ...runBaseParams,
+            thinkLevel: overriddenThinkLevel,
+            reasoningLevel: overriddenReasoningLevel,
+            verboseLevel: overriddenVerboseLevel,
             prompt: params.commandBody,
             extraSystemPrompt: params.followupRun.run.extraSystemPrompt,
             toolResultFormat: (() => {

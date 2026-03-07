@@ -71,6 +71,12 @@ export type GetReplyOptions = {
   timeoutOverrideSeconds?: number;
   /** Explicit agentId override (used by group chat to target specific agents). */
   agentId?: string;
+  /** Override thinking level for this run (used by group chat). */
+  thinkLevel?: string;
+  /** Override reasoning level for this run (used by group chat). */
+  reasoningLevel?: string;
+  /** Override verbose level for this run (used by group chat). */
+  verboseLevel?: string;
 };
 
 export type ReplyPayload = {

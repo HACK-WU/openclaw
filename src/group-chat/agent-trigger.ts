@@ -278,6 +278,8 @@ export async function triggerAgentReasoning(
         suppressTyping: true,
         agentId, // Pass explicit agentId for group chat
         skillFilter: meta.groupSkills.length > 0 ? meta.groupSkills : undefined,
+        // Pass group chat thinking level override (if set)
+        thinkLevel: meta.thinkingLevel || undefined,
         onPartialReply: (payload) => {
           // Broadcast text content
           if (payload.text) {
