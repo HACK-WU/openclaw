@@ -126,6 +126,8 @@ export type GroupChatState = {
   groupCreateDialog: GroupCreateDialogState | null;
   /** Add member dialog state */
   groupAddMemberDialog: GroupAddMemberDialogState | null;
+  /** Disband group dialog state */
+  groupDisbandDialog: GroupDisbandDialogState | null;
   /** Info panel open */
   groupInfoPanelOpen: boolean;
 };
@@ -144,6 +146,13 @@ export type GroupAddMemberDialogState = {
   error: string | null;
 };
 
+export type GroupDisbandDialogState = {
+  groupId: string;
+  groupName: string;
+  isDisbanding: boolean;
+  error: string | null;
+};
+
 export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   activeGroupId: null,
   activeGroupMeta: null,
@@ -158,6 +167,7 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   groupDraft: "",
   groupError: null,
   groupCreateDialog: null,
+  groupDisbandDialog: null,
   groupAddMemberDialog: null,
   groupInfoPanelOpen: false,
 };
@@ -632,6 +642,57 @@ export async function updateGroupThinkingLevel(
 
 export async function disbandGroup(host: GroupHost, groupId: string): Promise<void> {
   return deleteGroup(host, groupId);
+}
+
+/**
+ * 打开解散群聊确认对话框
+ */
+export function openDisbandGroupDialog(
+  host: GroupChatState,
+  groupId: string,
+  groupName: string,
+): void {
+  host.groupDisbandDialog = {
+    groupId,
+    groupName,
+    isDisbanding: false,
+    error: null,
+  };
+}
+
+/**
+ * 关闭解散群聊确认对话框
+ */
+export function closeDisbandGroupDialog(host: GroupChatState): void {
+  host.groupDisbandDialog = null;
+}
+
+/**
+ * 确认解散群聊
+ */
+export async function confirmDisbandGroup(host: GroupHost): Promise<void> {
+  const dialog = host.groupDisbandDialog;
+  if (!dialog) {
+    return;
+  }
+
+  // 设置解散中状态
+  host.groupDisbandDialog = { ...dialog, isDisbanding: true, error: null };
+
+  try {
+    await disbandGroup(host, dialog.groupId);
+    // 解散成功，关闭对话框
+    host.groupDisbandDialog = null;
+    // 关闭信息面板
+    host.groupInfoPanelOpen = false;
+  } catch (err) {
+    // 解散失败，显示错误
+    host.groupDisbandDialog = {
+      ...dialog,
+      isDisbanding: false,
+      error: String(err),
+    };
+  }
 }
 
 // ─── Event Handlers ───

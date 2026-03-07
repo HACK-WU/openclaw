@@ -17,6 +17,7 @@ import type {
   GroupIndexEntry,
   GroupCreateDialogState,
   GroupAddMemberDialogState,
+  GroupDisbandDialogState,
   GroupToolMessage,
 } from "../controllers/group-chat.ts";
 import { t } from "../i18n/index.ts";
@@ -141,6 +142,7 @@ export type GroupChatViewProps = {
   groupError: string | null;
   groupCreateDialog: GroupCreateDialogState | null;
   groupAddMemberDialog: GroupAddMemberDialogState | null;
+  groupDisbandDialog: GroupDisbandDialogState | null;
   groupInfoPanelOpen: boolean;
   // Agents
   agentsList: Array<{ id: string; identity?: { name?: string; emoji?: string } }>;
@@ -167,7 +169,9 @@ export type GroupChatViewProps = {
   onUpdateGroupName: (name: string) => void;
   onUpdateMessageMode: (mode: "unicast" | "broadcast") => void;
   onUpdateAnnouncement: (content: string) => void;
-  onDisbandGroup: () => void;
+  onOpenDisbandDialog: () => void;
+  onCloseDisbandDialog: () => void;
+  onConfirmDisbandGroup: () => void;
   onUpdateThinkingLevel?: (level: string) => void;
 };
 
@@ -509,6 +513,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
 
       ${props.groupInfoPanelOpen ? renderGroupInfoPanel(meta, props) : nothing}
       ${props.groupAddMemberDialog ? renderAddMemberDialog(props) : nothing}
+      ${renderDisbandGroupDialog(props)}
     </div>
   `;
 }
@@ -809,18 +814,79 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
           <label>${t("chat.group.dangerZone") || "Danger Zone"}</label>
           <button
             class="btn btn--danger btn--sm"
-            @click=${() => {
-              if (
-                confirm(
-                  t("chat.group.disbandConfirm") ||
-                    "Are you sure you want to disband this group? This action cannot be undone.",
-                )
-              ) {
-                props.onDisbandGroup();
-              }
-            }}
+            @click=${() => props.onOpenDisbandDialog()}
           >
             ${icons.trash} ${t("chat.group.disband") || "Disband Group"}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Disband Group Dialog ───
+
+function renderDisbandGroupDialog(props: GroupChatViewProps) {
+  const dialog = props.groupDisbandDialog;
+  if (!dialog) {
+    return nothing;
+  }
+
+  return html`
+    <div class="modal-overlay" role="dialog" aria-modal="true" aria-live="polite">
+      <div class="modal-card modal-card--danger">
+        <div class="modal-header">
+          <div class="modal-icon modal-icon--danger">
+            ${icons.trash}
+          </div>
+          <div class="modal-title-group">
+            <div class="modal-title">${t("chat.group.disband") || "Disband Group"}</div>
+            <div class="modal-subtitle">${dialog.groupName}</div>
+          </div>
+        </div>
+
+        <div class="modal-body">
+          <div class="warning-box">
+            <div class="warning-box__icon">${icons.alertTriangle}</div>
+            <div class="warning-box__content">
+              <div class="warning-box__title">${t("chat.sidebar.deleteWarningTitle") || "This action cannot be undone"}</div>
+              <div class="warning-box__text">${t("chat.group.disbandConfirmDetail") || "All messages and settings will be permanently deleted."}</div>
+            </div>
+          </div>
+
+          ${
+            dialog.error
+              ? html`
+                <div class="modal-error">
+                  <span class="modal-error__icon">${icons.alertCircle}</span>
+                  <span>${dialog.error}</span>
+                </div>
+              `
+              : nothing
+          }
+        </div>
+
+        <div class="modal-actions">
+          <button
+            class="btn btn--secondary"
+            ?disabled=${dialog.isDisbanding}
+            @click=${() => props.onCloseDisbandDialog()}
+          >
+            ${t("common.cancel") || "Cancel"}
+          </button>
+          <button
+            class="btn btn--danger"
+            ?disabled=${dialog.isDisbanding}
+            @click=${() => props.onConfirmDisbandGroup()}
+          >
+            ${
+              dialog.isDisbanding
+                ? html`
+                  <span class="btn__spinner">${icons.loader}</span>
+                  <span>${t("chat.group.disbanding") || "Disbanding..."}</span>
+                `
+                : html`<span>${t("chat.group.disband") || "Disband Group"}</span>`
+            }
           </button>
         </div>
       </div>

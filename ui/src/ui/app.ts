@@ -213,6 +213,9 @@ export class OpenClawApp extends LitElement {
   @state() groupError: string | null = null;
   @state() groupCreateDialog: GroupCreateDialogState | null = null;
   @state() groupAddMemberDialog: GroupAddMemberDialogState | null = null;
+  @state() groupDisbandDialog:
+    | import("./controllers/group-chat.js").GroupDisbandDialogState
+    | null = null;
   @state() groupInfoPanelOpen = false;
 
   @state() configLoading = false;

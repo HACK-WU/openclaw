@@ -73,6 +73,9 @@ import {
   createGroup,
   deleteGroup,
   updateGroupMembers,
+  openDisbandGroupDialog,
+  closeDisbandGroupDialog,
+  confirmDisbandGroup,
 } from "./controllers/group-chat.ts";
 import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
@@ -1403,6 +1406,7 @@ export function renderApp(state: AppViewState) {
                 groupError: state.groupError,
                 groupCreateDialog: state.groupCreateDialog,
                 groupAddMemberDialog: state.groupAddMemberDialog,
+                groupDisbandDialog: state.groupDisbandDialog,
                 groupInfoPanelOpen: state.groupInfoPanelOpen,
                 agentsList: (state.agentsList?.agents ?? []).map((a) => ({
                   id: a.id,
@@ -1521,17 +1525,24 @@ export function renderApp(state: AppViewState) {
                     })();
                   }
                 },
-                onDisbandGroup: () => {
-                  if (state.activeGroupId) {
-                    void (async () => {
-                      const { disbandGroup } = await import("./controllers/group-chat.ts");
-                      await disbandGroup(
-                        state as unknown as Parameters<typeof disbandGroup>[0],
-                        state.activeGroupId!,
-                      );
-                      state.groupInfoPanelOpen = false;
-                    })();
+                onOpenDisbandDialog: () => {
+                  if (state.activeGroupId && state.activeGroupMeta) {
+                    openDisbandGroupDialog(
+                      state as unknown as Parameters<typeof openDisbandGroupDialog>[0],
+                      state.activeGroupId,
+                      state.activeGroupMeta.name,
+                    );
                   }
+                },
+                onCloseDisbandDialog: () => {
+                  closeDisbandGroupDialog(
+                    state as unknown as Parameters<typeof closeDisbandGroupDialog>[0],
+                  );
+                },
+                onConfirmDisbandGroup: () => {
+                  void confirmDisbandGroup(
+                    state as unknown as Parameters<typeof confirmDisbandGroup>[0],
+                  );
                 },
               })
             : nothing

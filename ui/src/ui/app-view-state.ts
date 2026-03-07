@@ -304,6 +304,8 @@ export type AppViewState = {
   groupDraft: string;
   groupError: string | null;
   groupCreateDialog: GroupCreateDialogState | null;
+  groupAddMemberDialog: import("./controllers/group-chat.js").GroupAddMemberDialogState | null;
+  groupDisbandDialog: import("./controllers/group-chat.js").GroupDisbandDialogState | null;
   groupInfoPanelOpen: boolean;
   handleDeleteSessionConfirm: () => Promise<void>;
   handleDeleteSessionCancel: () => void;

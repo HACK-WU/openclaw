@@ -66,7 +66,7 @@ A --> F["示例插件Discord<br/>extensions/discord/index.ts"]
   - 参考路径：[插件 API 类型定义](file://src/plugins/types.ts#L245-L284)
 
 - 钩子系统（Plugin Hooks）
-  - SDK 定义了丰富的钩子事件（如 before*model_resolve、before_prompt_build、message_sending、tool_result_persist、session_start/end、subagent*_、gateway\__ 等），支持在代理运行时的多个阶段进行拦截与增强。
+  - SDK 定义了丰富的钩子事件（如 before*model_resolve、before_prompt_build、message_sending、tool_result_persist、session_start/end、subagent*\_、gateway\_\_ 等），支持在代理运行时的多个阶段进行拦截与增强。
   - 参考路径：[钩子名称与事件类型](file://src/plugins/types.ts#L299-L755)
 
 - 通道适配器（Channel Adapters）
