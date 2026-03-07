@@ -82,6 +82,22 @@ export type GroupChatMessage = {
   replyTo?: string; // referenced message ID
   timestamp: number; // epoch ms
   serverSeq?: number; // monotonic server sequence for cross-client ordering
+  /** Tool calls made during this message (for tool card display) */
+  toolCalls?: GroupToolCall[];
+};
+
+/** Simplified tool call info for message storage */
+export type GroupToolCall = {
+  /** Tool call ID */
+  id: string;
+  /** Tool name */
+  name: string;
+  /** Tool arguments */
+  args?: Record<string, unknown>;
+  /** Tool result (if available) */
+  result?: string;
+  /** Timestamp when tool was called */
+  timestamp: number;
 };
 
 // ─── Dispatch ───

@@ -31,6 +31,7 @@ import type {
   GroupAgentRun,
   GroupChatMessage,
   GroupSessionEntry,
+  GroupToolCall,
   GroupToolMessage,
 } from "./types.js";
 
@@ -88,35 +89,6 @@ function addToolCall(
     toolName: params.toolName,
     toolArgs: params.toolArgs,
   });
-  return message;
-}
-
-function addToolResult(
-  collector: ToolCollectorState,
-  params: {
-    groupId: string;
-    agentId: string;
-    runId: string;
-    toolCallId: string;
-    content: string;
-  },
-): GroupToolMessage | null {
-  // Only add result if we have the corresponding tool call
-  if (!collector.seenToolCallIds.has(params.toolCallId)) {
-    return null;
-  }
-  const message: GroupToolMessage = {
-    id: `tool-result-${params.toolCallId}`,
-    groupId: params.groupId,
-    agentId: params.agentId,
-    runId: params.runId,
-    role: "tool",
-    toolCallId: params.toolCallId,
-    content: params.content,
-    timestamp: Date.now(),
-  };
-  collector.messages.push(message);
-  collector.pendingToolCalls.delete(params.toolCallId);
   return message;
 }
 
@@ -290,39 +262,36 @@ export async function triggerAgentReasoning(
         onToolStart: (toolInfo) => {
           // Tool call started - add to collector and broadcast
           if (toolInfo.name && toolInfo.phase === "start" && toolInfo.toolCallId) {
+            // Log detailed tool call info
+            const args = toolInfo.args ?? {};
+            const commandStr = typeof args.command === "string" ? args.command : undefined;
+            const actionStr = typeof args.action === "string" ? args.action : undefined;
+            const pathStr = typeof args.path === "string" ? args.path : undefined;
+
+            let detailLog = "";
+            if (commandStr) {
+              detailLog = ` command="${commandStr.slice(0, 100)}${commandStr.length > 100 ? "..." : ""}"`;
+            } else if (actionStr && pathStr) {
+              detailLog = ` action=${actionStr} path=${pathStr}`;
+            } else if (pathStr) {
+              detailLog = ` path=${pathStr}`;
+            }
+
+            console.log(
+              `[group-chat] Tool call started: agent=${agentId} tool=${toolInfo.name} callId=${toolInfo.toolCallId}${detailLog}`,
+            );
+            console.log(`[group-chat] Tool args:`, JSON.stringify(args, null, 2));
+
             addToolCall(toolCollector, {
               groupId,
               agentId,
               runId,
               toolCallId: toolInfo.toolCallId,
               toolName: toolInfo.name,
-              toolArgs: toolInfo.args ?? {},
+              toolArgs: args,
             });
             // Broadcast immediately so UI shows tool call
             broadcastStream(undefined, toolCollector.messages);
-          }
-        },
-        onToolResult: (payload) => {
-          // Tool result received - try to extract result content
-          // The payload.text contains the formatted tool result text
-          // We need to find the corresponding tool call and create a result message
-          if (payload.text && toolCollector.pendingToolCalls.size > 0) {
-            // Find the most recent pending tool call that matches this result
-            // This is a heuristic - the text often contains the tool name or result
-            const pendingEntries = Array.from(toolCollector.pendingToolCalls.entries());
-            const lastPending = pendingEntries[pendingEntries.length - 1];
-            if (lastPending) {
-              const [toolCallId] = lastPending;
-              addToolResult(toolCollector, {
-                groupId,
-                agentId,
-                runId,
-                toolCallId,
-                content: payload.text,
-              });
-              // Broadcast updated tool messages
-              broadcastStream(undefined, toolCollector.messages);
-            }
           }
         },
       },
@@ -343,6 +312,45 @@ export async function triggerAgentReasoning(
       return { run, chainState };
     }
 
+    // Extract tool calls from collector for message storage
+    const toolCalls: GroupToolCall[] = [];
+    const toolCallMap = new Map<string, GroupToolCall>();
+
+    for (const msg of toolCollector.messages) {
+      if (msg.role === "tool_call" && msg.toolCallId && msg.toolName) {
+        const toolCall: GroupToolCall = {
+          id: msg.toolCallId,
+          name: msg.toolName,
+          args: msg.toolArgs,
+          timestamp: msg.timestamp,
+        };
+        toolCallMap.set(msg.toolCallId, toolCall);
+      } else if (msg.role === "tool" && msg.toolCallId) {
+        // Add result to corresponding tool call
+        const existing = toolCallMap.get(msg.toolCallId);
+        if (existing) {
+          existing.result = msg.content;
+        }
+      }
+    }
+
+    toolCalls.push(...toolCallMap.values());
+
+    if (toolCalls.length > 0) {
+      const toolSummary = toolCalls
+        .map((tc) => {
+          const cmdValue = typeof tc.args?.command === "string" ? tc.args.command : "";
+          const cmd = cmdValue
+            ? ` "${cmdValue.slice(0, 40)}${cmdValue.length > 40 ? "..." : ""}"`
+            : "";
+          return `${tc.name}${cmd}`;
+        })
+        .join(", ");
+      console.log(
+        `[group-chat] Saving message with ${toolCalls.length} tool calls: agent=${agentId} tools=[${toolSummary}]`,
+      );
+    }
+
     // Write reply to transcript
     const replyMessage = await appendGroupMessage(groupId, {
       id: randomUUID(),
@@ -351,6 +359,7 @@ export async function triggerAgentReasoning(
       content: replyText,
       sender: { type: "agent", agentId, agentName: agentId },
       timestamp: Date.now(),
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     });
 
     // Broadcast final

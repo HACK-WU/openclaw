@@ -1,7 +1,7 @@
 import { html, nothing } from "lit";
 import { icons } from "../icons.ts";
 import { formatToolDetail, resolveToolDisplay } from "../tool-display.ts";
-import type { ToolCard } from "../types/chat-types.ts";
+import type { ToolCard, ToolCardCategory, ClassifiedToolCards } from "../types/chat-types.ts";
 import { TOOL_INLINE_THRESHOLD } from "./constants.ts";
 import { extractTextCached } from "./message-extract.ts";
 import { isToolResultMessage } from "./message-normalizer.ts";
@@ -33,6 +33,63 @@ export function extractToolCards(message: unknown): ToolCard[] {
   const m = message as Record<string, unknown>;
   const content = normalizeContent(m.content);
   const cards: ToolCard[] = [];
+
+  // Check for group chat toolCalls field first (simplified format)
+  if (Array.isArray(m.toolCalls) && m.toolCalls.length > 0) {
+    console.log(`[tool-cards] Extracting ${m.toolCalls.length} toolCalls from group chat message`);
+    for (const tc of m.toolCalls) {
+      const tcRecord = tc as Record<string, unknown>;
+      const name = typeof tcRecord.name === "string" ? tcRecord.name : "tool";
+      const args = coerceArgs(tcRecord.args);
+      const result = typeof tcRecord.result === "string" ? tcRecord.result : undefined;
+      const isPty = isPtyFromArgs(args);
+
+      // Log detailed tool info
+      const argsRecord = args as Record<string, unknown> | undefined;
+      const cmd =
+        typeof argsRecord?.command === "string"
+          ? `"${argsRecord.command.slice(0, 50)}${argsRecord.command.length > 50 ? "..." : ""}"`
+          : undefined;
+      const action = typeof argsRecord?.action === "string" ? argsRecord.action : undefined;
+      const path = typeof argsRecord?.path === "string" ? argsRecord.path : undefined;
+
+      let detailLog = "";
+      if (cmd) {
+        detailLog += ` command=${cmd}`;
+      }
+      if (action) {
+        detailLog += ` action=${action}`;
+      }
+      if (path) {
+        detailLog += ` path=${path}`;
+      }
+
+      console.log(
+        `[tool-cards] Tool: name=${name} hasResult=${!!result} isPty=${isPty}${detailLog}`,
+      );
+
+      // Add tool call card
+      cards.push({
+        kind: "call",
+        name,
+        args,
+        isPty,
+      });
+
+      // Add result card if available
+      if (result) {
+        // If result is available, add as result card
+        cards.push({
+          kind: "result",
+          name,
+          text: result,
+          args,
+          isPty: isPty || (result ? isTerminalLikeOutput(result) : false),
+        });
+      }
+    }
+    return cards;
+  }
 
   // 收集所有 tool call 卡片，同时记录是否有 pty 标记
   let hasPtyCall = false;
@@ -70,7 +127,7 @@ export function extractToolCards(message: unknown): ToolCard[] {
     const name = typeof item.name === "string" ? item.name : "tool";
     // Extract args from the result item (some formats include details/params)
     const args = coerceArgs(item.arguments ?? item.args ?? item.details);
-    // isPty: 优先从 call 卡片继承，否则启发式检测“终端控制码样式”的输出
+    // isPty: 优先从 call 卡片继承，否则启发式检测"终端控制码样式"的输出
     const isPty = hasPtyCall || (text ? isTerminalLikeOutput(text) : false);
     cards.push({ kind: "result", name, text, args, isPty });
   }

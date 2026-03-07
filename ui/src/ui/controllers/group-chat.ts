@@ -667,11 +667,63 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
   const deltaText = payload.content ?? payload.text;
 
   if (payload.state === "delta" && typeof deltaText === "string") {
-    // Empty delta means "stream started but no content yet" - keep pending indicator
-    // Non-empty delta means "actual content" - switch to streaming bubble
+    // Key for this agent's run (used for tool messages and stream buffers)
+    const streamKey = `${payload.agentId}:${payload.runId}`;
+
+    // Handle tool messages FIRST (even if text is empty)
+    // This ensures tool cards show immediately when tools start executing
+    if (payload.toolMessages && payload.toolMessages.length > 0) {
+      const currentToolMessages = host.groupToolMessages ?? new Map();
+      const existingTools = currentToolMessages.get(streamKey) ?? [];
+      // Merge new tool messages, avoiding duplicates by id
+      const newToolMap = new Map(existingTools.map((t) => [t.id, t]));
+      for (const toolMsg of payload.toolMessages) {
+        newToolMap.set(toolMsg.id, toolMsg);
+        // Log tool messages with detailed args
+        if (toolMsg.role === "tool_call") {
+          const argsStr = toolMsg.toolArgs
+            ? Object.entries(toolMsg.toolArgs)
+                .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+                .join(", ")
+            : "no args";
+          console.log(
+            `[group-chat] Tool call: agent=${payload.agentId} tool=${toolMsg.toolName} callId=${toolMsg.toolCallId} args={${argsStr}}`,
+          );
+        } else if (toolMsg.role === "tool") {
+          console.log(
+            `[group-chat] Tool result: agent=${payload.agentId} tool=${toolMsg.toolName ?? "unknown"} callId=${toolMsg.toolCallId}`,
+          );
+        }
+      }
+      host.groupToolMessages = new Map(currentToolMessages).set(
+        streamKey,
+        Array.from(newToolMap.values()),
+      );
+
+      // Create a placeholder stream entry for tool messages (if no text content yet)
+      // This allows tool cards to render even before the agent starts streaming text
+      if (!streamBuffers.has(streamKey)) {
+        streamBuffers.set(streamKey, ""); // Empty placeholder
+      }
+
+      // Remove from pending and show streaming bubble with tool cards
+      if (host.groupPendingAgents.has(payload.agentId)) {
+        const next = new Set(host.groupPendingAgents);
+        next.delete(payload.agentId);
+        host.groupPendingAgents = next;
+      }
+    }
+
+    // Empty delta means "stream started but no content yet" - but tool messages may exist
+    // Still need to trigger sync so tool cards can render
     if (deltaText.length === 0) {
-      // Empty delta: agent is still preparing, keep pending indicator
-      // Don't remove from pendingAgents yet
+      // Trigger UI sync for tool messages (even if no text content)
+      if (!streamSyncTimer) {
+        streamSyncTimer = window.setTimeout(() => {
+          syncGroupStreams(host);
+          streamSyncTimer = null;
+        }, 50);
+      }
       return;
     }
 
@@ -683,9 +735,6 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     }
 
     // Buffer stream updates, throttle at 50ms
-    // Key includes runId to distinguish concurrent runs from the same agent
-    const key = `${payload.agentId}:${payload.runId}`;
-
     // Clean up old buffers for the same agent (if this is a new run)
     for (const [oldKey] of streamBuffers) {
       const [oldAgentId, oldRunId] = oldKey.split(":");
@@ -694,23 +743,7 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
       }
     }
 
-    streamBuffers.set(key, deltaText);
-
-    // Handle tool messages for real-time display
-    if (payload.toolMessages && payload.toolMessages.length > 0) {
-      const toolKey = `${payload.agentId}:${payload.runId}`;
-      const currentToolMessages = host.groupToolMessages ?? new Map();
-      const existingTools = currentToolMessages.get(toolKey) ?? [];
-      // Merge new tool messages, avoiding duplicates by id
-      const newToolMap = new Map(existingTools.map((t) => [t.id, t]));
-      for (const toolMsg of payload.toolMessages) {
-        newToolMap.set(toolMsg.id, toolMsg);
-      }
-      host.groupToolMessages = new Map(currentToolMessages).set(
-        toolKey,
-        Array.from(newToolMap.values()),
-      );
-    }
+    streamBuffers.set(streamKey, deltaText);
 
     if (!streamSyncTimer) {
       streamSyncTimer = window.setTimeout(() => {

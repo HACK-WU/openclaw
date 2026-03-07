@@ -17,10 +17,12 @@ import type {
   GroupIndexEntry,
   GroupCreateDialogState,
   GroupAddMemberDialogState,
+  GroupToolMessage,
 } from "../controllers/group-chat.ts";
 import { t } from "../i18n/index.ts";
 import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
+import type { ToolCard } from "../types/chat-types.ts";
 
 // ─── Mention Dropdown State ───
 let mentionDropdownState = {
@@ -579,24 +581,26 @@ function renderGroupStreamBubble(
   });
 
   // Render tool cards if available
-  const toolCards =
-    toolMessages && toolMessages.length > 0
-      ? renderInlineToolCards(
-          toolMessages as unknown as Array<{
-            role: string;
-            toolName?: string;
-            toolArgs?: Record<string, unknown>;
-            content?: string;
-          }>,
-        )
-      : nothing;
+  let toolCards: ReturnType<typeof renderInlineToolCards> = nothing;
+  if (toolMessages && toolMessages.length > 0) {
+    // Convert GroupToolMessage[] to ToolCard[]
+    const toolCardList: ToolCard[] = toolMessages.map((msg) => ({
+      kind: msg.role === "tool_call" ? "call" : "result",
+      name: msg.toolName ?? "tool",
+      args: msg.toolArgs,
+      text: msg.content,
+    }));
+    // Classify the tool cards and render them
+    const classified = classifyToolCards(toolCardList);
+    toolCards = renderInlineToolCards(classified);
+  }
 
   return html`
     <div class="chat-group assistant streaming">
       <div class="chat-avatar assistant">${senderEmoji}</div>
       <div class="chat-group-messages">
         <div class="chat-bubble streaming">
-          <div class="chat-text chat-text-streaming" ${typewriter(stream.text || "...")}></div>
+          ${stream.text ? html`<div class="chat-text chat-text-streaming" ${typewriter(stream.text)}></div>` : nothing}
           ${toolCards}
         </div>
         <div class="chat-group-footer">
