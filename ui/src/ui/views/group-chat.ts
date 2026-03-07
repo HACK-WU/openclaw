@@ -274,6 +274,9 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
     return nothing;
   }
 
+  // Ensure groupToolMessages is defined (defensive check)
+  const toolMessages = groupToolMessages ?? new Map();
+
   const hasActiveStreams = groupStreams.size > 0;
   const hasPendingAgents = groupPendingAgents.size > 0;
 
@@ -345,7 +348,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
 
             ${Array.from(groupStreams.entries()).map(([agentId, stream]) => {
               const toolKey = `${agentId}:${stream.runId}`;
-              const tools = groupToolMessages.get(toolKey);
+              const tools = toolMessages.get(toolKey);
               return renderGroupStreamBubble(agentId, stream, meta, props.agentsList, tools);
             })}
 

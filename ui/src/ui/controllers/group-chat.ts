@@ -699,13 +699,14 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     // Handle tool messages for real-time display
     if (payload.toolMessages && payload.toolMessages.length > 0) {
       const toolKey = `${payload.agentId}:${payload.runId}`;
-      const existingTools = host.groupToolMessages.get(toolKey) ?? [];
+      const currentToolMessages = host.groupToolMessages ?? new Map();
+      const existingTools = currentToolMessages.get(toolKey) ?? [];
       // Merge new tool messages, avoiding duplicates by id
       const newToolMap = new Map(existingTools.map((t) => [t.id, t]));
       for (const toolMsg of payload.toolMessages) {
         newToolMap.set(toolMsg.id, toolMsg);
       }
-      host.groupToolMessages = new Map(host.groupToolMessages).set(
+      host.groupToolMessages = new Map(currentToolMessages).set(
         toolKey,
         Array.from(newToolMap.values()),
       );
@@ -738,7 +739,8 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     // Clear buffer for this specific run
     streamBuffers.delete(`${payload.agentId}:${payload.runId}`);
     // Clear tool messages for this run (they're now in the transcript)
-    const toolNext = new Map(host.groupToolMessages);
+    const currentToolMessages = host.groupToolMessages ?? new Map();
+    const toolNext = new Map(currentToolMessages);
     toolNext.delete(`${payload.agentId}:${payload.runId}`);
     host.groupToolMessages = toolNext;
     return;
