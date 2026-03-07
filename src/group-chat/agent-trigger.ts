@@ -30,6 +30,7 @@ import type {
   GroupAgentRun,
   GroupChatMessage,
   GroupSessionEntry,
+  GroupToolMessage,
 } from "./types.js";
 
 export type TriggerAgentParams = {
@@ -42,6 +43,19 @@ export type TriggerAgentParams = {
   broadcast: GatewayBroadcastFn;
   signal: AbortSignal;
 };
+
+// Tool message collector for real-time display
+type ToolCollectorState = {
+  messages: GroupToolMessage[];
+  seenToolCallIds: Set<string>;
+};
+
+function createToolCollector(): ToolCollectorState {
+  return {
+    messages: [],
+    seenToolCallIds: new Set(),
+  };
+}
 
 export type TriggerAgentResult = {
   run: GroupAgentRun;
@@ -163,8 +177,10 @@ export async function triggerAgentReasoning(
       GroupSystemPrompt: groupChatSystemPrompt,
     };
 
-    // Collect final reply parts
+    // Collect final reply parts and tool messages
     let replyText = "";
+    const toolCollector = createToolCollector();
+
     const dispatcher = createReplyDispatcher({
       onError: (err) => {
         console.error(`[group-chat] dispatch error for agent ${agentId}:`, err);
@@ -175,6 +191,19 @@ export async function triggerAgentReasoning(
         }
       },
     });
+
+    // Helper to broadcast stream with tool messages
+    const broadcastStream = (text?: string, tools?: GroupToolMessage[]) => {
+      broadcastGroupStream(broadcast, {
+        groupId,
+        runId,
+        agentId,
+        agentName: agentId,
+        state: "delta",
+        content: text ?? "",
+        toolMessages: tools && tools.length > 0 ? tools : undefined,
+      });
+    };
 
     // Call dispatchInboundMessage — same pattern as chat.send
     await dispatchInboundMessage({
@@ -188,15 +217,24 @@ export async function triggerAgentReasoning(
         agentId, // Pass explicit agentId for group chat
         skillFilter: meta.groupSkills.length > 0 ? meta.groupSkills : undefined,
         onPartialReply: (payload) => {
+          // Broadcast text content
           if (payload.text) {
-            broadcastGroupStream(broadcast, {
-              groupId,
-              runId,
-              agentId,
-              agentName: agentId,
-              state: "delta",
-              content: payload.text,
-            });
+            broadcastStream(payload.text, toolCollector.messages);
+          }
+        },
+        onToolStart: (toolInfo) => {
+          // Tool call started - add to collector and broadcast
+          if (toolInfo.name && toolInfo.phase === "start") {
+            // Note: We need toolCallId and args from somewhere
+            // This is a placeholder - actual implementation may need to parse from stream
+            // or modify the callback signature
+          }
+        },
+        onToolResult: (payload) => {
+          // Tool result received
+          if (payload.text) {
+            // Try to parse tool result and add to collector
+            // This is a simplified version - actual implementation may need more context
           }
         },
       },

@@ -45,6 +45,8 @@ export type GroupSessionEntry = {
   maxConsecutive: number; // default 3
   historyLimit: number; // default 50
   compaction?: GroupCompactionConfig;
+  /** Thinking level for all agents in this group (default: inherit from agent config) */
+  thinkingLevel?: string;
   createdAt: number;
   updatedAt: number;
   label?: string;
@@ -116,6 +118,21 @@ export type GroupAgentRun = {
   completedAt?: number;
 };
 
+// ─── Tool Message (for tool call/result cards) ───
+
+export type GroupToolMessage = {
+  id: string;
+  groupId: string;
+  agentId: string;
+  runId: string;
+  role: "tool" | "tool_call";
+  content?: string;
+  toolCallId?: string;
+  toolName?: string;
+  toolArgs?: Record<string, unknown>;
+  timestamp: number;
+};
+
 // ─── WebSocket Event Payloads ───
 
 export type GroupStreamPayload = {
@@ -128,6 +145,8 @@ export type GroupStreamPayload = {
   content?: string; // delta text
   message?: GroupChatMessage; // final message
   error?: string; // error info
+  /** Tool messages for real-time tool card display */
+  toolMessages?: GroupToolMessage[];
 };
 
 // ─── Group Reply Tool Args ───

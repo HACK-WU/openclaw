@@ -244,6 +244,8 @@ export const zhCN: Record<string, string> = {
   "chat.group.disband": "解散群聊",
   "chat.group.disbandConfirm": "确定要解散该群聊吗？此操作无法撤销。",
   "chat.group.generating": "生成中",
+  "chat.group.thinkingLevel": "思考级别",
+  "chat.group.thinkingLevelPlaceholder": "选择思考级别...",
 
   // Errors
   "error.notFound": "未找到",

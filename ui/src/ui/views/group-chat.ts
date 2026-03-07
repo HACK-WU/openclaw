@@ -130,6 +130,7 @@ export type GroupChatViewProps = {
   groupMessages: GroupChatMessage[];
   groupStreams: Map<string, { runId: string; text: string; startedAt: number }>;
   groupPendingAgents: Set<string>;
+  groupToolMessages: Map<string, GroupToolMessage[]>;
   groupIndex: GroupIndexEntry[];
   groupListLoading: boolean;
   groupChatLoading: boolean;
@@ -165,6 +166,7 @@ export type GroupChatViewProps = {
   onUpdateMessageMode: (mode: "unicast" | "broadcast") => void;
   onUpdateAnnouncement: (content: string) => void;
   onDisbandGroup: () => void;
+  onUpdateThinkingLevel?: (level: string) => void;
 };
 
 // ─── Main Render ───
@@ -264,6 +266,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
     groupMessages,
     groupStreams,
     groupPendingAgents,
+    groupToolMessages,
     groupSending,
     groupError,
   } = props;
@@ -324,9 +327,11 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
               (m) => renderGroupMessage(m, meta, props.agentsList),
             )}
 
-            ${Array.from(groupStreams.entries()).map(([agentId, stream]) =>
-              renderGroupStreamBubble(agentId, stream, meta, props.agentsList),
-            )}
+            ${Array.from(groupStreams.entries()).map(([agentId, stream]) => {
+              const toolKey = `${agentId}:${stream.runId}`;
+              const tools = groupToolMessages.get(toolKey);
+              return renderGroupStreamBubble(agentId, stream, meta, props.agentsList, tools);
+            })}
 
             ${pendingOnly.map((agentId) =>
               renderPendingAgentIndicator(agentId, meta, props.agentsList),
@@ -544,6 +549,7 @@ function renderGroupStreamBubble(
   stream: { runId: string; text: string; startedAt: number },
   meta: GroupSessionMeta,
   agentsList: GroupChatViewProps["agentsList"],
+  toolMessages?: GroupToolMessage[],
 ) {
   const sender: { type: "agent"; agentId: string } = { type: "agent", agentId };
   const senderName = resolveSenderName(sender, meta, agentsList);
@@ -553,12 +559,26 @@ function renderGroupStreamBubble(
     minute: "2-digit",
   });
 
+  // Render tool cards if available
+  const toolCards =
+    toolMessages && toolMessages.length > 0
+      ? renderInlineToolCards(
+          toolMessages as unknown as Array<{
+            role: string;
+            toolName?: string;
+            toolArgs?: Record<string, unknown>;
+            content?: string;
+          }>,
+        )
+      : nothing;
+
   return html`
     <div class="chat-group assistant streaming">
       <div class="chat-avatar assistant">${senderEmoji}</div>
       <div class="chat-group-messages">
         <div class="chat-bubble streaming">
           <div class="chat-text chat-text-streaming" ${typewriter(stream.text || "...")}></div>
+          ${toolCards}
         </div>
         <div class="chat-group-footer">
           <span class="chat-sender-name">${senderName}</span>
@@ -752,12 +772,35 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
           </ul>
         </div>
 
-        <!-- Settings (read-only) -->
+        <!-- Settings -->
         <div class="group-info-panel__section">
           <label>${t("chat.group.settings")}</label>
           <div class="group-info-panel__settings">
             <span>Max rounds: ${meta.maxRounds}</span>
             <span>Max consecutive: ${meta.maxConsecutive}</span>
+          </div>
+        </div>
+
+        <!-- Thinking Level (editable) -->
+        <div class="group-info-panel__section">
+          <label>${t("chat.group.thinkingLevel")}</label>
+          <div class="group-info-panel__editable">
+            <select
+              class="field group-info-panel__input"
+              .value=${meta.thinkingLevel || "inherit"}
+              @change=${(e: Event) => {
+                const value = (e.target as HTMLSelectElement).value;
+                props.onUpdateThinkingLevel?.(value === "inherit" ? "" : value);
+              }}
+            >
+              <option value="inherit" ?selected=${!meta.thinkingLevel}>Inherit (default)</option>
+              <option value="off" ?selected=${meta.thinkingLevel === "off"}>Off</option>
+              <option value="minimal" ?selected=${meta.thinkingLevel === "minimal"}>Minimal</option>
+              <option value="low" ?selected=${meta.thinkingLevel === "low"}>Low</option>
+              <option value="medium" ?selected=${meta.thinkingLevel === "medium"}>Medium</option>
+              <option value="high" ?selected=${meta.thinkingLevel === "high"}>High</option>
+              <option value="xhigh" ?selected=${meta.thinkingLevel === "xhigh"}>X-High</option>
+            </select>
           </div>
         </div>
 

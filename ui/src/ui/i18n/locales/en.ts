@@ -271,6 +271,8 @@ export const en: Record<string, string> = {
   "chat.group.disbandConfirm":
     "Are you sure you want to disband this group? This action cannot be undone.",
   "chat.group.generating": "Generating",
+  "chat.group.thinkingLevel": "Thinking Level",
+  "chat.group.thinkingLevelPlaceholder": "Select thinking level...",
 
   // Errors
   "error.notFound": "Not found",

@@ -34,6 +34,22 @@ export type GroupSessionMeta = {
   archived: boolean;
   createdAt: number;
   updatedAt: number;
+  /** Thinking level for all agents in this group */
+  thinkingLevel?: string;
+};
+
+// Tool message for real-time display
+export type GroupToolMessage = {
+  id: string;
+  groupId: string;
+  agentId: string;
+  runId: string;
+  role: "tool" | "tool_call";
+  content?: string;
+  toolCallId?: string;
+  toolName?: string;
+  toolArgs?: Record<string, unknown>;
+  timestamp: number;
 };
 
 export type GroupIndexEntry = {
@@ -71,6 +87,8 @@ export type GroupStreamPayload = {
   content?: string; // delta text (backend field name)
   text?: string; // alias for content (frontend compatibility)
   errorMessage?: string;
+  /** Tool messages for real-time tool card display */
+  toolMessages?: GroupToolMessage[];
 };
 
 export type GroupSystemPayload = {
@@ -92,6 +110,8 @@ export type GroupChatState = {
   groupStreams: Map<string, { runId: string; text: string; startedAt: number }>;
   /** Agents that are pending response (waiting for first stream delta) */
   groupPendingAgents: Set<string>;
+  /** Tool messages for real-time display (key: "agentId:runId" → messages) */
+  groupToolMessages: Map<string, GroupToolMessage[]>;
   /** Group list for sidebar */
   groupIndex: GroupIndexEntry[];
   /** Loading states */
@@ -130,6 +150,7 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   groupMessages: [],
   groupStreams: new Map(),
   groupPendingAgents: new Set(),
+  groupToolMessages: new Map(),
   groupIndex: [],
   groupListLoading: false,
   groupChatLoading: false,
@@ -601,6 +622,14 @@ export async function updateGroupAnnouncement(
   return updateGroupSettings(host, groupId, "setAnnouncement", { content });
 }
 
+export async function updateGroupThinkingLevel(
+  host: GroupHost,
+  groupId: string,
+  level: string,
+): Promise<void> {
+  return updateGroupSettings(host, groupId, "setThinkingLevel", { level });
+}
+
 export async function disbandGroup(host: GroupHost, groupId: string): Promise<void> {
   return deleteGroup(host, groupId);
 }
@@ -666,6 +695,22 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     }
 
     streamBuffers.set(key, deltaText);
+
+    // Handle tool messages for real-time display
+    if (payload.toolMessages && payload.toolMessages.length > 0) {
+      const toolKey = `${payload.agentId}:${payload.runId}`;
+      const existingTools = host.groupToolMessages.get(toolKey) ?? [];
+      // Merge new tool messages, avoiding duplicates by id
+      const newToolMap = new Map(existingTools.map((t) => [t.id, t]));
+      for (const toolMsg of payload.toolMessages) {
+        newToolMap.set(toolMsg.id, toolMsg);
+      }
+      host.groupToolMessages = new Map(host.groupToolMessages).set(
+        toolKey,
+        Array.from(newToolMap.values()),
+      );
+    }
+
     if (!streamSyncTimer) {
       streamSyncTimer = window.setTimeout(() => {
         syncGroupStreams(host);
@@ -692,6 +737,10 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     host.groupStreams = next;
     // Clear buffer for this specific run
     streamBuffers.delete(`${payload.agentId}:${payload.runId}`);
+    // Clear tool messages for this run (they're now in the transcript)
+    const toolNext = new Map(host.groupToolMessages);
+    toolNext.delete(`${payload.agentId}:${payload.runId}`);
+    host.groupToolMessages = toolNext;
     return;
   }
 }
@@ -753,6 +802,7 @@ export function leaveGroupChat(host: GroupChatState): void {
   host.groupMessages = [];
   host.groupStreams = new Map();
   host.groupPendingAgents = new Set();
+  host.groupToolMessages = new Map();
   host.groupError = null;
   host.groupDraft = "";
 }

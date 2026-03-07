@@ -244,6 +244,19 @@ const handleGroupSetSkills: GatewayRequestHandler = async ({ params, respond, co
   broadcastGroupSystem(context.broadcast, groupId, "skills_changed", { skills });
 };
 
+const handleGroupSetThinkingLevel: GatewayRequestHandler = async ({ params, respond, context }) => {
+  const groupId = params.groupId as string;
+  const level = params.level as string;
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  await updateGroupMeta(groupId, (meta) => ({ ...meta, thinkingLevel: level }));
+  respond(true, { ok: true });
+  broadcastGroupSystem(context.broadcast, groupId, "thinking_level_changed", { level });
+};
+
 const handleGroupSetName: GatewayRequestHandler = async ({ params, respond, context }) => {
   const groupId = params.groupId as string;
   const name = params.name as string;
@@ -511,6 +524,7 @@ export const groupHandlers: GatewayRequestHandlers = {
   "group.setAnnouncement": handleGroupSetAnnouncement,
   "group.setSkills": handleGroupSetSkills,
   "group.setMemberRolePrompt": handleGroupSetMemberRolePrompt,
+  "group.setThinkingLevel": handleGroupSetThinkingLevel,
   "group.send": handleGroupSend,
   "group.history": handleGroupHistory,
   "group.abort": handleGroupAbort,

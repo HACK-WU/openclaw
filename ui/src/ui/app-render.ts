@@ -1394,6 +1394,7 @@ export function renderApp(state: AppViewState) {
                 groupMessages: state.groupMessages,
                 groupStreams: state.groupStreams,
                 groupPendingAgents: state.groupPendingAgents,
+                groupToolMessages: state.groupToolMessages,
                 groupIndex: state.groupIndex,
                 groupListLoading: state.groupListLoading,
                 groupChatLoading: state.groupChatLoading,
@@ -1503,6 +1504,19 @@ export function renderApp(state: AppViewState) {
                         state as unknown as Parameters<typeof updateGroupAnnouncement>[0],
                         state.activeGroupId!,
                         content,
+                      );
+                    })();
+                  }
+                },
+                onUpdateThinkingLevel: (level) => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { updateGroupThinkingLevel } =
+                        await import("./controllers/group-chat.ts");
+                      await updateGroupThinkingLevel(
+                        state as unknown as Parameters<typeof updateGroupThinkingLevel>[0],
+                        state.activeGroupId!,
+                        level,
                       );
                     })();
                   }
