@@ -26,14 +26,23 @@ export function resolveDispatchTargets(
   message: GroupChatMessage,
 ): DispatchResult {
   const { members, messageMode } = meta;
-  const mentions = message.mentions?.filter((id) => members.some((m) => m.agentId === id)) ?? [];
+
+  // Check for @all mention
+  const hasAllMention = message.mentions?.includes("all") ?? false;
+
+  // Filter valid mentions (exclude @all from normal filtering, it will be expanded below)
+  const mentions =
+    message.mentions?.filter((id) => id === "all" || members.some((m) => m.agentId === id)) ?? [];
+
+  // Expand @all to all members
+  const expandedMentions = hasAllMention ? members.map((m) => m.agentId) : mentions;
 
   // Exclude sender from targets
   const senderAgentId = message.sender.type === "agent" ? message.sender.agentId : undefined;
 
-  if (mentions.length > 0) {
+  if (expandedMentions.length > 0) {
     const targets = members
-      .filter((m) => mentions.includes(m.agentId) && m.agentId !== senderAgentId)
+      .filter((m) => expandedMentions.includes(m.agentId) && m.agentId !== senderAgentId)
       .map((m) => ({ agentId: m.agentId, role: m.role }));
     return { targets, mode: "mention" };
   }

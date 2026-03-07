@@ -31,6 +31,14 @@ let mentionDropdownState = {
   onSelect: null as ((agentId: string, agentName: string) => void) | null,
 };
 
+/** Get display items including @all option at the top */
+function getDisplayItems(
+  members: Array<{ agentId: string; role: string }>,
+): Array<{ agentId: string; role: string }> {
+  const allOption = { agentId: "all", role: "all" };
+  return [allOption, ...members];
+}
+
 // ─── Scroll Helpers ───
 
 /**
@@ -74,10 +82,11 @@ function hideMentionDropdown() {
 }
 
 function moveMentionSelection(delta: number) {
-  const filtered = mentionDropdownState.members.filter((m) =>
-    m.agentId.toLowerCase().includes(mentionDropdownState.filter),
+  const displayItems = getDisplayItems(mentionDropdownState.members).filter(
+    (m) => m.agentId.toLowerCase().includes(mentionDropdownState.filter) || m.agentId === "all",
   );
-  const newIndex = (mentionDropdownState.selectedIndex + delta + filtered.length) % filtered.length;
+  const newIndex =
+    (mentionDropdownState.selectedIndex + delta + displayItems.length) % displayItems.length;
   mentionDropdownState.selectedIndex = newIndex;
   // Direct DOM update for instant feedback
   updateMentionDropdownSelection(newIndex);
@@ -100,11 +109,15 @@ function updateMentionDropdownSelection(selectedIndex: number) {
 }
 
 function getSelectedMention(): { agentId: string; agentName: string } | null {
-  const filtered = mentionDropdownState.members.filter((m) =>
-    m.agentId.toLowerCase().includes(mentionDropdownState.filter),
+  const displayItems = getDisplayItems(mentionDropdownState.members).filter(
+    (m) => m.agentId.toLowerCase().includes(mentionDropdownState.filter) || m.agentId === "all",
   );
-  const selected = filtered[mentionDropdownState.selectedIndex];
-  return selected ? { agentId: selected.agentId, agentName: selected.agentId } : null;
+  const selected = displayItems[mentionDropdownState.selectedIndex];
+  if (!selected) {
+    return null;
+  }
+  const displayName = selected.agentId === "all" ? "全体成员" : selected.agentId;
+  return { agentId: selected.agentId, agentName: displayName };
 }
 
 // ─── Props ───
@@ -938,13 +951,26 @@ function parseMentions(
   const mentions: string[] = [];
   const mentionPattern = /@(\S+)/g;
   let match: RegExpExecArray | null;
+  let hasAllMention = false;
+
   while ((match = mentionPattern.exec(text)) !== null) {
     const name = match[1];
-    const member = members.find((m) => m.agentId === name || m.agentId.includes(name));
-    if (member) {
-      mentions.push(member.agentId);
+    // Check for @all or @全体成员
+    if (name === "all" || name === "全体成员") {
+      hasAllMention = true;
+    } else {
+      const member = members.find((m) => m.agentId === name || m.agentId.includes(name));
+      if (member) {
+        mentions.push(member.agentId);
+      }
     }
   }
+
+  // If @all or @全体成员 is mentioned, include all members
+  if (hasAllMention) {
+    members.forEach((m) => mentions.push(m.agentId));
+  }
+
   return { text, mentions: [...new Set(mentions)] };
 }
 
@@ -953,23 +979,25 @@ function renderMentionDropdown() {
     return nothing;
   }
 
-  const filtered = mentionDropdownState.members.filter((m) =>
-    m.agentId.toLowerCase().includes(mentionDropdownState.filter),
+  // Always show @all option plus filtered members
+  const displayItems = getDisplayItems(mentionDropdownState.members).filter(
+    (m) => m.agentId.toLowerCase().includes(mentionDropdownState.filter) || m.agentId === "all",
   );
 
-  if (filtered.length === 0) {
+  if (displayItems.length === 0) {
     return nothing;
   }
 
   return html`
     <div class="mention-dropdown">
-      ${filtered.map(
+      ${displayItems.map(
         (m, i) => html`
           <div
             class="mention-item ${i === mentionDropdownState.selectedIndex ? "mention-item--selected" : ""}"
             @click=${() => {
               if (mentionDropdownState.onSelect) {
-                mentionDropdownState.onSelect(m.agentId, m.agentId);
+                const displayName = m.agentId === "all" ? "全体成员" : m.agentId;
+                mentionDropdownState.onSelect(m.agentId, displayName);
               }
               hideMentionDropdown();
             }}
@@ -977,9 +1005,9 @@ function renderMentionDropdown() {
               mentionDropdownState.selectedIndex = i;
             }}
           >
-            <span class="mention-item__emoji">🤖</span>
-            <span class="mention-item__name">${m.agentId}</span>
-            <span class="mention-item__role badge badge--${m.role}">${m.role}</span>
+            <span class="mention-item__emoji">${m.agentId === "all" ? "👥" : "🤖"}</span>
+            <span class="mention-item__name">${m.agentId === "all" ? "全体成员" : m.agentId}</span>
+            ${m.agentId !== "all" ? html`<span class="mention-item__role badge badge--${m.role}">${m.role}</span>` : nothing}
           </div>
         `,
       )}

@@ -1030,6 +1030,18 @@
   color: #999;
 }
 
+/* Special styling for @all mention item */
+.mention-item:first-child {
+  border-bottom: 1px solid #333;
+  margin-bottom: 4px;
+  padding-bottom: 10px;
+}
+
+.mention-item:first-child .mention-item__name {
+  font-weight: 500;
+  color: #60a5fa;
+}
+
 /* Light theme overrides */
 :root[data-theme="light"] .mention-dropdown {
   background: #fff;
@@ -1053,6 +1065,14 @@
 :root[data-theme="light"] .mention-item__role {
   background: #f0f0f0;
   color: #666;
+}
+
+:root[data-theme="light"] .mention-item:first-child {
+  border-bottom-color: #e5e5e5;
+}
+
+:root[data-theme="light"] .mention-item:first-child .mention-item__name {
+  color: #2563eb;
 }
 
 /* ─── Responsive ─── */

@@ -185,6 +185,7 @@ export async function triggerAgentReasoning(
         runId,
         abortSignal: signal,
         suppressTyping: true,
+        agentId, // Pass explicit agentId for group chat
         skillFilter: meta.groupSkills.length > 0 ? meta.groupSkills : undefined,
         onPartialReply: (payload) => {
           if (payload.text) {

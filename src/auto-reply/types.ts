@@ -64,6 +64,8 @@ export type GetReplyOptions = {
   hasRepliedRef?: { value: boolean };
   /** Override agent timeout in seconds (0 = no timeout). Threads through to resolveAgentTimeoutMs. */
   timeoutOverrideSeconds?: number;
+  /** Explicit agentId override (used by group chat to target specific agents). */
+  agentId?: string;
 };
 
 export type ReplyPayload = {

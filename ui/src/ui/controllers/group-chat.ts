@@ -300,6 +300,13 @@ function appendSystemMessageToUI(host: GroupChatState, groupId: string, content:
  * Mirrors the backend dispatch logic in message-dispatch.ts.
  */
 function resolvePendingAgents(meta: GroupSessionMeta, mentions?: string[]): string[] {
+  // Check for @all mention
+  const hasAllMention = mentions?.includes("all") ?? false;
+
+  if (hasAllMention) {
+    return meta.members.map((m) => m.agentId);
+  }
+
   const validMentions = mentions?.filter((id) => meta.members.some((m) => m.agentId === id)) ?? [];
 
   if (validMentions.length > 0) {
