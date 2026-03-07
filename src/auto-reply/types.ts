@@ -1,5 +1,6 @@
 import type { ImageContent } from "@mariozechner/pi-ai";
 import type { TypingController } from "./reply/typing.js";
+import type { ReasoningLevel, ThinkLevel, VerboseLevel } from "./thinking.js";
 
 export type BlockReplyContext = {
   abortSignal?: AbortSignal;
@@ -72,11 +73,11 @@ export type GetReplyOptions = {
   /** Explicit agentId override (used by group chat to target specific agents). */
   agentId?: string;
   /** Override thinking level for this run (used by group chat). */
-  thinkLevel?: string;
+  thinkLevel?: ThinkLevel;
   /** Override reasoning level for this run (used by group chat). */
-  reasoningLevel?: string;
+  reasoningLevel?: ReasoningLevel;
   /** Override verbose level for this run (used by group chat). */
-  verboseLevel?: string;
+  verboseLevel?: VerboseLevel;
 };
 
 export type ReplyPayload = {

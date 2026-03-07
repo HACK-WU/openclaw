@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { dispatchInboundMessage } from "../auto-reply/dispatch.js";
 import { createReplyDispatcher } from "../auto-reply/reply/reply-dispatcher.js";
 import type { MsgContext } from "../auto-reply/templating.js";
+import { normalizeThinkLevel } from "../auto-reply/thinking.js";
 import { loadConfig } from "../config/config.js";
 import type { GatewayBroadcastFn } from "../gateway/server-broadcast.js";
 import {
@@ -278,8 +279,8 @@ export async function triggerAgentReasoning(
         suppressTyping: true,
         agentId, // Pass explicit agentId for group chat
         skillFilter: meta.groupSkills.length > 0 ? meta.groupSkills : undefined,
-        // Pass group chat thinking level override (if set)
-        thinkLevel: meta.thinkingLevel || undefined,
+        // Pass group chat thinking level override (if set, normalized to ThinkLevel)
+        thinkLevel: normalizeThinkLevel(meta.thinkingLevel) ?? undefined,
         onPartialReply: (payload) => {
           // Broadcast text content
           if (payload.text) {
