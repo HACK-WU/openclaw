@@ -293,6 +293,22 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
           </span>
         </div>
         <div class="group-chat-room__header-actions">
+          <!-- Thinking Level Selector -->
+          <select
+            class="field field--sm group-chat-room__thinking-select"
+            .value=${meta.thinkingLevel || "inherit"}
+            @change=${(e: Event) => {
+              const value = (e.target as HTMLSelectElement).value;
+              props.onUpdateThinkingLevel?.(value === "inherit" ? "" : value);
+            }}
+            title=${t("chat.group.thinkingLevel")}
+          >
+            <option value="inherit" ?selected=${!meta.thinkingLevel}>🧠 Inherit</option>
+            <option value="off" ?selected=${meta.thinkingLevel === "off"}>🧠 Off</option>
+            <option value="low" ?selected=${meta.thinkingLevel === "low"}>🧠 Low</option>
+            <option value="medium" ?selected=${meta.thinkingLevel === "medium"}>🧠 Medium</option>
+            <option value="high" ?selected=${meta.thinkingLevel === "high"}>🧠 High</option>
+          </select>
           <button
             class="btn btn--sm btn--icon"
             @click=${() => props.onOpenAddMemberDialog()}
@@ -778,29 +794,6 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
           <div class="group-info-panel__settings">
             <span>Max rounds: ${meta.maxRounds}</span>
             <span>Max consecutive: ${meta.maxConsecutive}</span>
-          </div>
-        </div>
-
-        <!-- Thinking Level (editable) -->
-        <div class="group-info-panel__section">
-          <label>${t("chat.group.thinkingLevel")}</label>
-          <div class="group-info-panel__editable">
-            <select
-              class="field group-info-panel__input"
-              .value=${meta.thinkingLevel || "inherit"}
-              @change=${(e: Event) => {
-                const value = (e.target as HTMLSelectElement).value;
-                props.onUpdateThinkingLevel?.(value === "inherit" ? "" : value);
-              }}
-            >
-              <option value="inherit" ?selected=${!meta.thinkingLevel}>Inherit (default)</option>
-              <option value="off" ?selected=${meta.thinkingLevel === "off"}>Off</option>
-              <option value="minimal" ?selected=${meta.thinkingLevel === "minimal"}>Minimal</option>
-              <option value="low" ?selected=${meta.thinkingLevel === "low"}>Low</option>
-              <option value="medium" ?selected=${meta.thinkingLevel === "medium"}>Medium</option>
-              <option value="high" ?selected=${meta.thinkingLevel === "high"}>High</option>
-              <option value="xhigh" ?selected=${meta.thinkingLevel === "xhigh"}>X-High</option>
-            </select>
           </div>
         </div>
 
