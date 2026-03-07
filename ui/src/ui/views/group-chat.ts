@@ -550,11 +550,12 @@ function renderGroupMessage(
   // Render markdown content with mention highlighting
   // Step 1: Handle escapes (\@ → @) before markdown processing
   // Step 2: Convert markdown to HTML
-  // Step 3: Highlight @mentions in the HTML
+  // Step 3: Highlight @mentions in the HTML (exclude sender's own mention)
   const memberIds = meta.members.map((m) => m.agentId);
+  const senderId = msg.sender.type === "agent" ? msg.sender.agentId : undefined;
   const contentWithEscapes = msg.content.replace(/\\@/g, "@");
   const markdownHtml = toSanitizedMarkdownHtml(contentWithEscapes);
-  const contentHtml = highlightMentionsInHtml(markdownHtml, memberIds);
+  const contentHtml = highlightMentionsInHtml(markdownHtml, memberIds, senderId);
 
   return html`
     <div class="chat-group ${roleClass}">
@@ -1213,9 +1214,9 @@ function formatTimeAgo(ts: number): string {
 /**
  * Highlight @mentions in HTML content.
  * Replaces @agentId with <mark class="mention">@agentId</mark> for valid members.
- * Avoids replacing inside HTML tags or attributes.
+ * Avoids replacing inside HTML tags or attributes, and excludes sender's own mention.
  */
-function highlightMentionsInHtml(html: string, memberIds: string[]): string {
+function highlightMentionsInHtml(html: string, memberIds: string[], excludeId?: string): string {
   if (!memberIds.length) {
     return html;
   }
@@ -1226,6 +1227,10 @@ function highlightMentionsInHtml(html: string, memberIds: string[]): string {
   // Process each member ID
   let result = html;
   for (const agentId of sortedIds) {
+    // Skip highlighting sender's own mention
+    if (agentId === excludeId) {
+      continue;
+    }
     // Match @agentId that's not part of a longer word and not inside HTML tags
     // Use a regex that avoids matching inside <...>
     const pattern = new RegExp(`@${escapeRegExp(agentId)}(?![a-zA-Z0-9_-])(?![^<]*>)`, "g");
