@@ -1,6 +1,6 @@
 ---
 name: group-chat-reply
-description: Group Chat Reply
+description: Guides agents participating in multi-agent group chats. Teaches proper mention syntax (<<@agentId>>) and placement rules for routing messages to other agents. Use when agents need to communicate in group chat scenarios, mention other members, or understand group chat communication patterns.
 always: false
 emoji: "💬"
 ---
@@ -12,19 +12,83 @@ You are currently participating in a **group chat** with multiple agents and a h
 ## Communication Rules
 
 1. **Reply directly** — your response text is your message in this group chat
-2. **To mention another agent**, use the special marker format `<<@agentId>>` in your reply text
-   - Example: `<<@backend>> please check the database connection pool config`
-   - Only use agentIds that exist in the group member list
-   - The `<<@agentId>>` marker will be displayed as `@agentId` in the chat UI
-3. **Do NOT reply if not addressed** — in unicast mode, only respond when you are the designated recipient or @-mentioned
-4. **Avoid circular conversations** — if the task is complete, do not continue mentioning others
+2. **Do NOT reply if not addressed** — in unicast mode, only respond when you are the designated recipient or @-mentioned
+3. **Avoid circular conversations** — if the task is complete, do not continue mentioning others
 
 ## Mention Format
 
-CRITICAL: When you need to direct a message to another agent, you MUST use the double angle bracket format:
+### When to Mention
 
-✅ Correct: `<<@main>>` `<<@backend>>` `<<@test>>`
-❌ Wrong: `@main` `@backend` (plain @ will NOT trigger routing)
+Use `<<@agentId>>` when you want to **route your message to another agent** and trigger their response.
+
+### Placement Rules — CRITICAL
+
+| Scenario                                                | Placement                           | Example   |
+| ------------------------------------------------------- | ----------------------------------- | --------- |
+| Your message is FOR the mentioned agent(s)              | **End of message, on its own line** | See below |
+| You're telling Owner ABOUT an agent (no routing needed) | Within text, any position           | See below |
+
+### ✅ Correct Usage
+
+**Routing to agent(s) — mention at the END, on its own line:**
+
+```
+请回答我的问题，我需要知道你的配置信息。
+<<@dev>>
+```
+
+```
+各位请分享一下你们使用的模型配置。
+<<@dev>> <<@test>> <<@test_2>>
+```
+
+**Informing Owner (no routing) — mention within text:**
+
+```
+我刚才检查了 @dev 的配置，发现它使用的是 GPT-4。
+```
+
+```
+关于 @test 提到的问题，我认为可以从以下几个方面分析...
+```
+
+### ❌ Wrong Usage
+
+```
+<<@dev>> 请回答这个问题
+```
+
+**Problem**: Mention at the beginning will NOT trigger routing. Put it at the END.
+
+```
+<<@dev>> <<@test>> <<@test_2>>
+各位请分享一下你们使用的模型配置。
+```
+
+**Problem**: Mentions on the first line will NOT trigger routing. Mentions must be on the **last line**.
+
+```
+我来询问 @dev 的配置。
+```
+
+**Problem**: Plain `@dev` (without `<<>>`) will NOT trigger routing. Use `<<@dev>>` if you want to route.
+
+```
+这个问题我无法回答，让其他人来处理吧。
+
+<<@dev>>
+```
+
+**Problem**: Too vague. Always include a clear question or request when mentioning others.
+
+## Multiple Members
+
+When mentioning multiple agents, put all mentions on the **last line**:
+
+```
+请各位分享一下本周的工作进展。
+<<@dev>> <<@test>> <<@backend>>
+```
 
 ## Read-Only Mode
 
@@ -36,7 +100,8 @@ You are operating in **read-only mode** within this group chat:
 ## Best Practices
 
 - Keep replies concise and focused on the topic
-- When you need another agent's expertise, use `<<@agentId>>` with a clear request
+- Put `<<@agentId>>` at the END of your message, on its own line
+- Include a clear question or request when mentioning others
+- Do NOT announce "let me ask..." — just ask directly
 - If you're the assistant (coordinator), help integrate responses from other members
 - If you're a regular member, contribute your expertise when asked
-- Do NOT mention agents unnecessarily — only when their input is actually needed

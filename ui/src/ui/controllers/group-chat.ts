@@ -67,7 +67,7 @@ export type GroupStreamPayload = {
   groupId: string;
   agentId: string;
   runId: string;
-  state: "delta" | "final" | "error";
+  state: "delta" | "final" | "error" | "aborted";
   content?: string; // delta text (backend field name)
   text?: string; // alias for content (frontend compatibility)
   errorMessage?: string;
@@ -153,6 +153,17 @@ export type GroupHost = {
 /** Mention marker pattern: <<@agentId>> */
 const MENTION_MARKER_RE = /<<@(\S+?)>>/g;
 
+/**
+ * Extract mentions from the LAST LINE of a message only.
+ * Mentions in the middle of text are for display purposes and do NOT trigger routing.
+ */
+export function extractLastLineMentions(content: string): string[] {
+  const lines = content.trim().split("\n");
+  const lastLine = lines[lines.length - 1] || "";
+  const matches = [...lastLine.matchAll(MENTION_MARKER_RE)];
+  return [...new Set(matches.map((m) => m[1]))];
+}
+
 /** Per-group chain state for forward limiting */
 type ChainState = { count: number; startedAt: number };
 const groupChainStates = new Map<string, ChainState>();
@@ -172,6 +183,9 @@ export function resetChainState(groupId: string): void {
  * Detect <<@agentId>> markers in an agent's reply and auto-forward
  * the message to trigger the mentioned agents.
  *
+ * IMPORTANT: Only mentions on the LAST LINE trigger routing.
+ * Mentions in the middle of text are for display only.
+ *
  * Called after a group.message event is received and rendered.
  */
 export async function detectAndForwardMentions(
@@ -187,10 +201,12 @@ export async function detectAndForwardMentions(
   }
 
   const meta = host.activeGroupMeta;
-  const matches = [...message.content.matchAll(MENTION_MARKER_RE)];
 
-  if (matches.length === 0) {
-    // No markers → chain naturally ends
+  // Only extract mentions from the LAST LINE
+  const lastLineMentions = extractLastLineMentions(message.content);
+
+  if (lastLineMentions.length === 0) {
+    // No markers on last line → chain naturally ends
     resetChainState(message.groupId);
     return;
   }
@@ -199,9 +215,9 @@ export async function detectAndForwardMentions(
   const senderAgentId = message.sender.type === "agent" ? message.sender.agentId : undefined;
   const mentionedIds = [
     ...new Set(
-      matches
-        .map((m) => m[1])
-        .filter((id) => id !== senderAgentId && meta.members.some((m) => m.agentId === id)),
+      lastLineMentions.filter(
+        (id) => id !== senderAgentId && meta.members.some((m) => m.agentId === id),
+      ),
     ),
   ];
 
@@ -248,8 +264,13 @@ export async function detectAndForwardMentions(
     startedAt: chain?.startedAt ?? now,
   });
 
-  // Replace <<@agentId>> → @agentId for the forwarded message
-  const forwardedText = message.content.replace(MENTION_MARKER_RE, "@$1");
+  // Replace <<@agentId>> → @agentId ONLY on the last line for the forwarded message
+  // (mentions in the middle are preserved as-is for display)
+  const lines = message.content.split("\n");
+  if (lines.length > 0) {
+    lines[lines.length - 1] = lines[lines.length - 1].replace(MENTION_MARKER_RE, "@$1");
+  }
+  const forwardedText = lines.join("\n");
 
   console.log(
     `[group-chat] auto-forward: group=${message.groupId} from=${senderAgentId} to=[${mentionedIds.join(",")}] chain=${nextCount}/${MAX_CHAIN_FORWARDS}`,
@@ -577,7 +598,17 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     }
 
     // Buffer stream updates, throttle at 50ms
-    const key = `${payload.groupId}:${payload.agentId}`;
+    // Key includes runId to distinguish concurrent runs from the same agent
+    const key = `${payload.agentId}:${payload.runId}`;
+
+    // Clean up old buffers for the same agent (if this is a new run)
+    for (const [oldKey] of streamBuffers) {
+      const [oldAgentId, oldRunId] = oldKey.split(":");
+      if (oldAgentId === payload.agentId && oldRunId !== payload.runId) {
+        streamBuffers.delete(oldKey);
+      }
+    }
+
     streamBuffers.set(key, deltaText);
     if (!streamSyncTimer) {
       streamSyncTimer = window.setTimeout(() => {
@@ -588,19 +619,23 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     return;
   }
 
-  if (payload.state === "final" || payload.state === "error") {
+  if (payload.state === "final" || payload.state === "error" || payload.state === "aborted") {
     // Remove from pending (in case we never got non-empty delta)
     if (host.groupPendingAgents.has(payload.agentId)) {
       const next = new Set(host.groupPendingAgents);
       next.delete(payload.agentId);
       host.groupPendingAgents = next;
     }
-    // Remove stream entry
+    // Remove stream entry for this specific run
     const next = new Map(host.groupStreams);
-    next.delete(payload.agentId);
+    const currentStream = next.get(payload.agentId);
+    // Only remove if the runId matches (prevent removing a newer run)
+    if (currentStream && currentStream.runId === payload.runId) {
+      next.delete(payload.agentId);
+    }
     host.groupStreams = next;
-    // Clear buffer
-    streamBuffers.delete(`${payload.groupId}:${payload.agentId}`);
+    // Clear buffer for this specific run
+    streamBuffers.delete(`${payload.agentId}:${payload.runId}`);
     return;
   }
 }
@@ -608,10 +643,15 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
 function syncGroupStreams(host: GroupChatState): void {
   const next = new Map(host.groupStreams);
   for (const [key, text] of streamBuffers) {
-    const agentId = key.split(":").pop()!;
+    const [agentId, runId] = key.split(":");
+    if (!agentId || !runId) {
+      continue;
+    }
+
     const existing = next.get(agentId);
+    // Only update if this is the same run or newer (runId is unique, so we always update)
     next.set(agentId, {
-      runId: existing?.runId ?? "",
+      runId,
       text,
       startedAt: existing?.startedAt ?? Date.now(),
     });

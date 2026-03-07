@@ -511,8 +511,10 @@ function renderGroupMessage(
   const toolCards = extractToolCards(msg as unknown as Record<string, unknown>);
   const classified = toolCards.length > 0 ? classifyToolCards(toolCards) : null;
 
-  // Render markdown content — replace <<@agentId>> markers with @agentId for display
-  const displayContent = msg.content.replace(/<<@(\S+?)>>/g, "@$1");
+  // Render markdown content with mention highlighting
+  // - Last line <<@agentId>> → highlighted mention pill (routing target)
+  // - Middle <<@agentId>> → plain @agentId (display only)
+  const displayContent = formatMentionsForDisplay(msg.content);
   const contentHtml = toSanitizedMarkdownHtml(displayContent);
 
   return html`
@@ -909,6 +911,33 @@ function renderAddMemberDialog(props: GroupChatViewProps) {
 }
 
 // ─── Helpers ───
+
+/** Mention marker pattern: <<@agentId>> */
+const MENTION_MARKER_RE = /<<@(\S+?)>>/g;
+
+/**
+ * Format mentions for display:
+ * - Last line <<@agentId>> → highlighted mention pill (routing target)
+ * - Middle <<@agentId>> → plain @agentId (display only)
+ */
+export function formatMentionsForDisplay(content: string): string {
+  const lines = content.split("\n");
+  if (lines.length === 0) {
+    return content;
+  }
+
+  // Replace mentions in middle lines (all except last) with plain @agentId
+  for (let i = 0; i < lines.length - 1; i++) {
+    lines[i] = lines[i].replace(MENTION_MARKER_RE, "@$1");
+  }
+
+  // Replace mentions on the last line with highlighted mentions
+  // Using markdown **@agentId** for highlighting (will be rendered as bold)
+  const lastLineIdx = lines.length - 1;
+  lines[lastLineIdx] = lines[lastLineIdx].replace(MENTION_MARKER_RE, "**@$1**");
+
+  return lines.join("\n");
+}
 
 function resolveSenderName(
   sender: GroupChatMessage["sender"],

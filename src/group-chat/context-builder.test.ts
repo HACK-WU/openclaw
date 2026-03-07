@@ -75,8 +75,10 @@ describe("context-builder", () => {
     const result = buildGroupChatContext({ meta: makeMeta(), agentId: "coder" });
     expect(result).toContain("read-only mode");
     expect(result).toContain("<<@agentId>>");
-    expect(result).toContain("<<@main>>");
+    expect(result).toContain("<<@dev>>"); // Example in Communication Guide
     expect(result).toContain("Always respond when @-mentioned");
+    expect(result).toContain("Communication Guide");
+    expect(result).toContain("Place mentions at the END");
     expect(result).not.toContain("group_reply");
   });
 
