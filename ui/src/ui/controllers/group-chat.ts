@@ -498,7 +498,14 @@ export async function detectAndForwardMentions(
   }
 
   const meta = host.activeGroupMeta;
-  const memberIds = meta.members.map((m) => m.agentId);
+  // Get all member IDs for filtering dedicated mention lines
+  const allMemberIds = meta.members.map((m) => m.agentId);
+  // Get current chain state to exclude initiators from mention matching
+  // This prevents initiators from being unexpectedly triggered mid-conversation
+  const currentChain = groupChainStates.get(message.groupId);
+  const initiatorSet = new Set(currentChain?.initiators ?? []);
+  // Exclude initiators from memberIds so @initiator won't trigger them
+  const memberIds = allMemberIds.filter((id) => !initiatorSet.has(id));
 
   // Only extract mentions from DEDICATED LINES (lines with only @mentions)
   const dedicatedMentions = extractDedicatedMentions(message.content, memberIds);
@@ -573,14 +580,14 @@ export async function detectAndForwardMentions(
     if (!trimmed) {
       return false;
     }
-    // Check if line is ONLY @mentions
+    // Check if line is ONLY @mentions (use all members including initiators)
     const parts = trimmed.split(/\s+/);
     const isAllMentions = parts.every((part) => {
       if (!part.startsWith("@")) {
         return false;
       }
       const id = part.slice(1);
-      return memberIds.includes(id);
+      return allMemberIds.includes(id);
     });
     // Keep lines that are NOT all mentions (those are the content)
     return !isAllMentions;

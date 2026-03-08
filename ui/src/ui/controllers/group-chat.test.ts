@@ -173,6 +173,52 @@ describe("group-chat controller", () => {
         // A2's reply should be added to messages
         expect(host.groupMessages.some((m) => m.id === "msg-2")).toBe(true);
       });
+
+      it("excludes initiators from mention matching pool", () => {
+        const host = makeHost();
+        host.activeGroupId = "g1";
+
+        // A1 @mentions A2 on a dedicated line, becomes initiator
+        const msg1 = makeMessage({
+          id: "msg-1",
+          sender: { type: "agent", agentId: "a1" },
+          content: "Please help\n@a2",
+          groupId: "g1",
+        });
+        handleGroupMessageEvent(host as unknown as GroupChatState, msg1);
+        vi.runAllTimers();
+
+        // Verify A1 is tracked as initiator (A2 was mentioned)
+        const forwardCallsAfter1 = host.client.request.mock.calls.filter(
+          (call: unknown[]) =>
+            call[0] === "group.send" &&
+            Array.isArray((call[1] as { mentions?: unknown[] }).mentions),
+        );
+        expect(forwardCallsAfter1.length).toBeGreaterThan(0);
+        expect((forwardCallsAfter1[0][1] as { mentions?: string[] }).mentions).toContain("a2");
+
+        // A2 replies and tries to @mention A1 (the initiator) on a dedicated line
+        // This should NOT trigger A1 because A1 is in initiators list
+        const msg2 = makeMessage({
+          id: "msg-2",
+          sender: { type: "agent", agentId: "a2" },
+          content: "Done\n@a1",
+          groupId: "g1",
+        });
+        handleGroupMessageEvent(host as unknown as GroupChatState, msg2);
+        vi.runAllTimers();
+
+        // @a1 should NOT be recognized as valid mention (A1 is excluded from pool)
+        // So there should be NO new forward call with A1 as target
+        const forwardCallsAfter2 = host.client.request.mock.calls.filter(
+          (call: unknown[]) =>
+            call[0] === "group.send" &&
+            Array.isArray((call[1] as { mentions?: unknown[] }).mentions) &&
+            (call[1] as { mentions?: string[] }).mentions?.includes("a1"),
+        );
+        // Should be 0 because @a1 should not trigger a forward
+        expect(forwardCallsAfter2.length).toBe(0);
+      });
     });
 
     describe("summary scheduling", () => {
