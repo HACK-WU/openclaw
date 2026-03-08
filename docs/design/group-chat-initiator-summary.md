@@ -76,7 +76,59 @@ test_1 @test_3   → initiators = [test_1, test_2]  // test_1 已存在，不重
 test_3 @test_2   → initiators = [test_1, test_2, test_3]
 ```
 
-#### 2.2 追踪待回复 agent
+#### 2.3 发起者 @mention 匹配池排除机制
+
+**问题场景：** 其他 agent 在回复时可能会 @initiator，导致 initiator 被意外触发回复。
+
+```
+test_1: @test_2 @test_3 大家好  → initiators = [test_1]
+test_2: 你好 @test_1            ← test_2 @了 test_1，把 test_1 "拉回"对话
+test_3: 你好
+[对话结束，test_1 被"遗忘"]      ← test_1 其实参与了，但没被追踪
+```
+
+**解决方案：** 当 agent 被加入 `initiators` 时，从 @mention 匹配池中移除该 agentId。
+
+```typescript
+// 前端解析 @mention 时使用的成员 ID 列表
+// 正常情况下等于群成员列表
+let mentionPool = meta.members.map((m) => m.agentId);
+
+// 当 agent 被加入 initiators 时，从匹配池中移除
+function addInitiator(chain: ChainState, agentId: string): void {
+  if (!chain.initiators.includes(agentId)) {
+    chain.initiators.push(agentId);
+    // 从 @mention 匹配池中移除该 initiator
+    mentionPool = mentionPool.filter((id) => id !== agentId);
+  }
+}
+
+// 汇总发送后清空 initiators 时，恢复匹配池
+function clearInitiators(chain: ChainState): void {
+  // 恢复所有 initiator 到匹配池
+  for (const id of chain.initiators) {
+    if (!mentionPool.includes(id)) {
+      mentionPool.push(id);
+    }
+  }
+  chain.initiators = [];
+}
+```
+
+**效果：**
+
+```
+test_1: @test_2 @test_3 大家好  → initiators = [test_1]
+                               → 匹配池移除 test_1
+test_2: 你好 @test_1            ← @test_1 不再是有效 mention，不会触发 test_1 回复
+test_3: 你好
+[对话结束]
+→ 汇总: @test_1                 ← test_1 正确收到提醒
+```
+
+**核心目的：** 确保 initiator 只发一次言，直到汇总时再次被触发。防止 initiator 在对话链中途被其他 agent 意外"拉回"。
+
+#### 2.4 追踪待回复 agent
 
 ```typescript
 // 当触发 agent 回复时
@@ -95,7 +147,7 @@ function onAgentMessage(groupId, agentId) {
 }
 ```
 
-#### 2.3 智能等待策略
+#### 2.5 智能等待策略
 
 | 条件                   | 行为                               |
 | ---------------------- | ---------------------------------- |
@@ -137,7 +189,7 @@ function scheduleSummaryCheck(groupId) {
 }
 ```
 
-#### 2.4 对话链"结束"的完整条件
+#### 2.6 对话链"结束"的完整条件
 
 **触发汇总：**
 
