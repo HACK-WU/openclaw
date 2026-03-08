@@ -36,7 +36,10 @@ import type {
   MessageSender,
   ConversationChainState,
 } from "../../group-chat/types.js";
+import { getLogger } from "../../logging.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
+
+const log = getLogger("group-chat:handler");
 
 // ─── Handlers ───
 
@@ -414,9 +417,18 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
     timestamp: Date.now(),
   };
 
+  log.info("[HANDLE_GROUP_SEND]", {
+    groupId,
+    messageId: msg.id,
+    sender: resolvedSender,
+    senderParam: params.sender,
+    contentPreview: messageText.slice(0, 50),
+  });
+
   // When frontend forwards an agent's already-persisted reply via skipTranscript,
+  // or when sending system/owner messages that shouldn't be displayed (e.g., delivery, summary),
   // skip duplicate transcript write and broadcast — only proceed to dispatch.
-  const skipTranscript = params.skipTranscript === true && resolvedSender.type === "agent";
+  const skipTranscript = params.skipTranscript === true;
 
   let savedMsg: GroupChatMessage;
   if (!skipTranscript) {

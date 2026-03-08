@@ -20,6 +20,7 @@ import {
   injectTimestamp,
   timestampOptsFromConfig,
 } from "../gateway/server-methods/agent-timestamp.js";
+import { getLogger } from "../logging.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
 import { updateChainState } from "./anti-loop.js";
 import { buildGroupChatContext } from "./context-builder.js";
@@ -34,6 +35,8 @@ import type {
   GroupToolCall,
   GroupToolMessage,
 } from "./types.js";
+
+const log = getLogger("group-chat:agent");
 
 export type TriggerAgentParams = {
   groupId: string;
@@ -325,6 +328,16 @@ export async function triggerAgentReasoning(
       sender: { type: "agent", agentId, agentName: agentId },
       timestamp: Date.now(),
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    });
+
+    log.info("[AGENT_REPLY]", {
+      groupId,
+      runId,
+      agentId,
+      messageId: replyMessage.id,
+      sender: replyMessage.sender,
+      serverSeq: replyMessage.serverSeq,
+      contentPreview: replyMessage.content.slice(0, 50),
     });
 
     // Broadcast final

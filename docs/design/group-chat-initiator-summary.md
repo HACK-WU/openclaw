@@ -2,6 +2,8 @@
 
 ## 问题
 
+### 问题一：发起者被"遗忘"
+
 在群聊中，当一个 agent @提及其他 agent 后，这些 agent 回复时可能不会 @提及原始发起者。这导致发起者被"遗忘"在对话流程中。
 
 **示例：**
@@ -12,6 +14,70 @@ test_2: 你好                    ← 没有 @test_1
 test_3: 你好                    ← 没有 @test_1
 [对话结束，test_1 被"遗忘"]
 ```
+
+### 问题二：同一 agent 被重复触发
+
+在一次对话链中，多个 agent 可能会 @同一个 agent，导致该 agent 被反复触发回复。这不仅浪费资源，还可能产生无意义的重复内容。
+
+**示例场景：**
+
+```
+test_1: @test_2 @test_3 @test_4 大家好，请分析这个问题
+                                   → mentionedAgents = [test_2, test_3, test_4]
+                                   → 三个 agent 都被触发
+
+test_2: 我认为需要 @test_4 来处理数据库部分
+        → test_4 已经在 mentionedAgents 中！
+        → 如果再次触发 test_4，它会重复回复
+        → 但这条消息不应该丢失，test_4 应该知道有人@了它
+
+test_3: 同意 @test_4，你可以帮忙吗？
+        → test_4 再次被@，同样不应重复触发
+
+test_4: 好的，我来处理
+        → test_4 只回复一次，但它错过了 test_2 和 test_3 对它的提及
+
+[对话结束]
+→ 汇总时，test_4 应该收到 test_2 和 test_3 对它的提及信息
+```
+
+**问题的复杂性：**
+
+```
+test_1: @test_2 @test_3 大家好     → initiators = [test_1], mentionedAgents = [test_2, test_3]
+
+test_2: 你好 @test_1               ← test_1 是 initiator，不会触发
+        → 这条消息如何处理？
+        → test_1 在 initiators 中，应该在汇总时收到
+
+test_3: @test_2 你说得对 @test_4   ← test_2 已回复过，test_4 是新的
+        → test_2 在 mentionedAgents 中，不应重复触发
+        → 但这条消息要保存，test_2 应该知道
+        → test_4 是新的，正常触发
+
+test_4: @test_3 @test_5 好的       ← test_3 已回复，test_5 是新的
+        → test_3 不重复触发，保存消息
+        → test_5 正常触发
+
+test_5: @test_2 @test_4 收到       ← test_2 和 test_4 都已回复
+        → 都不重复触发，保存消息
+
+[对话链结束]
+→ 需要处理的待投递消息：
+   - test_2: 收到 test_3 和 test_5 的提及
+   - test_3: 收到 test_4 的提及
+   - test_4: 收到 test_5 的提及
+→ 其中 test_1 在 initiators 中，汇总时处理
+→ test_2, test_3, test_4 不在 initiators 中，汇总前 5 秒投递
+```
+
+**核心挑战：**
+
+1. **避免重复触发**：同一 agent 在一次对话链中只被自动触发一次
+2. **消息不丢失**：重复 @的消息需要保存，并在适当时机投递给目标 agent
+3. **区分投递时机**：
+   - initiator 的消息在汇总时一起处理
+   - 非 initiator 的消息在汇总前投递，让 agent 有机会在汇总时回复
 
 ## 解决方案
 
@@ -151,12 +217,12 @@ function onAgentMessage(groupId, agentId) {
 
 | 条件                   | 行为                               |
 | ---------------------- | ---------------------------------- |
-| `pendingAgents 为空`   | 等待 10 秒后触发汇总               |
+| `pendingAgents 为空`   | 等待 15 秒后触发汇总               |
 | `pendingAgents 不为空` | 继续等待，最多再等 30 秒           |
 | `等待超过 30 秒`       | 强制触发汇总（忽略未回复的 agent） |
 
 ```typescript
-const SUMMARY_DELAY_MS = 10_000; // 正常等待时间
+const SUMMARY_DELAY_MS = 15_000; // 正常等待时间
 const MAX_PENDING_WAIT_MS = 30_000; // 最大等待时间
 
 function scheduleSummaryCheck(groupId) {
@@ -169,9 +235,9 @@ function scheduleSummaryCheck(groupId) {
 
   // 检查是否所有 agent 都已回复
   if (chain.pendingAgents.size === 0) {
-    // 所有 agent 都回复了，等 10 秒触发汇总
+    // 所有 agent 都回复了，等 15 秒触发汇总
     if (elapsed >= SUMMARY_DELAY_MS) {
-      sendSummaryMessage(groupId);
+      executeSummaryFlow(groupId);
     } else {
       setTimeout(() => scheduleSummaryCheck(groupId), SUMMARY_DELAY_MS - elapsed);
     }
@@ -179,7 +245,7 @@ function scheduleSummaryCheck(groupId) {
     // 还有 agent 未回复
     if (totalWait >= MAX_PENDING_WAIT_MS) {
       // 等待太久，强制触发汇总
-      sendSummaryMessage(groupId);
+      executeSummaryFlow(groupId);
     } else {
       // 继续等待
       const waitTime = Math.min(SUMMARY_DELAY_MS, MAX_PENDING_WAIT_MS - totalWait);
@@ -193,7 +259,7 @@ function scheduleSummaryCheck(groupId) {
 
 **触发汇总：**
 
-- 所有 agent 已回复 + 10 秒无新消息
+- 所有 agent 已回复 + 15 秒无新消息
 - 部分 agent 未回复 + 总等待超过 30 秒
 
 **不触发汇总：**
@@ -207,7 +273,7 @@ function scheduleSummaryCheck(groupId) {
 
 ```typescript
 // 等待 N 秒
-await sleep(10_000);
+await sleep(15_000);
 
 // 如果没有新消息到达，发送汇总
 if (chainEnded && initiators.length > 0) {
@@ -237,18 +303,18 @@ Owner: 大家好
 test_1: @test_2 @test_3 你们好   → initiators = [test_1]
 test_2: 你好                     → 等链结束
 test_3: 你好
-[10秒无新消息]
+[15秒无新消息]
 → 发送汇总: @test_1
 → initiators = []（清空，重新追踪）
 
 test_1: 收到，我再补充一下        → initiators = [test_1]（新发起者）
 test_2: 好的
-[10秒无新消息]
+[15秒无新消息]
 → 发送汇总: @test_1
 → initiators = []（清空，重新追踪）
 
 test_1: 没有新内容               → initiators = [test_1]
-[10秒无新消息]
+[15秒无新消息]
 → 发送汇总: @test_1
 → initiators = []
 
@@ -500,3 +566,513 @@ async function sendSummaryMessage(host, groupId, initiators) {
   // ...
 }
 ```
+
+---
+
+## 新增策略：避免重复触发 + 延迟消息投递
+
+### 核心思路
+
+在一次对话链中，记录所有已被 @触发过的 agent。当新的 @mention 匹配到已触发的 agent 时：
+
+1. **不重复触发**该 agent 的自动回复
+2. **保存这条消息**，等待适当时机投递
+3. **区分投递时机**：
+   - 如果目标 agent 在 `initiators` 中 → 汇总时一起处理
+   - 如果目标 agent 不在 `initiators` 中 → 汇总前 5 秒按顺序投递
+
+### 1. 扩展 ChainState 类型
+
+```typescript
+type ChainState = {
+  count: number; // 当前链计数
+  startedAt: number; // 链开始时间
+  initiators: string[]; // 有序的发起者列表（去重、保序）
+  pendingAgents: Set<string>; // 被触发但尚未回复的 agent
+  lastMessageAt: number; // 最后一条消息时间
+  mentionedAgents: string[]; // 本次对话链中已被@触发的 agent（去重、保序）
+  pendingMentions: PendingMention[]; // 重复@的待投递消息
+};
+
+type PendingMention = {
+  agentId: string; // 目标 agent
+  message: GroupChatMessage; // 包含@的消息
+  fromAgentId: string; // 发送者 agentId
+};
+```
+
+### 2. 追踪已被触发的 agent
+
+当 agent 被 @触发时，记录到 `mentionedAgents`：
+
+```typescript
+/**
+ * 记录已被触发的 agent（去重、保序）
+ */
+function addMentionedAgent(chain: ChainState, agentId: string): void {
+  if (!chain.mentionedAgents.includes(agentId)) {
+    chain.mentionedAgents.push(agentId);
+  }
+}
+
+/**
+ * 检查 agent 是否已被触发过
+ */
+function hasBeenMentioned(chain: ChainState, agentId: string): boolean {
+  return chain.mentionedAgents.includes(agentId);
+}
+```
+
+### 3. @mention 匹配时的处理逻辑
+
+修改 `detectAndForwardMentions` 函数：
+
+```typescript
+async function detectAndForwardMentions(host: GroupHost, message: GroupChatMessage): Promise<void> {
+  // 只处理 agent 消息
+  if (message.sender.type !== "agent") return;
+
+  const chain = getOrCreateChainState(message.groupId);
+  const senderAgentId = message.sender.agentId;
+
+  // 获取当前有效的匹配池（排除 initiators）
+  const mentionPool = getMentionPool(message.groupId);
+
+  // 提取 @mentions
+  const mentionedIds = extractDedicatedMentions(message.content, mentionPool);
+
+  if (mentionedIds.length === 0) {
+    // 没有有效的 @mentions
+    resetChainState(message.groupId);
+    return;
+  }
+
+  // 记录发送者为 initiator
+  addInitiator(chain, senderAgentId);
+
+  // 分类处理：首次触发 vs 重复@提及
+  const firstTimeMentions: string[] = [];
+
+  for (const agentId of mentionedIds) {
+    if (hasBeenMentioned(chain, agentId)) {
+      // 已被触发过，保存待投递消息
+      chain.pendingMentions.push({
+        agentId,
+        message,
+        fromAgentId: senderAgentId,
+      });
+      console.log(`[group-chat] pending mention: ${agentId} already triggered, message saved`);
+    } else {
+      // 首次被触发
+      firstTimeMentions.push(agentId);
+      addMentionedAgent(chain, agentId);
+    }
+  }
+
+  // 只触发首次被@的 agent
+  if (firstTimeMentions.length > 0) {
+    await triggerAgents(host, message.groupId, firstTimeMentions, message);
+  }
+
+  // 如果有重复@的消息，确保汇总检测在运行
+  if (chain.pendingMentions.length > 0) {
+    scheduleSummaryCheck(host, message.groupId);
+  }
+}
+```
+
+### 4. 汇总前的消息投递
+
+触发逻辑改变：不再依赖 `group.stream (final)` 信号，改为检测 UI 是否有加载效果：
+
+```typescript
+const SUMMARY_DELAY_MS = 10_000; // 汇总等待时间（UI 空闲后 10 秒）
+const PRE_SUMMARY_DELIVER_MS = 5_000; // 汇总前投递时间（汇总前 5 秒）
+const MAX_PENDING_WAIT_MS = 30_000; // 最大等待时间
+
+async function scheduleSummaryCheck(host: GroupHost, groupId: string): Promise<void> {
+  const chain = groupChainStates.get(groupId);
+  if (!chain) return;
+
+  // 检测 UI 是否有加载效果（pending agents 或 active streams）
+  const hasPendingAgents = host.groupPendingAgents.size > 0;
+  const hasActiveStreams = host.groupStreams.size > 0;
+  const isUILoading = hasPendingAgents || hasActiveStreams;
+
+  // 如果 UI 还在加载，等待 1 秒后重试
+  if (isUILoading) {
+    setTimeout(() => scheduleSummaryCheck(host, groupId), 1000);
+    return;
+  }
+
+  // UI 空闲，开始计时
+  // 取消之前的计时器
+  cancelSummaryTimer(groupId);
+
+  const now = Date.now();
+  const elapsed = now - chain.lastMessageAt;
+  const totalWait = now - chain.startedAt;
+
+  // 检查是否所有 agent 都已回复
+  if (chain.pendingAgents.size === 0) {
+    // 所有 agent 都回复了
+    if (elapsed >= SUMMARY_DELAY_MS) {
+      // 时间到，触发汇总流程
+      await executeSummaryFlow(host, groupId);
+    } else {
+      // 设置计时器
+      const waitTime = SUMMARY_DELAY_MS - elapsed;
+      summaryTimers.set(
+        groupId,
+        setTimeout(() => {
+          executeSummaryFlow(host, groupId);
+        }, waitTime),
+      );
+    }
+  } else {
+    // 还有 agent 未回复
+    if (totalWait >= MAX_PENDING_WAIT_MS) {
+      // 等待太久，强制触发汇总
+      await executeSummaryFlow(host, groupId);
+    } else {
+      // 继续等待
+      const waitTime = Math.min(SUMMARY_DELAY_MS, MAX_PENDING_WAIT_MS - totalWait);
+      summaryTimers.set(
+        groupId,
+        setTimeout(() => {
+          scheduleSummaryCheck(host, groupId);
+        }, waitTime),
+      );
+    }
+  }
+}
+
+/**
+ * 执行汇总流程：先投递待处理消息，再触发汇总
+ */
+async function executeSummaryFlow(host: GroupHost, groupId: string): Promise<void> {
+  const chain = groupChainStates.get(groupId);
+  if (!chain) return;
+
+  // 第一步：投递待处理的消息（给非 initiator 的 agent）
+  await deliverPendingMentions(host, groupId);
+
+  // 第二步：等待 5 秒，让 agent 有机会处理
+  await sleep(PRE_SUMMARY_DELIVER_MS);
+
+  // 第三步：发送汇总（给 initiator）
+  if (chain.initiators.length > 0) {
+    await sendSummaryMessage(host, groupId, chain.initiators);
+  }
+
+  // 第四步：清空状态
+  chain.mentionedAgents = [];
+  chain.pendingMentions = [];
+}
+```
+
+### 5. 投递待处理消息
+
+区分 initiator 和非 initiator 的处理方式：
+
+```typescript
+/**
+ * 投递待处理的 @mention 消息
+ * 非 initiator 的 agent 在汇总前收到消息
+ * initiator 的消息会在汇总中一起处理
+ */
+async function deliverPendingMentions(host: GroupHost, groupId: string): Promise<void> {
+  const chain = groupChainStates.get(groupId);
+  if (!chain || chain.pendingMentions.length === 0) return;
+
+  // 按顺序去重处理
+  const deliverMap = new Map<string, PendingMention[]>();
+
+  for (const pending of chain.pendingMentions) {
+    // 跳过 initiator（他们会在汇总时收到）
+    if (chain.initiators.includes(pending.agentId)) {
+      continue;
+    }
+
+    // 按 agentId 分组
+    const list = deliverMap.get(pending.agentId) ?? [];
+    list.push(pending);
+    deliverMap.set(pending.agentId, list);
+  }
+
+  // 按顺序投递（保持 mentionAgents 的顺序）
+  for (const agentId of chain.mentionedAgents) {
+    const pendings = deliverMap.get(agentId);
+    if (!pendings || pendings.length === 0) continue;
+
+    // 合并消息内容
+    const messages = pendings
+      .sort((a, b) => a.message.timestamp - b.message.timestamp)
+      .map((p) => `[${p.fromAgentId}]: ${p.message.content}`);
+
+    // 一次性发送给该 agent
+    await host.client.request("group.send", {
+      groupId,
+      message: messages.join("\n\n"),
+      mentions: [agentId],
+      sender: { type: "owner" },
+      skipTranscript: true,
+    });
+
+    console.log(
+      `[group-chat] delivered pending mentions to ${agentId}: ${pendings.length} messages`,
+    );
+  }
+}
+```
+
+### 6. 汇总消息包含 initiator 的待处理消息
+
+修改 `sendSummaryMessage`，将 initiator 的待处理消息合并：
+
+```typescript
+async function sendSummaryMessage(
+  host: GroupHost,
+  groupId: string,
+  initiators: string[],
+): Promise<void> {
+  const chain = groupChainStates.get(groupId);
+  if (!chain) return;
+
+  // 构建汇总消息
+  let summaryContent = "请确认是否有新的想法或补充。如果当前讨论已结束或没有新内容，可以不回复。";
+
+  // 收集 initiator 的待处理消息
+  for (const initiatorId of initiators) {
+    const initiatorPendings = chain.pendingMentions.filter((p) => p.agentId === initiatorId);
+
+    if (initiatorPendings.length > 0) {
+      summaryContent += `\n\n---\n**以下是对你的提及：**\n`;
+
+      for (const pending of initiatorPendings.sort(
+        (a, b) => a.message.timestamp - b.message.timestamp,
+      )) {
+        summaryContent += `\n[${pending.fromAgentId}]: ${pending.message.content}`;
+      }
+    }
+  }
+
+  // 发送汇总
+  await host.client.request("group.send", {
+    groupId,
+    message: summaryContent,
+    mentions: initiators,
+    sender: { type: "owner" },
+    skipTranscript: true,
+  });
+
+  console.log(`[group-chat] summary sent to: ${initiators.join(", ")}`);
+}
+```
+
+### 7. 触发时机修改
+
+**重要变更：** 不再依赖 `group.stream (final)` 信号，改为检测 UI 加载状态。
+
+**新触发逻辑：**
+
+1. 在 `handleGroupMessageEvent` 中触发 `detectAndForwardMentions` 和 `scheduleSummaryCheck`
+2. `scheduleSummaryCheck` 检测 UI 是否有加载效果（`groupPendingAgents` 或 `groupStreams`）
+3. 如果 UI 还在加载，等待 1 秒后重试
+4. 如果 UI 空闲，开始计时
+
+```typescript
+// 在 handleGroupMessageEvent 中
+if (payload.sender.type === "agent") {
+  // 触发 @mention 检测和转发
+  void detectAndForwardMentions(host as GroupHost, payload);
+
+  // 触发汇总检测
+  scheduleSummaryCheck(host as GroupHost, payload.groupId);
+}
+
+// 在 scheduleSummaryCheck 中
+const hasPendingAgents = host.groupPendingAgents.size > 0;
+const hasActiveStreams = host.groupStreams.size > 0;
+const isUILoading = hasPendingAgents || hasActiveStreams;
+
+if (isUILoading) {
+  // UI 还在加载，等待 1 秒后重试
+  setTimeout(() => scheduleSummaryCheck(host, groupId), 1000);
+  return;
+}
+
+// UI 空闲，开始计时
+```
+
+**延迟时间调整：**
+
+- 投递时间：**5 秒**（`PRE_SUMMARY_DELIVER_MS`）
+- 汇总时间：**10 秒**（`SUMMARY_DELAY_MS`）
+
+```typescript
+const SUMMARY_DELAY_MS = 10_000; // 汇总等待时间
+const PRE_SUMMARY_DELIVER_MS = 5_000; // 汇总前投递时间
+```
+
+### 8. 自动触发时显示加载效果
+
+自动触发 @mention 时，与手动触发一样，显示加载效果（预测哪些 agent 会被触发）：
+
+```typescript
+// 在 detectAndForwardMentions 中
+if (firstTimeMentions.length > 0) {
+  // 显示自动触发通知
+  appendSystemMessageToUI(host, groupId, `🔄 触发 @${firstTimeMentions.join(" @")}`);
+
+  // 预测并显示加载效果（与手动 @ 相同的行为）
+  const currentPending = host.groupPendingAgents;
+  const newPending = new Set(currentPending);
+  for (const id of firstTimeMentions) {
+    newPending.add(id);
+  }
+  host.groupPendingAgents = newPending;
+
+  // 触发转发
+  await host.client.request("group.send", { ... });
+}
+```
+
+这样用户可以立即看到哪些 agent 正在被触发，体验与手动 @ 一致。
+
+### 9. 完整流程示例
+
+```
+Owner: 大家好
+
+test_1: @test_2 @test_3 @test_4 请分析这个问题
+        → initiators = [test_1]
+        → mentionedAgents = [test_2, test_3, test_4]
+        → 触发 test_2, test_3, test_4
+
+test_2: 我认为需要 @test_4 来处理数据库部分
+        → test_1 是 initiator，从匹配池排除
+        → @test_4 在 mentionedAgents 中！
+        → 不触发 test_4，保存到 pendingMentions:
+          { agentId: "test_4", fromAgentId: "test_2", message: ... }
+
+test_3: 同意，@test_4 你能帮忙吗？
+        → @test_4 再次被提及
+        → 不触发，保存到 pendingMentions:
+          { agentId: "test_4", fromAgentId: "test_3", message: ... }
+
+test_4: 好的，我来处理 @test_2
+        → test_2 在 mentionedAgents 中
+        → 不触发，保存到 pendingMentions:
+          { agentId: "test_2", fromAgentId: "test_4", message: ... }
+
+[所有 agent 已回复，UI 加载效果消失]
+
+[UI 空闲后 10 秒]
+
+→ executeSummaryFlow() 开始
+
+→ deliverPendingMentions():
+   - test_2 不在 initiators 中，发送：
+     "[test_4]: 好的，我来处理 @test_2"
+   - test_4 不在 initiators 中，发送：
+     "[test_2]: 我认为需要 @test_4 来处理数据库部分
+      [test_3]: 同意，@test_4 你能帮忙吗？"
+
+→ 等待 5 秒
+
+→ sendSummaryMessage():
+   - test_1 在 initiators 中
+   - 发送汇总 @test_1
+   - 无待处理消息给 test_1
+
+→ 清空状态：
+   - mentionedAgents = []
+   - pendingMentions = []
+
+→ test_1, test_2, test_4 收到各自的提醒消息
+```
+
+### 9. 状态清空时机
+
+```typescript
+function resetChainState(groupId: string): void {
+  const chain = groupChainStates.get(groupId);
+  if (!chain) return;
+
+  chain.count = 0;
+  chain.startedAt = Date.now();
+  chain.initiators = [];
+  chain.pendingAgents = new Set();
+  chain.lastMessageAt = Date.now();
+  chain.mentionedAgents = []; // 清空已触发的 agent
+  chain.pendingMentions = []; // 清空待投递消息
+}
+
+// 汇总发送后
+function clearAfterSummary(groupId: string): void {
+  const chain = groupChainStates.get(groupId);
+  if (!chain) return;
+
+  chain.initiators = [];
+  chain.mentionedAgents = [];
+  chain.pendingMentions = [];
+}
+```
+
+### 10. 边界情况处理
+
+#### 10.1 待投递消息的目标 agent 已离开群聊
+
+```typescript
+async function deliverPendingMentions(host: GroupHost, groupId: string): Promise<void> {
+  const meta = host.activeGroupMeta;
+  if (!meta) return;
+
+  const memberIds = new Set(meta.members.map((m) => m.agentId));
+
+  // 过滤掉已离开的 agent
+  for (const [agentId, pendings] of deliverMap) {
+    if (!memberIds.has(agentId)) {
+      console.log(`[group-chat] skip pending mentions for left agent: ${agentId}`);
+      deliverMap.delete(agentId);
+    }
+  }
+  // ...继续投递
+}
+```
+
+#### 10.2 同一 agent 被多次@但都在 initiator 中
+
+```
+test_1: @test_2 @test_3 大家好     → initiators = [test_1]
+test_2: @test_1 你好               → test_1 在 initiators 中
+test_3: @test_1 你好               → test_1 在 initiators 中
+```
+
+处理：这些消息会在汇总时合并发送给 test_1。
+
+#### 10.3 达到汇总轮数限制
+
+```typescript
+async function executeSummaryFlow(host: GroupHost, groupId: string): Promise<void> {
+  const rounds = summaryRounds.get(groupId) ?? 0;
+  if (rounds >= MAX_SUMMARY_ROUNDS) {
+    // 达到限制，清空状态但不发送汇总
+    clearAfterSummary(groupId);
+    console.log(`[group-chat] max summary rounds reached for ${groupId}`);
+    return;
+  }
+  // ...继续正常流程
+}
+```
+
+### 11. 与现有机制的关系更新
+
+| 机制               | 关系                                                   |
+| ------------------ | ------------------------------------------------------ |
+| **Chain Limit**    | 汇总消息和待投递消息都计入 chain limit                 |
+| **Chain Duration** | 整个流程在 duration 限制内                             |
+| **Auto-forward**   | 只触发首次@的 agent，重复@转为待投递                   |
+| **Initiator 排除** | initiator 不在 @mention 匹配池中，不会被中途触发       |
+| **触发时机**       | 基于 `group.stream (final)` 事件，而非 `group.message` |

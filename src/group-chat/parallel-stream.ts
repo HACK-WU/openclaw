@@ -6,7 +6,10 @@
  */
 
 import type { GatewayBroadcastFn } from "../gateway/server-broadcast.js";
+import { getLogger } from "../logging.js";
 import type { GroupChatMessage, GroupStreamPayload } from "./types.js";
+
+const log = getLogger("group-chat:broadcast");
 
 // ─── WebSocket event broadcasting ───
 
@@ -14,6 +17,14 @@ export function broadcastGroupStream(
   broadcast: GatewayBroadcastFn,
   payload: GroupStreamPayload,
 ): void {
+  log.info("[BROADCAST_STREAM]", {
+    groupId: payload.groupId,
+    agentId: payload.agentId,
+    runId: payload.runId,
+    state: payload.state,
+    sender: payload.message?.sender,
+    contentPreview: payload.content?.slice(0, 50) ?? payload.message?.content?.slice(0, 50),
+  });
   broadcast("group.stream", payload);
 }
 
@@ -22,6 +33,13 @@ export function broadcastGroupMessage(
   groupId: string,
   message: GroupChatMessage,
 ): void {
+  log.info("[BROADCAST_MESSAGE]", {
+    groupId,
+    messageId: message.id,
+    sender: message.sender,
+    serverSeq: message.serverSeq,
+    contentPreview: message.content.slice(0, 50),
+  });
   broadcast("group.message", { groupId, message });
 }
 

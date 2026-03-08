@@ -20,6 +20,7 @@ import type {
   GroupDisbandDialogState,
   GroupToolMessage,
 } from "../controllers/group-chat.ts";
+import { getMentionedAgents } from "../controllers/group-chat.ts";
 import { t } from "../i18n/index.ts";
 import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
@@ -541,6 +542,7 @@ function renderGroupMessage(
   const timestamp = new Date(msg.timestamp).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
+    second: "2-digit",
   });
 
   // Extract tool cards from message
@@ -551,11 +553,13 @@ function renderGroupMessage(
   // Step 1: Handle escapes (\@ → @) before markdown processing
   // Step 2: Convert markdown to HTML
   // Step 3: Highlight @mentions in the HTML (exclude sender's own mention)
+  // Only highlight agents that have been triggered in current chain
   const memberIds = meta.members.map((m) => m.agentId);
   const senderId = msg.sender.type === "agent" ? msg.sender.agentId : undefined;
+  const mentionedAgents = getMentionedAgents(msg.groupId);
   const contentWithEscapes = msg.content.replace(/\\@/g, "@");
   const markdownHtml = toSanitizedMarkdownHtml(contentWithEscapes);
-  const contentHtml = highlightMentionsInHtml(markdownHtml, memberIds, senderId);
+  const contentHtml = highlightMentionsInHtml(markdownHtml, memberIds, senderId, mentionedAgents);
 
   return html`
     <div class="chat-group ${roleClass}">
@@ -587,6 +591,7 @@ function renderGroupStreamBubble(
   const timestamp = new Date(stream.startedAt).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
+    second: "2-digit",
   });
 
   // Render tool cards if available
@@ -1141,7 +1146,8 @@ function parseMentions(
     if (name === "all" || name === "全体成员") {
       hasAllMention = true;
     } else {
-      const member = members.find((m) => m.agentId === name || m.agentId.includes(name));
+      // Find member by exact match only (no partial matching to avoid confusion)
+      const member = members.find((m) => m.agentId === name);
       if (member) {
         mentions.push(member.agentId);
       }
@@ -1216,13 +1222,35 @@ function formatTimeAgo(ts: number): string {
  * Replaces @agentId with <mark class="mention">@agentId</mark> for valid members.
  * Avoids replacing inside HTML tags or attributes, and excludes sender's own mention.
  */
-function highlightMentionsInHtml(html: string, memberIds: string[], excludeId?: string): string {
+/**
+ * Highlight @mentions in HTML content.
+ * Only highlights agents that have been triggered (in highlightIds).
+ * If highlightIds is empty, falls back to highlighting all valid members.
+ */
+function highlightMentionsInHtml(
+  html: string,
+  memberIds: string[],
+  excludeId?: string,
+  highlightIds?: string[],
+): string {
   if (!memberIds.length) {
     return html;
   }
 
+  // Determine which IDs to highlight
+  // If highlightIds is provided, only highlight those that are also valid members
+  // Otherwise, highlight all valid members (backward compatibility)
+  const idsToHighlight =
+    highlightIds && highlightIds.length > 0
+      ? highlightIds.filter((id) => memberIds.includes(id))
+      : memberIds;
+
+  if (!idsToHighlight.length) {
+    return html;
+  }
+
   // Sort by length descending to match longer IDs first
-  const sortedIds = [...memberIds].toSorted((a, b) => b.length - a.length);
+  const sortedIds = [...idsToHighlight].toSorted((a, b) => b.length - a.length);
 
   // Process each member ID
   let result = html;

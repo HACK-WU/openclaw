@@ -86,6 +86,7 @@ export type GroupStreamPayload = {
   state: "delta" | "final" | "error" | "aborted";
   content?: string; // delta text (backend field name)
   text?: string; // alias for content (frontend compatibility)
+  message?: GroupChatMessage; // final message (only present when state is "final")
   errorMessage?: string;
   /** Tool messages for real-time tool card display */
   toolMessages?: GroupToolMessage[];
@@ -200,42 +201,19 @@ export function extractDedicatedMentions(content: string, memberIds: string[]): 
     return [];
   }
 
-  const lines = content.trim().split("\n");
+  // Extract ALL @mentions from content (inline or dedicated lines)
   const mentions: string[] = [];
 
-  for (const line of lines) {
-    const trimmedLine = line.trim();
-    if (!trimmedLine) {
-      continue;
-    }
+  // Match @agentId pattern globally
+  // Use word boundary to avoid matching @ inside other words
+  const mentionPattern = /@([a-zA-Z0-9_-]+)/g;
+  let match;
 
-    // Check if line is ONLY @mentions (possibly multiple, separated by spaces)
-    // Pattern: "@id1 @id2 @id3" where each id is a valid member
-    const parts = trimmedLine.split(/\s+/);
-    let allPartsAreMentions = true;
-    const lineMentions: string[] = [];
-
-    for (const part of parts) {
-      if (part.startsWith("@")) {
-        const agentId = part.slice(1);
-        // Only count as mention if it's a valid member
-        if (memberIds.includes(agentId)) {
-          lineMentions.push(agentId);
-        } else {
-          // Not a valid member, so this part is just regular text
-          allPartsAreMentions = false;
-          break;
-        }
-      } else {
-        // Not a mention at all
-        allPartsAreMentions = false;
-        break;
-      }
-    }
-
-    // Only add mentions if the ENTIRE line is made of valid @mentions
-    if (allPartsAreMentions && lineMentions.length > 0) {
-      mentions.push(...lineMentions);
+  while ((match = mentionPattern.exec(content)) !== null) {
+    const agentId = match[1];
+    // Only count if it's a valid member
+    if (memberIds.includes(agentId)) {
+      mentions.push(agentId);
     }
   }
 
@@ -291,6 +269,13 @@ function escapeRegExp(str: string): string {
 
 // ─── Initiator Summary Mechanism ───
 
+/** Pending mention message for delayed delivery */
+type PendingMention = {
+  agentId: string; // Target agent who was @mentioned
+  message: GroupChatMessage; // The message containing the @mention
+  fromAgentId: string; // Sender agentId
+};
+
 /** Per-group chain state for forward limiting and initiator tracking */
 type ChainState = {
   count: number;
@@ -298,6 +283,8 @@ type ChainState = {
   initiators: string[]; // Ordered list of agents who @mentioned others (deduped)
   pendingAgents: Set<string>; // Agents triggered but not yet replied
   lastMessageAt: number; // Timestamp of last message
+  mentionedAgents: string[]; // Agents already triggered in this chain (deduped, ordered)
+  pendingMentions: PendingMention[]; // Repeated @mentions waiting for delivery
 };
 
 const groupChainStates = new Map<string, ChainState>();
@@ -308,7 +295,8 @@ const summaryRounds = new Map<string, number>();
 
 const MAX_CHAIN_FORWARDS = 10;
 const MAX_CHAIN_DURATION_MS = 5 * 60_000; // 5 minutes
-const SUMMARY_DELAY_MS = 10_000; // Wait after all agents replied
+const SUMMARY_DELAY_MS = 10_000; // Wait after all agents replied (summary trigger)
+const PRE_SUMMARY_DELIVER_MS = 5_000; // Deliver pending mentions 5s before summary
 const MAX_PENDING_WAIT_MS = 30_000; // Max wait for pending agents
 const MAX_SUMMARY_ROUNDS = 3;
 
@@ -323,6 +311,8 @@ function getOrCreateChainState(groupId: string): ChainState {
       initiators: [],
       pendingAgents: new Set(),
       lastMessageAt: now,
+      mentionedAgents: [],
+      pendingMentions: [],
     };
     groupChainStates.set(groupId, chain);
   }
@@ -334,6 +324,18 @@ function addInitiator(chain: ChainState, agentId: string): void {
   if (!chain.initiators.includes(agentId)) {
     chain.initiators.push(agentId);
   }
+}
+
+/** Add mentioned agent to list (deduped, ordered) */
+function addMentionedAgent(chain: ChainState, agentId: string): void {
+  if (!chain.mentionedAgents.includes(agentId)) {
+    chain.mentionedAgents.push(agentId);
+  }
+}
+
+/** Check if agent has already been mentioned in this chain */
+function hasBeenMentioned(chain: ChainState, agentId: string): boolean {
+  return chain.mentionedAgents.includes(agentId);
 }
 
 /** Cancel summary timer for a group */
@@ -348,37 +350,166 @@ function cancelSummaryTimer(groupId: string): void {
 /** Schedule a summary check */
 function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
   const chain = groupChainStates.get(groupId);
-  if (!chain || chain.initiators.length === 0) {
+  if (!chain) {
+    console.log(`[group-chat] scheduleSummaryCheck: no chain for ${groupId}`);
     return;
   }
+  if (chain.initiators.length === 0) {
+    console.log(`[group-chat] scheduleSummaryCheck: no initiators for ${groupId}`);
+    return;
+  }
+
+  // Check if UI is still loading (has pending agents or active streams)
+  const hasPendingAgents = host.groupPendingAgents.size > 0;
+  const hasActiveStreams = host.groupStreams.size > 0;
+  const isUILoading = hasPendingAgents || hasActiveStreams;
+
+  console.log(
+    `[group-chat] scheduleSummaryCheck: group=${groupId} initiators=[${chain.initiators.join(",")}] ` +
+      `pendingAgents=[${[...chain.pendingAgents].join(",")}] ` +
+      `UILoading=${isUILoading} (pending=${hasPendingAgents}, streams=${hasActiveStreams})`,
+  );
 
   // Cancel existing timer
   cancelSummaryTimer(groupId);
 
+  // If UI is still loading, wait and retry
+  if (isUILoading) {
+    console.log(`[group-chat] scheduleSummaryCheck: UI still loading, waiting...`);
+    const timer = window.setTimeout(() => {
+      scheduleSummaryCheck(host, groupId);
+    }, 1000); // Check again in 1 second
+    summaryTimers.set(groupId, timer);
+    return;
+  }
+
+  // UI is idle, start the summary countdown
   const now = Date.now();
   const elapsed = now - chain.lastMessageAt;
   const totalWait = now - chain.startedAt;
 
   let delay: number;
 
-  if (chain.pendingAgents.size === 0) {
-    // All agents replied, wait SUMMARY_DELAY_MS
-    delay = Math.max(0, SUMMARY_DELAY_MS - elapsed);
+  // Check for max wait time
+  if (totalWait >= MAX_PENDING_WAIT_MS) {
+    // Waited too long, trigger immediately
+    delay = 0;
   } else {
-    // Some agents pending
-    if (totalWait >= MAX_PENDING_WAIT_MS) {
-      // Waited too long, trigger summary immediately
-      delay = 0;
-    } else {
-      // Continue waiting
-      delay = Math.min(SUMMARY_DELAY_MS, MAX_PENDING_WAIT_MS - totalWait);
+    // Wait SUMMARY_DELAY_MS from last message
+    delay = Math.max(0, SUMMARY_DELAY_MS - elapsed);
+  }
+
+  console.log(`[group-chat] scheduleSummaryCheck: scheduling summary in ${delay}ms`);
+
+  const timer = window.setTimeout(() => {
+    void executeSummaryFlow(host, groupId);
+  }, delay);
+  summaryTimers.set(groupId, timer);
+}
+
+/**
+ * Execute summary flow:
+ * 1. Deliver pending mentions to non-initiator agents
+ * 2. Wait 5 seconds for them to process
+ * 3. Send summary to initiators
+ */
+async function executeSummaryFlow(host: GroupHost, groupId: string): Promise<void> {
+  console.log(`[group-chat] executeSummaryFlow: starting for ${groupId}`);
+  const chain = groupChainStates.get(groupId);
+  if (!chain) {
+    console.log(`[group-chat] executeSummaryFlow: no chain for ${groupId}`);
+    return;
+  }
+
+  // Step 1: Deliver pending mentions to non-initiators
+  await deliverPendingMentions(host, groupId);
+
+  // Step 2: Wait for agents to process
+  await new Promise((resolve) => setTimeout(resolve, PRE_SUMMARY_DELIVER_MS));
+
+  // Step 3: Send summary to initiators
+  if (chain.initiators.length > 0) {
+    await sendSummaryMessage(host, groupId);
+  }
+}
+
+/**
+ * Deliver pending @mention messages to non-initiator agents.
+ * Initiators will receive their pending mentions in the summary message.
+ */
+async function deliverPendingMentions(host: GroupHost, groupId: string): Promise<void> {
+  const chain = groupChainStates.get(groupId);
+  if (!chain || chain.pendingMentions.length === 0) {
+    return;
+  }
+
+  const meta = host.activeGroupMeta;
+  if (!meta || !host.client || !host.connected) {
+    return;
+  }
+
+  const memberIds = new Set(meta.members.map((m) => m.agentId));
+  const initiatorSet = new Set(chain.initiators);
+
+  // Group pending mentions by target agent (exclude initiators and left members)
+  const deliverMap = new Map<string, PendingMention[]>();
+
+  for (const pending of chain.pendingMentions) {
+    // Skip initiators (they get mentions in summary)
+    if (initiatorSet.has(pending.agentId)) {
+      continue;
+    }
+    // Skip agents who left the group
+    if (!memberIds.has(pending.agentId)) {
+      continue;
+    }
+
+    const list = deliverMap.get(pending.agentId) ?? [];
+    list.push(pending);
+    deliverMap.set(pending.agentId, list);
+  }
+
+  // Collect agents to deliver to (for UI notification)
+  const agentsToDeliver: string[] = [];
+
+  // Deliver in order of mentionedAgents
+  for (const agentId of chain.mentionedAgents) {
+    const pendings = deliverMap.get(agentId);
+    if (!pendings || pendings.length === 0) {
+      continue;
+    }
+
+    agentsToDeliver.push(agentId);
+
+    // Sort by timestamp and merge messages
+    const messages = pendings
+      .toSorted((a, b) => a.message.timestamp - b.message.timestamp)
+      .map((p) => `[${p.fromAgentId}]: ${p.message.content}`);
+
+    try {
+      await host.client.request("group.send", {
+        groupId,
+        message: messages.join("\n\n"),
+        mentions: [agentId],
+        sender: { type: "owner" },
+        skipTranscript: true,
+      });
+      console.log(
+        `[group-chat] delivered pending mentions to ${agentId}: ${pendings.length} messages`,
+      );
+    } catch (err) {
+      console.error(`[group-chat] failed to deliver pending mentions to ${agentId}:`, err);
     }
   }
 
-  const timer = window.setTimeout(() => {
-    void sendSummaryMessage(host, groupId);
-  }, delay);
-  summaryTimers.set(groupId, timer);
+  // Show delivery notification in UI
+  if (agentsToDeliver.length > 0) {
+    appendSystemMessageToUI(
+      host,
+      groupId,
+      `📤 正在投递待处理消息给 ${agentsToDeliver.map((id) => `@${id}`).join(" ")}`,
+    );
+  }
 }
 
 /** Send summary message to trigger initiators */
@@ -413,29 +544,39 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
   summaryRounds.set(groupId, rounds + 1);
 
   // Show summary trigger notification
-  appendSystemMessageToUI(
-    host,
-    groupId,
-    `📢 已触发汇总，等待 ${validInitiators.map((id) => `@${id}`).join(" ")} 回复...`,
-  );
+  appendSystemMessageToUI(host, groupId, `📢 汇总 @${validInitiators.join(" @")}`);
 
-  // Summary message
-  const summaryMessage = `请确认是否有新的想法或补充。
+  // Build summary message, including pending mentions for initiators
+  let summaryContent = `请确认是否有新的想法或补充。
 
 如果当前讨论已结束或没有新内容，可以：
 - 不回复（跳过）
 - 回复简单语句，如"收到"、"明白"、"了解"`;
 
+  // Add pending mentions for each initiator
+  for (const initiatorId of validInitiators) {
+    const initiatorPendings = chain.pendingMentions.filter((p) => p.agentId === initiatorId);
+
+    if (initiatorPendings.length > 0) {
+      summaryContent += `\n\n---\n**以下是对你的提及：**`;
+      for (const pending of initiatorPendings.toSorted(
+        (a, b) => a.message.timestamp - b.message.timestamp,
+      )) {
+        summaryContent += `\n[${pending.fromAgentId}]: ${pending.message.content}`;
+      }
+    }
+  }
+
   try {
     await host.client.request("group.send", {
       groupId,
-      message: summaryMessage,
+      message: summaryContent,
       mentions: validInitiators,
       sender: { type: "owner" },
       skipTranscript: true,
     });
 
-    // Reset chain state after summary (clear initiators for new round)
+    // Reset chain state after summary (clear for new round)
     const now = Date.now();
     groupChainStates.set(groupId, {
       count: 0,
@@ -443,6 +584,8 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
       initiators: [], // Clear for new round
       pendingAgents: new Set(validInitiators), // Track who was triggered
       lastMessageAt: now,
+      mentionedAgents: [], // Clear mentioned agents
+      pendingMentions: [], // Clear pending mentions
     });
 
     console.log(`[group-chat] summary sent: group=${groupId} to=[${validInitiators.join(",")}]`);
@@ -458,6 +601,12 @@ export function resetChainState(groupId: string): void {
   }
   groupChainStates.delete(groupId);
   cancelSummaryTimer(groupId);
+}
+
+/** Get mentioned agents for a group (agents that have been triggered in current chain) */
+export function getMentionedAgents(groupId: string): string[] {
+  const chain = groupChainStates.get(groupId);
+  return chain?.mentionedAgents ?? [];
 }
 
 /** Cancel summary manually */
@@ -483,7 +632,10 @@ export async function triggerSummary(host: GroupHost, groupId: string): Promise<
  * IMPORTANT: Only mentions on DEDICATED LINES (lines with only @mentions)
  * trigger routing. Mentions on lines with other content are for display only.
  *
- * Called after a group.message event is received and rendered.
+ * NEW: If an agent has already been triggered in this chain, the mention
+ * is saved for later delivery (before summary or in summary message).
+ *
+ * Called after a group.stream (final) event is received.
  */
 export async function detectAndForwardMentions(
   host: GroupHost,
@@ -512,6 +664,18 @@ export async function detectAndForwardMentions(
 
   if (dedicatedMentions.length === 0) {
     // No dedicated mention lines → chain naturally ends
+    // But if there are initiators, schedule summary check first
+    const chain = groupChainStates.get(message.groupId);
+    console.log(
+      `[group-chat] no dedicated mentions, chain exists: ${!!chain}, initiators: [${chain?.initiators.join(",") ?? "none"}]`,
+    );
+    if (chain && chain.initiators.length > 0) {
+      // Update last message time and schedule summary
+      chain.lastMessageAt = Date.now();
+      console.log(`[group-chat] scheduling summary check due to no mentions`);
+      scheduleSummaryCheck(host, message.groupId);
+      return;
+    }
     resetChainState(message.groupId);
     return;
   }
@@ -521,6 +685,13 @@ export async function detectAndForwardMentions(
   const mentionedIds = [...new Set(dedicatedMentions.filter((id) => id !== senderAgentId))];
 
   if (mentionedIds.length === 0) {
+    // All mentions were to self, treat as no mentions
+    const chain = groupChainStates.get(message.groupId);
+    if (chain && chain.initiators.length > 0) {
+      chain.lastMessageAt = Date.now();
+      scheduleSummaryCheck(host, message.groupId);
+      return;
+    }
     resetChainState(message.groupId);
     return;
   }
@@ -558,17 +729,49 @@ export async function detectAndForwardMentions(
     return;
   }
 
+  // Track initiator (agent who @mentioned others)
+  if (senderAgentId) {
+    addInitiator(chain, senderAgentId);
+    console.log(
+      `[group-chat] added initiator: ${senderAgentId}, current initiators: [${chain.initiators.join(",")}]`,
+    );
+  }
+
+  // Separate first-time mentions from repeated mentions
+  const firstTimeMentions: string[] = [];
+
+  for (const agentId of mentionedIds) {
+    if (hasBeenMentioned(chain, agentId)) {
+      // Already triggered in this chain, save for later delivery
+      chain.pendingMentions.push({
+        agentId,
+        message,
+        fromAgentId: senderAgentId ?? "unknown",
+      });
+      console.log(`[group-chat] pending mention saved: ${agentId} already triggered`);
+    } else {
+      // First time being mentioned
+      firstTimeMentions.push(agentId);
+      addMentionedAgent(chain, agentId);
+    }
+  }
+
+  // Only trigger first-time mentions
+  if (firstTimeMentions.length === 0) {
+    // All mentioned agents were already triggered
+    // Still schedule summary check if there are initiators
+    if (chain.initiators.length > 0) {
+      scheduleSummaryCheck(host, message.groupId);
+    }
+    return;
+  }
+
   // Update chain state
   chain.count += 1;
   chain.lastMessageAt = now;
 
-  // Track initiator (agent who @mentioned others)
-  if (senderAgentId) {
-    addInitiator(chain, senderAgentId);
-  }
-
   // Track pending agents (who will be triggered)
-  for (const id of mentionedIds) {
+  for (const id of firstTimeMentions) {
     chain.pendingAgents.add(id);
   }
 
@@ -595,8 +798,20 @@ export async function detectAndForwardMentions(
   const forwardedText = contentLines.join("\n");
 
   console.log(
-    `[group-chat] auto-forward: group=${message.groupId} from=${senderAgentId} to=[${mentionedIds.join(",")}] chain=${chain.count}/${MAX_CHAIN_FORWARDS}`,
+    `[group-chat] auto-forward: group=${message.groupId} from=${senderAgentId} to=[${firstTimeMentions.join(",")}] chain=${chain.count}/${MAX_CHAIN_FORWARDS}`,
   );
+
+  // Show auto-forward notification
+  appendSystemMessageToUI(host, message.groupId, `🔄 触发 @${firstTimeMentions.join(" @")}`);
+
+  // Predict which agents will respond so we can show pending indicators immediately
+  // This matches the behavior of manual @mentions
+  const currentPending = host.groupPendingAgents;
+  const newPending = new Set(currentPending);
+  for (const id of firstTimeMentions) {
+    newPending.add(id);
+  }
+  host.groupPendingAgents = newPending;
 
   // Forward: reuse group.send with sender set to the replying agent
   // skipTranscript: true → backend skips duplicate write + broadcast
@@ -605,7 +820,7 @@ export async function detectAndForwardMentions(
       groupId: message.groupId,
       message: forwardedText,
       sender: { type: "agent", agentId: senderAgentId },
-      mentions: mentionedIds,
+      mentions: firstTimeMentions,
       skipTranscript: true,
     });
   } catch (err) {
@@ -618,6 +833,12 @@ export async function detectAndForwardMentions(
         `⚠️ Server-side chain limit reached. Auto-forwarding has been stopped. ` +
           `Send a new message to start a fresh conversation.`,
       );
+      // Clear pending on error
+      const next = new Set(host.groupPendingAgents);
+      for (const id of firstTimeMentions) {
+        next.delete(id);
+      }
+      host.groupPendingAgents = next;
     } else {
       console.error("[group-chat] forward mention failed:", err);
     }
@@ -748,6 +969,8 @@ export async function sendGroupMessage(
     initiators: existingInitiators, // Keep previous initiators
     pendingAgents: new Set(),
     lastMessageAt: now,
+    mentionedAgents: [],
+    pendingMentions: [],
   });
 
   host.groupSending = true;
@@ -991,11 +1214,28 @@ export function handleGroupMessageEvent(
   host: GroupChatState,
   payload: { groupId: string } & GroupChatMessage,
 ): void {
+  // Debug log: record received message
+  console.log("[GROUP_CHAT_DEBUG] RECEIVED_MESSAGE", {
+    timestamp: new Date().toISOString(),
+    groupId: payload.groupId,
+    messageId: payload.id,
+    sender: payload.sender,
+    role: payload.role,
+    serverSeq: payload.serverSeq,
+    messageTimestamp: payload.timestamp,
+    contentLength: payload.content.length,
+    contentPreview: payload.content.slice(0, 100),
+    mentions: payload.mentions,
+  });
+
   if (payload.groupId !== host.activeGroupId) {
     return;
   }
   // Deduplicate by message id
   if (host.groupMessages.some((m) => m.id === payload.id)) {
+    console.log("[GROUP_CHAT_DEBUG] DUPLICATE_MESSAGE_SKIPPED", {
+      messageId: payload.id,
+    });
     return;
   }
   host.groupMessages = [...host.groupMessages, payload];
@@ -1009,11 +1249,13 @@ export function handleGroupMessageEvent(
       chain.lastMessageAt = Date.now();
     }
 
-    // Auto-detect @mentions and forward
-    void detectAndForwardMentions(host as GroupHost, payload);
-
-    // Schedule summary check after message processed
-    scheduleSummaryCheck(host as GroupHost, payload.groupId);
+    // Auto-detect @mentions and forward (triggered when message is received)
+    // This is async, but the sync part (setting groupPendingAgents) happens immediately
+    void detectAndForwardMentions(host as GroupHost, payload).then(() => {
+      // Schedule summary check after @mention detection completes
+      // This ensures groupPendingAgents is set before we check UI loading state
+      scheduleSummaryCheck(host as GroupHost, payload.groupId);
+    });
   }
 }
 
@@ -1021,6 +1263,19 @@ const streamBuffers = new Map<string, string>();
 let streamSyncTimer: number | null = null;
 
 export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStreamPayload): void {
+  // Debug log: record stream event
+  console.log("[GROUP_CHAT_DEBUG] RECEIVED_STREAM", {
+    timestamp: new Date().toISOString(),
+    groupId: payload.groupId,
+    agentId: payload.agentId,
+    runId: payload.runId,
+    state: payload.state,
+    contentLength: payload.content?.length ?? 0,
+    hasMessage: !!payload.message,
+    messageSender: payload.message?.sender,
+    messageContent: payload.message?.content?.slice(0, 100),
+  });
+
   if (payload.groupId !== host.activeGroupId) {
     return;
   }
@@ -1123,6 +1378,10 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     const toolNext = new Map(currentToolMessages);
     toolNext.delete(`${payload.agentId}:${payload.runId}`);
     host.groupToolMessages = toolNext;
+
+    // Schedule summary check when stream ends (UI may become idle)
+    scheduleSummaryCheck(host as GroupHost, payload.groupId);
+
     return;
   }
 }
