@@ -199,8 +199,8 @@ export async function triggerAgentReasoning(
     // Inject timestamp
     const stampedBody = injectTimestamp(bodyForAgent, timestampOptsFromConfig(cfg));
 
-    // Build session key for group chat agent
-    const sessionKey = buildGroupSessionKey(groupId);
+    // Build session key for group chat agent — per-agent isolation
+    const sessionKey = buildGroupSessionKey(groupId, agentId);
 
     // Construct MsgContext following chat.send pattern
     const ctx: MsgContext = {
