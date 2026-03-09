@@ -1530,6 +1530,11 @@ export function renderApp(state: AppViewState) {
                     groupShowThinking: !state.settings.groupShowThinking,
                   });
                 },
+                onOpenSidebar: (content: string) => state.handleOpenSidebar(content),
+                onCloseSidebar: () => state.handleCloseSidebar(),
+                sidebarOpen: state.sidebarOpen,
+                sidebarContent: state.sidebarContent,
+                sidebarError: state.sidebarError,
                 onOpenDisbandDialog: () => {
                   if (state.activeGroupId && state.activeGroupMeta) {
                     openDisbandGroupDialog(

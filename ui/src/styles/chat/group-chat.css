@@ -196,6 +196,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
   gap: 12px;
+  position: relative;
 }
 
 .group-chat-room__main {
@@ -212,6 +213,38 @@
   background: var(--card);
   border-radius: var(--radius-md);
   overflow: hidden;
+}
+
+/* ─── Sidebar Overlay (covers members panel area from the right) ─── */
+
+.group-chat-room__sidebar-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 45%;
+  min-width: 320px;
+  max-width: 560px;
+  background: var(--card);
+  border-left: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.12);
+  z-index: 10;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: group-sidebar-slide-in 0.2s ease-out;
+}
+
+@keyframes group-sidebar-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 .group-chat-room__info-toggle {

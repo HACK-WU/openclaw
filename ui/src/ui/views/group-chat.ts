@@ -27,6 +27,7 @@ import { t } from "../i18n/index.ts";
 import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
 import type { ToolCard } from "../types/chat-types.ts";
+import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
 
 // ─── Mention Dropdown State ───
 let mentionDropdownState = {
@@ -180,6 +181,12 @@ export type GroupChatViewProps = {
   // Thinking toggle (matches single chat pattern)
   showThinking: boolean;
   onToggleShowThinking: () => void;
+  // Sidebar for tool output viewing (overlay mode — covers members panel)
+  sidebarOpen?: boolean;
+  sidebarContent?: string | null;
+  sidebarError?: string | null;
+  onOpenSidebar?: (content: string) => void;
+  onCloseSidebar?: () => void;
 };
 
 // ─── Main Render ───
@@ -296,6 +303,9 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
   // Pending agents that are NOT yet streaming (exclude agents already in groupStreams)
   const pendingOnly = [...groupPendingAgents].filter((id) => !groupStreams.has(id));
 
+  // Sidebar state — overlay mode for group chat (covers members panel, does not push content)
+  const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
+
   return html`
     <div class="group-chat-room">
       <div class="group-chat-room__header">
@@ -356,7 +366,14 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
             ${repeat(
               groupMessages,
               (m) => m.id,
-              (m) => renderGroupMessage(m, meta, props.agentsList, props.showThinking),
+              (m) =>
+                renderGroupMessage(
+                  m,
+                  meta,
+                  props.agentsList,
+                  props.showThinking,
+                  props.onOpenSidebar,
+                ),
             )}
 
             ${Array.from(groupStreams.entries()).map(([agentId, stream]) => {
@@ -369,6 +386,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                 props.agentsList,
                 tools,
                 props.showThinking,
+                props.onOpenSidebar,
               );
             })}
 
@@ -523,6 +541,26 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
         <aside class="group-chat-room__members-panel">
           ${renderGroupMembersPanel(meta, props)}
         </aside>
+
+        ${
+          sidebarOpen
+            ? html`
+              <div class="group-chat-room__sidebar-overlay">
+                ${renderMarkdownSidebar({
+                  content: props.sidebarContent ?? null,
+                  error: props.sidebarError ?? null,
+                  onClose: props.onCloseSidebar!,
+                  onViewRawText: () => {
+                    if (!props.sidebarContent || !props.onOpenSidebar) {
+                      return;
+                    }
+                    props.onOpenSidebar(`\`\`\`\n${props.sidebarContent}\n\`\`\``);
+                  },
+                })}
+              </div>
+            `
+            : nothing
+        }
       </div>
 
       ${props.groupInfoPanelOpen ? renderGroupInfoPanel(meta, props) : nothing}
@@ -539,6 +577,7 @@ function renderGroupMessage(
   meta: GroupSessionMeta,
   agentsList: GroupChatViewProps["agentsList"],
   showThinking = false,
+  onOpenSidebar?: (content: string) => void,
 ) {
   const isSystem = msg.role === "system" || msg.sender.type === "system";
   if (isSystem) {
@@ -595,7 +634,7 @@ function renderGroupMessage(
           }
           <div class="chat-text">${unsafeHTML(contentHtml)}</div>
         </div>
-        ${classified ? renderInlineToolCards(classified, undefined) : nothing}
+        ${classified ? renderInlineToolCards(classified, onOpenSidebar) : nothing}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${isUser ? "You" : senderName}</span>
           <span class="chat-group-timestamp">${timestamp}</span>
@@ -612,6 +651,7 @@ function renderGroupStreamBubble(
   agentsList: GroupChatViewProps["agentsList"],
   toolMessages?: GroupToolMessage[],
   showThinking = false,
+  onOpenSidebar?: (content: string) => void,
 ) {
   const sender: { type: "agent"; agentId: string } = { type: "agent", agentId };
   const senderName = resolveSenderName(sender, meta, agentsList);
@@ -634,7 +674,7 @@ function renderGroupStreamBubble(
     }));
     // Classify the tool cards and render them
     const classified = classifyToolCards(toolCardList);
-    toolCards = renderInlineToolCards(classified);
+    toolCards = renderInlineToolCards(classified, onOpenSidebar);
   }
 
   // For streaming text, extract thinking if <think> tags are present
@@ -670,8 +710,8 @@ function renderGroupStreamBubble(
         <div class="chat-bubble streaming">
           ${streamThinkingHtml}
           ${displayText?.trim() ? html`<div class="chat-text chat-text-streaming" ${typewriter(displayText)}></div>` : nothing}
-          ${toolCards}
         </div>
+        ${toolCards}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${senderName}</span>
           <span class="group-stream-indicator">

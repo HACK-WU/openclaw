@@ -380,8 +380,10 @@ export async function runAgentTurnWithFallback(params: {
                   typeof evt.data.args === "object" && evt.data.args !== null
                     ? (evt.data.args as Record<string, unknown>)
                     : undefined;
-                if (phase === "start" || phase === "update") {
-                  await params.typingSignals.signalToolStart();
+                if (phase === "start" || phase === "update" || phase === "result") {
+                  if (phase !== "result") {
+                    await params.typingSignals.signalToolStart();
+                  }
                   await params.opts?.onToolStart?.({ name, phase, toolCallId, args });
                 }
               }

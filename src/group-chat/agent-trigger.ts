@@ -95,6 +95,36 @@ function addToolCall(
   return message;
 }
 
+/**
+ * Add a tool result message to the collector.
+ * Marks the corresponding tool_call as completed.
+ */
+function addToolResult(
+  collector: ToolCollectorState,
+  params: {
+    groupId: string;
+    agentId: string;
+    runId: string;
+    toolCallId: string;
+  },
+): GroupToolMessage {
+  const pending = collector.pendingToolCalls.get(params.toolCallId);
+  const message: GroupToolMessage = {
+    id: `tool-result-${params.toolCallId}`,
+    groupId: params.groupId,
+    agentId: params.agentId,
+    runId: params.runId,
+    role: "tool",
+    toolCallId: params.toolCallId,
+    toolName: pending?.toolName,
+    toolArgs: pending?.toolArgs,
+    timestamp: Date.now(),
+  };
+  collector.messages.push(message);
+  collector.pendingToolCalls.delete(params.toolCallId);
+  return message;
+}
+
 export type TriggerAgentResult = {
   run: GroupAgentRun;
   replyMessage?: GroupChatMessage;
@@ -273,8 +303,13 @@ export async function triggerAgentReasoning(
           }
         },
         onToolStart: (toolInfo) => {
-          // Tool call started - add to collector and broadcast
-          if (toolInfo.name && toolInfo.phase === "start" && toolInfo.toolCallId) {
+          if (!toolInfo.toolCallId) {
+            return;
+          }
+          const phase = toolInfo.phase ?? "";
+
+          if (phase === "start" && toolInfo.name) {
+            // Tool call started - add to collector and broadcast
             addToolCall(toolCollector, {
               groupId,
               agentId,
@@ -283,9 +318,21 @@ export async function triggerAgentReasoning(
               toolName: toolInfo.name,
               toolArgs: toolInfo.args ?? {},
             });
-            // Broadcast immediately so UI shows tool call
+            // Broadcast immediately so UI shows tool call card
+            broadcastStream(undefined, toolCollector.messages);
+          } else if (phase === "result") {
+            // Tool call completed - add result to collector and broadcast
+            addToolResult(toolCollector, {
+              groupId,
+              agentId,
+              runId,
+              toolCallId: toolInfo.toolCallId,
+            });
+            // Broadcast so UI updates tool card status to completed
             broadcastStream(undefined, toolCollector.messages);
           }
+          // phase === "update" is intentionally not handled here;
+          // partial results are not streamed to group chat to keep things simple.
         },
       },
     });
