@@ -254,6 +254,12 @@ export const en: Record<string, string> = {
   "chat.group.namePlaceholder": "Enter group name...",
   "chat.group.selectAgents": "Select Agents",
   "chat.group.messageMode": "Message Mode",
+  "chat.group.messageMode.unicast": "Unicast",
+  "chat.group.messageMode.unicastDesc":
+    "When no @mention is specified, messages are sent to the assistant only. Use @mention to target specific agents.",
+  "chat.group.messageMode.broadcast": "Broadcast",
+  "chat.group.messageMode.broadcastDesc":
+    "When no @mention is specified, messages are sent to all members. ⚠️ Consumes a large amount of tokens — use with caution.",
   "chat.group.announcement": "Announcement",
   "chat.group.memberList": "Members",
   "chat.group.settings": "Settings",

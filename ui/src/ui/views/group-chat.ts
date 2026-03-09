@@ -940,9 +940,12 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
                 props.onUpdateMessageMode(value);
               }}
             >
-              <option value="unicast" ?selected=${meta.messageMode === "unicast"}>Unicast</option>
-              <option value="broadcast" ?selected=${meta.messageMode === "broadcast"}>Broadcast</option>
+              <option value="unicast" ?selected=${meta.messageMode === "unicast"}>${t("chat.group.messageMode.unicast")}</option>
+              <option value="broadcast" ?selected=${meta.messageMode === "broadcast"}>${t("chat.group.messageMode.broadcast")}</option>
             </select>
+            <span class="group-info-panel__mode-desc ${meta.messageMode === "broadcast" ? "group-info-panel__mode-desc--warn" : ""}">
+              ${meta.messageMode === "unicast" ? t("chat.group.messageMode.unicastDesc") : t("chat.group.messageMode.broadcastDesc")}
+            </span>
           </div>
         </div>
 

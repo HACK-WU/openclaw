@@ -228,6 +228,12 @@ export const zhCN: Record<string, string> = {
   "chat.group.namePlaceholder": "输入群聊名称...",
   "chat.group.selectAgents": "选择智能体",
   "chat.group.messageMode": "消息模式",
+  "chat.group.messageMode.unicast": "单播 (Unicast)",
+  "chat.group.messageMode.unicastDesc":
+    "未使用 @ 时，消息默认只发送给助手。可通过 @提及 指定其他智能体。",
+  "chat.group.messageMode.broadcast": "广播 (Broadcast)",
+  "chat.group.messageMode.broadcastDesc":
+    "未使用 @ 时，消息默认发送给所有成员。⚠️ 会消耗大量 Token，请谨慎使用。",
   "chat.group.announcement": "公告",
   "chat.group.memberList": "成员列表",
   "chat.group.settings": "设置",

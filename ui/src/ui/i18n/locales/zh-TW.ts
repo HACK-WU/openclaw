@@ -251,6 +251,12 @@ export const zhTW: Record<string, string> = {
   "chat.group.namePlaceholder": "輸入群聊名稱...",
   "chat.group.selectAgents": "選擇智能體",
   "chat.group.messageMode": "訊息模式",
+  "chat.group.messageMode.unicast": "單播 (Unicast)",
+  "chat.group.messageMode.unicastDesc":
+    "未使用 @ 時，訊息預設只發送給助手。可透過 @提及 指定其他智能體。",
+  "chat.group.messageMode.broadcast": "廣播 (Broadcast)",
+  "chat.group.messageMode.broadcastDesc":
+    "未使用 @ 時，訊息預設發送給所有成員。⚠️ 會消耗大量 Token，請謹慎使用。",
   "chat.group.announcement": "公告",
   "chat.group.memberList": "成員列表",
   "chat.group.settings": "設置",

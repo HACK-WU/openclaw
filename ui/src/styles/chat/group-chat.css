@@ -926,7 +926,17 @@
 .group-info-panel__editable {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+}
+
+.group-info-panel__mode-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.group-info-panel__mode-desc--warn {
+  color: var(--danger, #ef4444);
 }
 
 .group-info-panel__input,
