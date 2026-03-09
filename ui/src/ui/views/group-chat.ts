@@ -9,6 +9,7 @@ import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { renderInlineToolCards } from "../chat/grouped-render.ts";
+import { extractThinkingCached, formatReasoningMarkdown } from "../chat/message-extract.ts";
 import { extractToolCards, classifyToolCards } from "../chat/tool-cards.ts";
 import { typewriter } from "../chat/typewriter-directive.ts";
 import type {
@@ -21,6 +22,7 @@ import type {
   GroupToolMessage,
 } from "../controllers/group-chat.ts";
 import { getMentionedAgents } from "../controllers/group-chat.ts";
+import { stripThinkingTags } from "../format.ts";
 import { t } from "../i18n/index.ts";
 import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
@@ -173,7 +175,9 @@ export type GroupChatViewProps = {
   onOpenDisbandDialog: () => void;
   onCloseDisbandDialog: () => void;
   onConfirmDisbandGroup: () => void;
-  onUpdateThinkingLevel?: (level: string) => void;
+  // Thinking toggle (matches single chat pattern)
+  showThinking: boolean;
+  onToggleShowThinking: () => void;
 };
 
 // ─── Main Render ───
@@ -303,22 +307,15 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
           </span>
         </div>
         <div class="group-chat-room__header-actions">
-          <!-- Thinking Level Selector -->
-          <select
-            class="field field--sm group-chat-room__thinking-select"
-            .value=${meta.thinkingLevel || "inherit"}
-            @change=${(e: Event) => {
-              const value = (e.target as HTMLSelectElement).value;
-              props.onUpdateThinkingLevel?.(value === "inherit" ? "" : value);
-            }}
-            title=${t("chat.group.thinkingLevel")}
+          <!-- Thinking Toggle (matches single chat) -->
+          <button
+            class="btn btn--sm btn--icon ${props.showThinking ? "active" : ""}"
+            @click=${() => props.onToggleShowThinking()}
+            aria-pressed=${props.showThinking}
+            title=${t("chat.thinkingToggle")}
           >
-            <option value="inherit" ?selected=${!meta.thinkingLevel}>🧠 Inherit</option>
-            <option value="off" ?selected=${meta.thinkingLevel === "off"}>🧠 Off</option>
-            <option value="low" ?selected=${meta.thinkingLevel === "low"}>🧠 Low</option>
-            <option value="medium" ?selected=${meta.thinkingLevel === "medium"}>🧠 Medium</option>
-            <option value="high" ?selected=${meta.thinkingLevel === "high"}>🧠 High</option>
-          </select>
+            ${icons.brain}
+          </button>
           <button
             class="btn btn--sm btn--icon"
             @click=${() => props.onOpenAddMemberDialog()}
@@ -350,13 +347,20 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
             ${repeat(
               groupMessages,
               (m) => m.id,
-              (m) => renderGroupMessage(m, meta, props.agentsList),
+              (m) => renderGroupMessage(m, meta, props.agentsList, props.showThinking),
             )}
 
             ${Array.from(groupStreams.entries()).map(([agentId, stream]) => {
               const toolKey = `${agentId}:${stream.runId}`;
               const tools = toolMessages.get(toolKey);
-              return renderGroupStreamBubble(agentId, stream, meta, props.agentsList, tools);
+              return renderGroupStreamBubble(
+                agentId,
+                stream,
+                meta,
+                props.agentsList,
+                tools,
+                props.showThinking,
+              );
             })}
 
             ${pendingOnly.map((agentId) =>
@@ -525,6 +529,7 @@ function renderGroupMessage(
   msg: GroupChatMessage,
   meta: GroupSessionMeta,
   agentsList: GroupChatViewProps["agentsList"],
+  showThinking = false,
 ) {
   const isSystem = msg.role === "system" || msg.sender.type === "system";
   if (isSystem) {
@@ -536,6 +541,7 @@ function renderGroupMessage(
   }
 
   const isUser = msg.sender.type === "owner";
+  const isAssistant = msg.role === "assistant";
   const senderName = resolveSenderName(msg.sender, meta, agentsList);
   const senderEmoji = resolveSenderEmoji(msg.sender, meta, agentsList);
   const roleClass = isUser ? "user" : "assistant";
@@ -549,15 +555,20 @@ function renderGroupMessage(
   const toolCards = extractToolCards(msg as unknown as Record<string, unknown>);
   const classified = toolCards.length > 0 ? classifyToolCards(toolCards) : null;
 
+  // Extract thinking content for assistant messages when showThinking is enabled
+  const extractedThinking = showThinking && isAssistant ? extractThinkingCached(msg) : null;
+  const reasoningMarkdown = extractedThinking ? formatReasoningMarkdown(extractedThinking) : null;
+
   // Render markdown content with mention highlighting
-  // Step 1: Handle escapes (\@ → @) before markdown processing
-  // Step 2: Convert markdown to HTML
-  // Step 3: Highlight @mentions in the HTML (exclude sender's own mention)
-  // Only highlight agents that have been triggered in current chain
+  // Step 1: Strip thinking tags from assistant content (so thinking is shown separately, not inline)
+  // Step 2: Handle escapes (\@ → @) before markdown processing
+  // Step 3: Convert markdown to HTML
+  // Step 4: Highlight @mentions in the HTML (exclude sender's own mention)
   const memberIds = meta.members.map((m) => m.agentId);
   const senderId = msg.sender.type === "agent" ? msg.sender.agentId : undefined;
   const mentionedAgents = getMentionedAgents(msg.groupId);
-  const contentWithEscapes = msg.content.replace(/\\@/g, "@");
+  const cleanContent = isAssistant ? stripThinkingTags(msg.content) : msg.content;
+  const contentWithEscapes = cleanContent.replace(/\\@/g, "@");
   const markdownHtml = toSanitizedMarkdownHtml(contentWithEscapes);
   const contentHtml = highlightMentionsInHtml(markdownHtml, memberIds, senderId, mentionedAgents);
 
@@ -566,6 +577,13 @@ function renderGroupMessage(
       <div class="chat-avatar ${roleClass}">${isUser ? "U" : senderEmoji}</div>
       <div class="chat-group-messages">
         <div class="chat-bubble ${isUser ? "" : "assistant"}">
+          ${
+            reasoningMarkdown
+              ? html`<div class="chat-thinking">${unsafeHTML(
+                  toSanitizedMarkdownHtml(reasoningMarkdown),
+                )}</div>`
+              : nothing
+          }
           <div class="chat-text">${unsafeHTML(contentHtml)}</div>
         </div>
         ${classified ? renderInlineToolCards(classified, undefined) : nothing}
@@ -584,6 +602,7 @@ function renderGroupStreamBubble(
   meta: GroupSessionMeta,
   agentsList: GroupChatViewProps["agentsList"],
   toolMessages?: GroupToolMessage[],
+  showThinking = false,
 ) {
   const sender: { type: "agent"; agentId: string } = { type: "agent", agentId };
   const senderName = resolveSenderName(sender, meta, agentsList);
@@ -609,12 +628,39 @@ function renderGroupStreamBubble(
     toolCards = renderInlineToolCards(classified);
   }
 
+  // For streaming text, extract thinking if <think> tags are present
+  const streamText = stream.text;
+  let displayText = streamText;
+  let streamThinkingHtml: ReturnType<typeof html> | typeof nothing = nothing;
+
+  if (showThinking && streamText) {
+    // Extract thinking from streaming text (may contain partial <think> tags)
+    const thinkMatch = streamText.match(
+      /<\s*think(?:ing)?\s*>([\s\S]*?)(<\s*\/\s*think(?:ing)?\s*>|$)/i,
+    );
+    if (thinkMatch) {
+      const thinkContent = (thinkMatch[1] ?? "").trim();
+      if (thinkContent) {
+        const reasoningMd = formatReasoningMarkdown(thinkContent);
+        streamThinkingHtml = html`<div class="chat-thinking">${unsafeHTML(
+          toSanitizedMarkdownHtml(reasoningMd),
+        )}</div>`;
+      }
+      // Strip thinking tags from displayed text
+      displayText = stripThinkingTags(streamText);
+    }
+  } else if (streamText) {
+    // Even when not showing thinking, strip thinking tags from display
+    displayText = stripThinkingTags(streamText);
+  }
+
   return html`
     <div class="chat-group assistant streaming">
       <div class="chat-avatar assistant">${senderEmoji}</div>
       <div class="chat-group-messages">
         <div class="chat-bubble streaming">
-          ${stream.text ? html`<div class="chat-text chat-text-streaming" ${typewriter(stream.text)}></div>` : nothing}
+          ${streamThinkingHtml}
+          ${displayText?.trim() ? html`<div class="chat-text chat-text-streaming" ${typewriter(displayText)}></div>` : nothing}
           ${toolCards}
         </div>
         <div class="chat-group-footer">

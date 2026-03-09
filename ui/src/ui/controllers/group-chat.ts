@@ -5,6 +5,7 @@
  * Follows the same patterns as controllers/chat.ts.
  */
 
+import { stripThinkingTags } from "../format.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
 
 // ─── Types ───
@@ -659,8 +660,11 @@ export async function detectAndForwardMentions(
   // Exclude initiators from memberIds so @initiator won't trigger them
   const memberIds = allMemberIds.filter((id) => !initiatorSet.has(id));
 
+  // Strip thinking tags before mention extraction to avoid false positives from thinking content
+  const cleanContent =
+    message.role === "assistant" ? stripThinkingTags(message.content) : message.content;
   // Only extract mentions from DEDICATED LINES (lines with only @mentions)
-  const dedicatedMentions = extractDedicatedMentions(message.content, memberIds);
+  const dedicatedMentions = extractDedicatedMentions(cleanContent, memberIds);
 
   if (dedicatedMentions.length === 0) {
     // No dedicated mention lines → chain naturally ends
@@ -776,8 +780,9 @@ export async function detectAndForwardMentions(
   }
 
   // Remove dedicated mention lines from forwarded message (they're routing markers, not content)
+  // Strip thinking tags from forwarded content (thinking is not forwarded to triggered agents)
   // Keep inline mentions as-is for display
-  const lines = message.content.split("\n");
+  const lines = cleanContent.split("\n");
   const contentLines = lines.filter((line) => {
     const trimmed = line.trim();
     if (!trimmed) {
@@ -1143,14 +1148,6 @@ export async function updateGroupAnnouncement(
   content: string,
 ): Promise<void> {
   return updateGroupSettings(host, groupId, "setAnnouncement", { content });
-}
-
-export async function updateGroupThinkingLevel(
-  host: GroupHost,
-  groupId: string,
-  level: string,
-): Promise<void> {
-  return updateGroupSettings(host, groupId, "setThinkingLevel", { level });
 }
 
 export async function disbandGroup(host: GroupHost, groupId: string): Promise<void> {

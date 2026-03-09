@@ -13,7 +13,6 @@ import { randomUUID } from "node:crypto";
 import { dispatchInboundMessage } from "../auto-reply/dispatch.js";
 import { createReplyDispatcher } from "../auto-reply/reply/reply-dispatcher.js";
 import type { MsgContext } from "../auto-reply/templating.js";
-import { normalizeThinkLevel } from "../auto-reply/thinking.js";
 import { loadConfig } from "../config/config.js";
 import type { GatewayBroadcastFn } from "../gateway/server-broadcast.js";
 import {
@@ -21,6 +20,7 @@ import {
   timestampOptsFromConfig,
 } from "../gateway/server-methods/agent-timestamp.js";
 import { getLogger } from "../logging.js";
+import { stripReasoningTagsFromText } from "../shared/text/reasoning-tags.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
 import { updateChainState } from "./anti-loop.js";
 import { buildGroupChatContext } from "./context-builder.js";
@@ -121,7 +121,12 @@ function buildConversationHistory(snapshot: GroupChatMessage[], currentAgentId: 
     } else {
       senderLabel = "System";
     }
-    return `[${senderLabel}]: ${msg.content}`;
+    // Strip thinking tags from content so agents don't see thinking in conversation history
+    const cleanContent =
+      msg.role === "assistant"
+        ? stripReasoningTagsFromText(msg.content, { mode: "strict" })
+        : msg.content;
+    return `[${senderLabel}]: ${cleanContent}`;
   });
   return lines.join("\n");
 }
@@ -215,8 +220,9 @@ export async function triggerAgentReasoning(
       GroupSystemPrompt: groupChatSystemPrompt,
     };
 
-    // Collect final reply parts and tool messages
+    // Collect final reply parts, thinking content, and tool messages
     let replyText = "";
+    let thinkingText = "";
     const toolCollector = createToolCollector();
 
     const dispatcher = createReplyDispatcher({
@@ -254,12 +260,16 @@ export async function triggerAgentReasoning(
         suppressTyping: true,
         agentId, // Pass explicit agentId for group chat
         skillFilter: meta.groupSkills.length > 0 ? meta.groupSkills : undefined,
-        // Pass group chat thinking level override (if set, normalized to ThinkLevel)
-        thinkLevel: normalizeThinkLevel(meta.thinkingLevel) ?? undefined,
         onPartialReply: (payload) => {
           // Broadcast text content
           if (payload.text) {
             broadcastStream(payload.text, toolCollector.messages);
+          }
+        },
+        onReasoningStream: (payload) => {
+          // Accumulate thinking/reasoning content from model
+          if (payload.text) {
+            thinkingText += payload.text;
           }
         },
         onToolStart: (toolInfo) => {
@@ -319,12 +329,17 @@ export async function triggerAgentReasoning(
 
     toolCalls.push(...toolCallMap.values());
 
+    // Build final content: prepend thinking as <think> tags so frontend can extract
+    const finalContent = thinkingText.trim()
+      ? `<think>${thinkingText.trim()}</think>\n\n${replyText}`
+      : replyText;
+
     // Write reply to transcript
     const replyMessage = await appendGroupMessage(groupId, {
       id: randomUUID(),
       groupId,
       role: "assistant",
-      content: replyText,
+      content: finalContent,
       sender: { type: "agent", agentId, agentName: agentId },
       timestamp: Date.now(),
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
