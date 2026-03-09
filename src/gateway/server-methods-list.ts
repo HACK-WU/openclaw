@@ -112,6 +112,7 @@ const BASE_METHODS = [
   "group.send",
   "group.history",
   "group.abort",
+  "group.exportTranscript",
 ];
 
 export function listGatewayMethods(): string[] {

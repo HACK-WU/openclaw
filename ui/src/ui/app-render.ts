@@ -1471,6 +1471,17 @@ export function renderApp(state: AppViewState) {
                   }
                 },
                 onToggleInfoPanel: () => (state.groupInfoPanelOpen = !state.groupInfoPanelOpen),
+                onExportTranscript: () => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { exportGroupTranscript } = await import("./controllers/group-chat.ts");
+                      await exportGroupTranscript(
+                        state as unknown as Parameters<typeof exportGroupTranscript>[0],
+                        state.activeGroupId!,
+                      );
+                    })();
+                  }
+                },
                 onRefresh: () =>
                   void loadGroupList(state as unknown as Parameters<typeof loadGroupList>[0]),
                 // Group settings callbacks

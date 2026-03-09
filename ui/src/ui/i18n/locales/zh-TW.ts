@@ -262,6 +262,7 @@ export const zhTW: Record<string, string> = {
   "chat.group.add": "添加",
   "chat.group.noAvailableAgents": "沒有可添加的智能體。",
   "chat.group.noAnnouncement": "暫無公告",
+  "chat.group.export": "匯出對話",
 
   // Errors
   "error.notFound": "未找到",

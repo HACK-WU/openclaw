@@ -508,6 +508,104 @@ const handleGroupAbort: GatewayRequestHandler = ({ params, respond }) => {
   respond(true, { ok: true });
 };
 
+// ─── Export Transcript as Markdown ───
+
+/**
+ * Format a group chat transcript as Markdown.
+ *
+ * Output structure:
+ * - H1: group name
+ * - Metadata block: members, mode, created/exported timestamps
+ * - Messages in chronological order, each with sender label + timestamp
+ * - System messages rendered as italicised notes
+ */
+function formatTranscriptMarkdown(
+  meta: NonNullable<ReturnType<typeof loadGroupMeta>>,
+  messages: GroupChatMessage[],
+): string {
+  const lines: string[] = [];
+
+  // Header
+  const title = meta.groupName || `Group ${meta.groupId.slice(0, 8)}`;
+  lines.push(`# ${title}`);
+  lines.push("");
+
+  // Metadata
+  lines.push(`> **Members**: ${meta.members.map((m) => `${m.agentId} (${m.role})`).join(", ")}`);
+  lines.push(`> **Mode**: ${meta.messageMode}`);
+  if (meta.announcement) {
+    lines.push(`> **Announcement**: ${meta.announcement}`);
+  }
+  lines.push(`> **Created**: ${new Date(meta.createdAt).toISOString()}`);
+  lines.push(`> **Exported**: ${new Date().toISOString()}`);
+  lines.push("");
+  lines.push("---");
+  lines.push("");
+
+  // Messages
+  for (const msg of messages) {
+    const time = new Date(msg.timestamp).toLocaleString("en-US", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+
+    if (msg.role === "system") {
+      lines.push(`*[${time}] — ${msg.content}*`);
+      lines.push("");
+      continue;
+    }
+
+    const senderLabel =
+      msg.sender.type === "owner"
+        ? "**You**"
+        : `**${msg.sender.agentName ?? msg.sender.agentId ?? "Agent"}**`;
+
+    const mentionSuffix =
+      msg.mentions && msg.mentions.length > 0
+        ? ` → ${msg.mentions.map((id) => `@${id}`).join(" ")}`
+        : "";
+
+    lines.push(`### ${senderLabel}  <sub>${time}${mentionSuffix}</sub>`);
+    lines.push("");
+    lines.push(msg.content);
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+const handleGroupExportTranscript: GatewayRequestHandler = ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  const meta = loadGroupMeta(groupId);
+  if (!meta) {
+    respond(false, undefined, { message: "Group not found", code: 404 });
+    return;
+  }
+
+  // Read all messages (no limit) for a complete export
+  const messages = readGroupMessages(groupId, 10_000);
+  const markdown = formatTranscriptMarkdown(meta, messages);
+
+  const safeTitle = (meta.groupName ?? groupId.slice(0, 8))
+    .replace(/[^a-zA-Z0-9\u4e00-\u9fff _-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const filename = `${safeTitle}-${dateStr}.md`;
+
+  respond(true, { markdown, filename });
+};
+
 // ─── Export handler map ───
 
 export const groupHandlers: GatewayRequestHandlers = {
@@ -526,4 +624,5 @@ export const groupHandlers: GatewayRequestHandlers = {
   "group.send": handleGroupSend,
   "group.history": handleGroupHistory,
   "group.abort": handleGroupAbort,
+  "group.exportTranscript": handleGroupExportTranscript,
 };

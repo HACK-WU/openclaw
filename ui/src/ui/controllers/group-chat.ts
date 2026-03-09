@@ -1433,6 +1433,41 @@ export async function enterGroupChat(host: GroupHost, groupId: string): Promise<
   await Promise.all([loadGroupInfo(host, groupId), loadGroupHistory(host, groupId)]);
 }
 
+/**
+ * Export the current group chat transcript as a Markdown file.
+ * Calls group.exportTranscript RPC and triggers a browser download.
+ */
+export async function exportGroupTranscript(host: GroupHost, groupId: string): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  try {
+    const result = await host.client.request<{ markdown: string; filename: string }>(
+      "group.exportTranscript",
+      { groupId },
+    );
+    if (!result?.markdown) {
+      return;
+    }
+    // Trigger browser download
+    const blob = new Blob([result.markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = result.filename ?? "group-chat-export.md";
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    // Cleanup
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+      link.remove();
+    }, 100);
+  } catch (err) {
+    host.groupError = `Failed to export transcript: ${String(err)}`;
+  }
+}
+
 /** Leave group chat view */
 export function leaveGroupChat(host: GroupChatState): void {
   host.activeGroupId = null;

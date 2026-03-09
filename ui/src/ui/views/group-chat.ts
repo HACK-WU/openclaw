@@ -175,6 +175,8 @@ export type GroupChatViewProps = {
   onOpenDisbandDialog: () => void;
   onCloseDisbandDialog: () => void;
   onConfirmDisbandGroup: () => void;
+  // Export transcript
+  onExportTranscript: () => void;
   // Thinking toggle (matches single chat pattern)
   showThinking: boolean;
   onToggleShowThinking: () => void;
@@ -315,6 +317,13 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
             title=${t("chat.thinkingToggle")}
           >
             ${icons.brain}
+          </button>
+          <button
+            class="btn btn--sm btn--icon"
+            @click=${() => props.onExportTranscript()}
+            title=${t("chat.group.export")}
+          >
+            ${icons.download}
           </button>
           <button
             class="btn btn--sm btn--icon"
