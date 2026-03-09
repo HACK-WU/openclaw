@@ -21,9 +21,9 @@ import {
   buildModelOptions,
   normalizeAgentLabel,
   normalizeModelValue,
-  parseFallbackList,
   resolveAgentConfig,
   resolveAgentEmoji,
+  resolveConfiguredModels,
   resolveEffectiveModelFallbacks,
   resolveModelLabel,
   resolveModelPrimary,
@@ -467,7 +467,6 @@ function renderAgentOverview(params: {
     config.entry?.model,
     config.defaults?.model,
   );
-  const fallbackText = modelFallbacks ? modelFallbacks.join(", ") : "";
   // Overview "Primary Model" label: derive from the same effectivePrimary used by the select,
   // so both always show consistent values.
   const fallbackCount = modelFallbacks ? modelFallbacks.length : 0;
@@ -551,19 +550,14 @@ function renderAgentOverview(params: {
               ${buildModelOptions(configForm, effectivePrimary ?? undefined)}
             </select>
           </label>
-          <label class="field" style="min-width: 260px; flex: 1;">
-            <span>Fallbacks (comma-separated)</span>
-            <input
-              .value=${fallbackText}
-              ?disabled=${!configForm || configLoading || configSaving}
-              placeholder="provider/model, provider/model"
-              @input=${(e: Event) =>
-                onModelFallbacksChange(
-                  agent.id,
-                  parseFallbackList((e.target as HTMLInputElement).value),
-                )}
-            />
-          </label>
+          ${renderFallbacksDropdown({
+            configForm,
+            effectivePrimary: effectivePrimary ?? null,
+            modelFallbacks: modelFallbacks ?? [],
+            disabled: !configForm || configLoading || configSaving,
+            onModelFallbacksChange: (fallbacks: string[]) =>
+              onModelFallbacksChange(agent.id, fallbacks),
+          })}
         </div>
         <div class="row" style="justify-content: flex-end; gap: 8px; align-items: center;">
           ${
@@ -586,6 +580,133 @@ function renderAgentOverview(params: {
         </div>
       </div>
     </section>
+  `;
+}
+
+function renderFallbacksDropdown(params: {
+  configForm: Record<string, unknown> | null;
+  effectivePrimary: string | null;
+  modelFallbacks: string[];
+  disabled: boolean;
+  onModelFallbacksChange: (fallbacks: string[]) => void;
+}) {
+  const { configForm, effectivePrimary, modelFallbacks, disabled, onModelFallbacksChange } = params;
+  const allModels = resolveConfiguredModels(configForm);
+  // Exclude the primary model from fallback options
+  const fallbackOptions = allModels.filter((option) => option.value !== effectivePrimary);
+  // Also include any currently selected fallbacks that aren't in the configured models list
+  const existingValues = new Set(fallbackOptions.map((o) => o.value));
+  for (const fb of modelFallbacks) {
+    if (!existingValues.has(fb)) {
+      fallbackOptions.push({ value: fb, label: fb });
+    }
+  }
+  const selectedCount = modelFallbacks.length;
+
+  const toggleModel = (value: string, checked: boolean) => {
+    let next: string[];
+    if (checked) {
+      next = [...modelFallbacks, value];
+    } else {
+      next = modelFallbacks.filter((v) => v !== value);
+    }
+    onModelFallbacksChange(next);
+  };
+
+  const selectedSet = new Set(modelFallbacks);
+
+  const onToggle = (e: Event) => {
+    const details = e.target as HTMLDetailsElement;
+    if (details.open) {
+      // Close other open dropdowns
+      document.querySelectorAll(".fallback-dropdown[open]").forEach((el) => {
+        if (el !== details) {
+          (el as HTMLDetailsElement).open = false;
+        }
+      });
+    }
+  };
+
+  const allSelected =
+    fallbackOptions.length > 0 && fallbackOptions.every((opt) => selectedSet.has(opt.value));
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      // Deselect all
+      onModelFallbacksChange([]);
+    } else {
+      // Select all
+      onModelFallbacksChange(fallbackOptions.map((opt) => opt.value));
+    }
+  };
+
+  // Close dropdown when clicking outside
+  const onClickOutside = (e: Event) => {
+    const details = (e.currentTarget as HTMLElement).querySelector(
+      ".fallback-dropdown",
+    ) as HTMLDetailsElement;
+    if (!details) {
+      return;
+    }
+    const target = e.target as HTMLElement;
+    if (!details.contains(target)) {
+      details.open = false;
+    }
+  };
+
+  return html`
+    <div class="field fallback-field" style="min-width: 260px; flex: 1;" @click=${onClickOutside}>
+      <span>Fallbacks${selectedCount > 0 ? ` (${selectedCount})` : ""}</span>
+      <details class="fallback-dropdown" ?disabled=${disabled} @toggle=${onToggle}>
+        <summary class="fallback-dropdown__trigger">
+          <span class="fallback-dropdown__text">
+            ${
+              selectedCount === 0
+                ? "No fallback models"
+                : selectedCount === 1
+                  ? modelFallbacks[0]
+                  : `${modelFallbacks[0]} +${selectedCount - 1} more`
+            }
+          </span>
+          <svg class="fallback-dropdown__arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </summary>
+        <div class="fallback-dropdown__panel">
+          ${
+            fallbackOptions.length === 0
+              ? html`
+                  <div class="muted" style="padding: 10px 12px; font-size: 13px">No other models available.</div>
+                `
+              : html`
+                  <div class="fallback-dropdown__header">
+                    <label class="fallback-dropdown__option fallback-dropdown__select-all">
+                      <input
+                        type="checkbox"
+                        .checked=${allSelected}
+                        @change=${toggleSelectAll}
+                      />
+                      <span class="fallback-dropdown__option-label">Select All</span>
+                    </label>
+                  </div>
+                  <div class="fallback-dropdown__list">
+                    ${fallbackOptions.map(
+                      (option) => html`
+                        <label class="fallback-dropdown__option ${selectedSet.has(option.value) ? "selected" : ""}">
+                          <input
+                            type="checkbox"
+                            .checked=${selectedSet.has(option.value)}
+                            @change=${(e: Event) =>
+                              toggleModel(option.value, (e.target as HTMLInputElement).checked)}
+                          />
+                          <span class="fallback-dropdown__option-label">${option.label}</span>
+                        </label>
+                      `,
+                    )}
+                  </div>
+                `
+          }
+        </div>
+      </details>
+    </div>
   `;
 }
 

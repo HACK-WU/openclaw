@@ -1523,6 +1523,31 @@ export function renderApp(state: AppViewState) {
                     })();
                   }
                 },
+                onUpdateMaxRounds: (maxRounds) => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { updateGroupMaxRounds } = await import("./controllers/group-chat.ts");
+                      await updateGroupMaxRounds(
+                        state as unknown as Parameters<typeof updateGroupMaxRounds>[0],
+                        state.activeGroupId!,
+                        maxRounds,
+                      );
+                    })();
+                  }
+                },
+                onUpdateMaxConsecutive: (maxConsecutive) => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { updateGroupMaxConsecutive } =
+                        await import("./controllers/group-chat.ts");
+                      await updateGroupMaxConsecutive(
+                        state as unknown as Parameters<typeof updateGroupMaxConsecutive>[0],
+                        state.activeGroupId!,
+                        maxConsecutive,
+                      );
+                    })();
+                  }
+                },
                 showThinking: state.settings.groupShowThinking,
                 onToggleShowThinking: () => {
                   state.applySettings({
@@ -1535,6 +1560,23 @@ export function renderApp(state: AppViewState) {
                 sidebarOpen: state.sidebarOpen,
                 sidebarContent: state.sidebarContent,
                 sidebarError: state.sidebarError,
+                announcementEditor: state.groupAnnouncementEditor,
+                onOpenAnnouncementEditor: () => {
+                  state.groupAnnouncementEditor = {
+                    open: true,
+                    draft: state.activeGroupMeta?.announcement || "",
+                    preview: false,
+                  };
+                },
+                onCloseAnnouncementEditor: () => {
+                  state.groupAnnouncementEditor = { open: false, draft: "", preview: false };
+                },
+                onAnnouncementEditorDraftChange: (draft: string) => {
+                  state.groupAnnouncementEditor = { ...state.groupAnnouncementEditor, draft };
+                },
+                onAnnouncementEditorTogglePreview: (preview: boolean) => {
+                  state.groupAnnouncementEditor = { ...state.groupAnnouncementEditor, preview };
+                },
                 onOpenDisbandDialog: () => {
                   if (state.activeGroupId && state.activeGroupMeta) {
                     openDisbandGroupDialog(

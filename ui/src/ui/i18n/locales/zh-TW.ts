@@ -68,6 +68,7 @@ export const zhTW: Record<string, string> = {
   "action.cancel": "取消",
   "action.delete": "刪除",
   "action.edit": "編輯",
+  "action.preview": "預覽",
   "action.add": "添加",
   "action.close": "關閉",
   "action.submit": "提交",
@@ -263,6 +264,10 @@ export const zhTW: Record<string, string> = {
   "chat.group.noAvailableAgents": "沒有可添加的智能體。",
   "chat.group.noAnnouncement": "暫無公告",
   "chat.group.export": "匯出對話",
+  "chat.group.maxRounds": "最大輪數",
+  "chat.group.maxRoundsHint": "單次群聊對話中的最大輪數。每輪允許智能體各回覆一次。",
+  "chat.group.maxConsecutive": "最大連續回覆",
+  "chat.group.maxConsecutiveHint": "單個智能體在讓出對話權之前可連續回覆的最大次數。",
 
   // Errors
   "error.notFound": "未找到",

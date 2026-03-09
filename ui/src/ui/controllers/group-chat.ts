@@ -1150,6 +1150,22 @@ export async function updateGroupAnnouncement(
   return updateGroupSettings(host, groupId, "setAnnouncement", { content });
 }
 
+export async function updateGroupMaxRounds(
+  host: GroupHost,
+  groupId: string,
+  maxRounds: number,
+): Promise<void> {
+  return updateGroupSettings(host, groupId, "setMaxRounds", { maxRounds });
+}
+
+export async function updateGroupMaxConsecutive(
+  host: GroupHost,
+  groupId: string,
+  maxConsecutive: number,
+): Promise<void> {
+  return updateGroupSettings(host, groupId, "setMaxConsecutive", { maxConsecutive });
+}
+
 export async function disbandGroup(host: GroupHost, groupId: string): Promise<void> {
   return deleteGroup(host, groupId);
 }

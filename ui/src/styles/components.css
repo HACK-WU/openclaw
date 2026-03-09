@@ -2642,6 +2642,229 @@
   gap: 12px;
 }
 
+/* Fallback models: dropdown style like native select */
+.fallback-field {
+  position: relative;
+}
+
+.fallback-dropdown {
+  position: relative;
+}
+
+.fallback-dropdown__trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: inset 0 1px 0 var(--card-highlight);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  min-height: 20px;
+  transition:
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
+}
+
+.fallback-dropdown__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.fallback-dropdown[open] .fallback-dropdown__trigger {
+  border-color: var(--ring);
+  box-shadow: var(--focus-ring);
+}
+
+.fallback-dropdown__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.fallback-dropdown__arrow {
+  flex-shrink: 0;
+  stroke: var(--muted);
+  transition: transform var(--duration-fast) ease;
+}
+
+.fallback-dropdown[open] .fallback-dropdown__arrow {
+  transform: rotate(180deg);
+}
+
+.fallback-dropdown__panel {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card, var(--shadow-md));
+  animation: fade-in 0.1s ease-out;
+}
+
+.fallback-dropdown__header {
+  padding: 4px 4px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+
+.fallback-dropdown__select-all {
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.fallback-dropdown__list {
+  padding: 0 4px 4px;
+  display: grid;
+  gap: 2px;
+}
+
+.fallback-dropdown__option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  transition: background var(--duration-fast) ease;
+}
+
+.fallback-dropdown__option:hover {
+  background: var(--bg-hover);
+}
+
+.fallback-dropdown__option.selected {
+  background: var(--secondary);
+}
+
+.fallback-dropdown__option.selected:hover {
+  background: var(--bg-hover);
+}
+
+.fallback-dropdown__option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.fallback-dropdown__option-label {
+  font-family: var(--mono);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fallback edit modal overlay */
+.fallback-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 200;
+  animation: fade-in 0.15s ease-out;
+}
+
+.fallback-modal-card {
+  width: min(480px, calc(100% - 32px));
+  max-height: 80vh;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  animation: scale-in 0.2s var(--ease-out);
+}
+
+.fallback-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fallback-modal-sub {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.fallback-modal-list {
+  margin-top: 16px;
+  display: grid;
+  gap: 4px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.fallback-modal-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  border: 1px solid transparent;
+  transition:
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+
+.fallback-modal-option:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+.fallback-modal-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.fallback-modal-option__label {
+  font-family: var(--mono);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fallback-modal-footer {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* Agent dialog overlay */
 .dialog-overlay {
   position: fixed;

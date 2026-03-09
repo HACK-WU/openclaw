@@ -68,6 +68,7 @@ export const zhCN: Record<string, string> = {
   "action.cancel": "取消",
   "action.delete": "删除",
   "action.edit": "编辑",
+  "action.preview": "预览",
   "action.add": "添加",
   "action.close": "关闭",
   "action.submit": "提交",
@@ -240,6 +241,7 @@ export const zhCN: Record<string, string> = {
   "chat.group.noAvailableAgents": "没有可添加的智能体。",
   "chat.group.noAnnouncement": "暂无公告",
   "chat.group.announcementPlaceholder": "输入群公告...",
+  "chat.group.announcementMarkdownHint": "支持 Markdown 格式",
   "chat.group.dangerZone": "危险区域",
   "chat.group.disband": "解散群聊",
   "chat.group.disbandConfirm": "确定要解散该群聊吗？此操作无法撤销。",
@@ -249,6 +251,10 @@ export const zhCN: Record<string, string> = {
   "chat.group.generating": "生成中",
   "chat.group.thinkingLevel": "思考级别",
   "chat.group.thinkingLevelPlaceholder": "选择思考级别...",
+  "chat.group.maxRounds": "最大轮数",
+  "chat.group.maxRoundsHint": "单次群聊对话中的最大轮数。每轮允许智能体各回复一次。",
+  "chat.group.maxConsecutive": "最大连续回复",
+  "chat.group.maxConsecutiveHint": "单个智能体在让出对话权之前可连续回复的最大次数。",
 
   // Errors
   "error.notFound": "未找到",

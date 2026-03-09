@@ -173,11 +173,19 @@ export type GroupChatViewProps = {
   onUpdateGroupName: (name: string) => void;
   onUpdateMessageMode: (mode: "unicast" | "broadcast") => void;
   onUpdateAnnouncement: (content: string) => void;
+  onUpdateMaxRounds: (maxRounds: number) => void;
+  onUpdateMaxConsecutive: (maxConsecutive: number) => void;
   onOpenDisbandDialog: () => void;
   onCloseDisbandDialog: () => void;
   onConfirmDisbandGroup: () => void;
   // Export transcript
   onExportTranscript: () => void;
+  // Announcement editor
+  announcementEditor: { open: boolean; draft: string; preview: boolean };
+  onOpenAnnouncementEditor: () => void;
+  onCloseAnnouncementEditor: () => void;
+  onAnnouncementEditorDraftChange: (draft: string) => void;
+  onAnnouncementEditorTogglePreview: (preview: boolean) => void;
   // Thinking toggle (matches single chat pattern)
   showThinking: boolean;
   onToggleShowThinking: () => void;
@@ -309,9 +317,6 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
   return html`
     <div class="group-chat-room">
       <div class="group-chat-room__header">
-        <button class="btn btn--sm btn--icon group-chat-room__back-btn" @click=${() => props.onLeaveGroup()} title=${t("chat.group.back")}>
-          ${icons.arrowLeft}
-        </button>
         <div class="group-chat-room__header-info">
           <span class="group-chat-room__header-name">👥 ${meta.name || meta.groupId.slice(0, 8)}</span>
           <span class="group-chat-room__header-meta">
@@ -566,6 +571,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
       ${props.groupInfoPanelOpen ? renderGroupInfoPanel(meta, props) : nothing}
       ${props.groupAddMemberDialog ? renderAddMemberDialog(props) : nothing}
       ${renderDisbandGroupDialog(props)}
+      ${renderAnnouncementEditDialog(meta, props)}
     </div>
   `;
 }
@@ -761,23 +767,20 @@ function renderPendingAgentIndicator(
 // ─── Info Panel ───
 
 function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewProps) {
+  // Render announcement content as markdown if available
+  const announcementHtml = meta.announcement ? toSanitizedMarkdownHtml(meta.announcement) : null;
+
   return html`
     <div class="group-members-panel">
-      <!-- Announcement section -->
-      <div
-        class="group-members-panel__announcement"
-        @click=${() => {
-          /* TODO: expand announcement */
-        }}
-      >
+      <!-- Announcement section (display only) -->
+      <div class="group-members-panel__announcement">
         <div class="group-members-panel__announcement-header">
           <span class="group-members-panel__announcement-title">${t("chat.group.announcement")}</span>
-          ${icons.chevronRight}
         </div>
         <div class="group-members-panel__announcement-content">
           ${
-            meta.announcement
-              ? meta.announcement.slice(0, 60) + (meta.announcement.length > 60 ? "…" : "")
+            announcementHtml
+              ? html`<div class="group-members-panel__announcement-md">${unsafeHTML(announcementHtml)}</div>`
               : html`<span class="group-members-panel__announcement-empty">${t("chat.group.noAnnouncement")}</span>`
           }
         </div>
@@ -789,13 +792,6 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
           <h3>${t("chat.group.memberList")}</h3>
           <span class="group-members-panel__count">${meta.members.length}</span>
         </div>
-        <button
-          class="btn btn--xs btn--icon"
-          @click=${() => props.onOpenAddMemberDialog()}
-          title=${t("chat.group.addMember")}
-        >
-          ${icons.userPlus}
-        </button>
       </div>
 
       <!-- Member list -->
@@ -817,6 +813,91 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
           `;
         })}
       </ul>
+    </div>
+  `;
+}
+
+// ─── Announcement Edit Dialog ───
+
+function renderAnnouncementEditDialog(meta: GroupSessionMeta, props: GroupChatViewProps) {
+  const editor = props.announcementEditor;
+  if (!editor.open) {
+    return nothing;
+  }
+
+  const previewHtml = editor.draft.trim() ? toSanitizedMarkdownHtml(editor.draft) : "";
+
+  return html`
+    <div class="modal-overlay" role="dialog" aria-modal="true"
+      @click=${(e: Event) => {
+        if ((e.target as HTMLElement).classList.contains("modal-overlay")) {
+          props.onCloseAnnouncementEditor();
+        }
+      }}
+    >
+      <div class="modal-card announcement-edit-dialog">
+        <div class="modal-header announcement-edit-dialog__header">
+          <h3 class="modal-title">${t("chat.group.announcement")}</h3>
+          <div class="announcement-edit-dialog__tabs">
+            <button
+              class="btn ${!editor.preview ? "btn--primary" : ""}"
+              @click=${() => props.onAnnouncementEditorTogglePreview(false)}
+            >
+              ${icons.edit} ${t("action.edit")}
+            </button>
+            <button
+              class="btn ${editor.preview ? "btn--primary" : ""}"
+              @click=${() => props.onAnnouncementEditorTogglePreview(true)}
+            >
+              ${icons.fileText} ${t("action.preview")}
+            </button>
+          </div>
+        </div>
+        <div class="announcement-edit-dialog__body">
+          ${
+            editor.preview
+              ? html`
+                <div class="announcement-edit-dialog__preview">
+                  ${
+                    previewHtml
+                      ? html`<div class="chat-text">${unsafeHTML(previewHtml)}</div>`
+                      : html`<span class="group-members-panel__announcement-empty">${t("chat.group.noAnnouncement")}</span>`
+                  }
+                </div>
+              `
+              : html`
+                <textarea
+                  class="announcement-edit-dialog__textarea"
+                  .value=${editor.draft}
+                  @input=${(e: Event) => {
+                    props.onAnnouncementEditorDraftChange((e.target as HTMLTextAreaElement).value);
+                  }}
+                  placeholder=${t("chat.group.announcementPlaceholder")}
+                ></textarea>
+                <div class="announcement-edit-dialog__hint">
+                  ${t("chat.group.announcementMarkdownHint")}
+                </div>
+              `
+          }
+        </div>
+        <div class="announcement-edit-dialog__actions">
+          <button
+            class="btn btn--secondary"
+            @click=${() => props.onCloseAnnouncementEditor()}
+          >
+            ${t("action.cancel")}
+          </button>
+          <button
+            class="btn btn--primary"
+            @click=${() => {
+              props.onUpdateAnnouncement(editor.draft.trim());
+              props.onCloseAnnouncementEditor();
+            }}
+          >
+            ${t("action.save")}
+          </button>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -865,20 +946,16 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
           </div>
         </div>
 
-        <!-- Announcement (editable) -->
+        <!-- Announcement (edit button opens modal) -->
         <div class="group-info-panel__section">
           <label>${t("chat.group.announcement")}</label>
           <div class="group-info-panel__editable">
-            <textarea
-              class="field group-info-panel__textarea"
-              .value=${meta.announcement || ""}
-              placeholder=${t("chat.group.announcementPlaceholder") || "Enter group announcement..."}
-              rows="3"
-              @change=${(e: Event) => {
-                const value = (e.target as HTMLTextAreaElement).value.trim();
-                props.onUpdateAnnouncement(value);
-              }}
-            ></textarea>
+            <button
+              class="btn btn--secondary btn--sm"
+              @click=${() => props.onOpenAnnouncementEditor()}
+            >
+              ${icons.edit} ${meta.announcement ? t("action.edit") : t("action.add")}
+            </button>
           </div>
         </div>
 
@@ -908,8 +985,44 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
         <div class="group-info-panel__section">
           <label>${t("chat.group.settings")}</label>
           <div class="group-info-panel__settings">
-            <span>Max rounds: ${meta.maxRounds}</span>
-            <span>Max consecutive: ${meta.maxConsecutive}</span>
+            <div class="group-info-panel__setting-item">
+              <div class="group-info-panel__setting-header">
+                <span class="group-info-panel__setting-name">${t("chat.group.maxRounds")}</span>
+                <input
+                  type="number"
+                  class="field group-info-panel__setting-input"
+                  .value=${String(meta.maxRounds)}
+                  min="1"
+                  max="100"
+                  @change=${(e: Event) => {
+                    const value = parseInt((e.target as HTMLInputElement).value, 10);
+                    if (!isNaN(value) && value > 0) {
+                      props.onUpdateMaxRounds(value);
+                    }
+                  }}
+                />
+              </div>
+              <span class="group-info-panel__setting-desc">${t("chat.group.maxRoundsHint")}</span>
+            </div>
+            <div class="group-info-panel__setting-item">
+              <div class="group-info-panel__setting-header">
+                <span class="group-info-panel__setting-name">${t("chat.group.maxConsecutive")}</span>
+                <input
+                  type="number"
+                  class="field group-info-panel__setting-input"
+                  .value=${String(meta.maxConsecutive)}
+                  min="1"
+                  max="50"
+                  @change=${(e: Event) => {
+                    const value = parseInt((e.target as HTMLInputElement).value, 10);
+                    if (!isNaN(value) && value > 0) {
+                      props.onUpdateMaxConsecutive(value);
+                    }
+                  }}
+                />
+              </div>
+              <span class="group-info-panel__setting-desc">${t("chat.group.maxConsecutiveHint")}</span>
+            </div>
           </div>
         </div>
 

@@ -68,6 +68,7 @@ export const en: Record<string, string> = {
   "action.cancel": "Cancel",
   "action.delete": "Delete",
   "action.edit": "Edit",
+  "action.preview": "Preview",
   "action.add": "Add",
   "action.close": "Close",
   "action.submit": "Submit",
@@ -266,6 +267,7 @@ export const en: Record<string, string> = {
   "chat.group.noAvailableAgents": "No available agents to add.",
   "chat.group.noAnnouncement": "No announcement",
   "chat.group.announcementPlaceholder": "Enter group announcement...",
+  "chat.group.announcementMarkdownHint": "Supports Markdown formatting",
   "chat.group.dangerZone": "Danger Zone",
   "chat.group.disband": "Disband Group",
   "chat.group.disbandConfirm":
@@ -274,6 +276,12 @@ export const en: Record<string, string> = {
   "chat.group.generating": "Generating",
   "chat.group.thinkingLevel": "Thinking Level",
   "chat.group.thinkingLevelPlaceholder": "Select thinking level...",
+  "chat.group.maxRounds": "Max Rounds",
+  "chat.group.maxRoundsHint":
+    "Maximum number of conversation rounds in a single group chat turn. Each round allows agents to respond once.",
+  "chat.group.maxConsecutive": "Max Consecutive",
+  "chat.group.maxConsecutiveHint":
+    "Maximum number of consecutive responses a single agent can make before yielding to others.",
 
   // Errors
   "error.notFound": "Not found",
