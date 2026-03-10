@@ -1,0 +1,132 @@
+# 风险评估与兼容性分析
+
+> 本文档评估 Bridge Agent 方案的技术风险、安全风险、用户体验风险，以及与现有系统的兼容性。
+
+## 1. 技术风险
+
+| 风险               | 等级  | 原因                          | 缓解措施                            |
+| ------------------ | ----- | ----------------------------- | ----------------------------------- |
+| CLI 进程崩溃       | 🟡 中 | 外部进程不可控                | 自动重启（最多 3 次）+ 错误广播     |
+| CLI 回复超时       | 🟡 中 | 大型项目操作耗时长            | 可配置超时 + AbortSignal 支持       |
+| 流式输出延迟       | 🟢 低 | PTY onData 立即触发           | 无缓冲，直接推送到 WebSocket        |
+| 终端尺寸不匹配     | 🟡 中 | cols/rows 同步                | 创建时固定尺寸 + resize 事件同步    |
+| 并行文件冲突       | 🟡 中 | broadcast 模式下多 CLI 同时写 | 建议用 unicast/mention 模式         |
+| CLI 环境依赖       | 🟡 中 | 用户需安装对应 CLI            | 启动时检查 + 友好错误提示           |
+| node-pty 编译      | 🟡 中 | 需要 native 编译              | 预编译二进制或使用 electron-rebuild |
+| API Key 管理       | 🟢 低 | CLI 各自管理 Key              | Bridge 配置中支持 env 注入          |
+| 终端缓冲区内存占用 | 🟡 中 | 长时间运行 + 大量输出         | 折叠后释放或限制缓冲区大小          |
+
+---
+
+## 2. 安全风险
+
+| 风险                           | 等级  | 缓解措施                                |
+| ------------------------------ | ----- | --------------------------------------- |
+| Bridge Agent 能写文件/执行命令 | 🟡 中 | UI 明确标识权限级别；CLI 自身有安全机制 |
+| 恶意 CLI 命令                  | 🟢 低 | 配置由 Owner 设置，非外部输入           |
+| API Key 泄露                   | 🟢 低 | Key 存在 env 中，不写入 transcript      |
+| ANSI 注入攻击                  | 🟢 低 | xterm.js 内置安全机制                   |
+
+**安全考虑详情**：
+
+- Claude Code 有自己的 auto-accept 模式和权限控制
+- OpenCode 同样有权限管理
+- 需要在 UI 上**明确标识** Bridge Agent 不受 read-only 限制
+
+---
+
+## 3. 用户体验风险
+
+| 风险                           | 等级  | 缓解措施                           |
+| ------------------------------ | ----- | ---------------------------------- |
+| CLI 响应慢（特别是大项目操作） | 🟡 中 | TUI 实时显示进度；空闲超时提示     |
+| 终端组件占用过多空间           | 🟡 中 | 完成后折叠；可调整高度；默认 20 行 |
+| Bridge Agent 不理解群聊协议    | 🟡 中 | 在上下文消息中说明 @mention 规则   |
+| TUI 复杂度认知负担             | 🟢 低 | 终端组件可折叠；最终消息为纯文本   |
+
+---
+
+## 4. 向后兼容性 ✅
+
+| 维度           | 影响                                                  |
+| -------------- | ----------------------------------------------------- |
+| 现有群聊       | 无影响（`bridge` 字段可选，不存在时走现有逻辑）       |
+| meta.json 格式 | 向后兼容（新增可选字段）                              |
+| 前端 UI        | 向后兼容（Bridge 标识为增量展示）                     |
+| RPC 接口       | 向后兼容（`group.addMembers` 增加可选 `bridge` 参数） |
+
+---
+
+## 5. 与发起者汇总机制的兼容性 ✅
+
+`group-chat-initiator-summary.md` 中描述的汇总机制完全适用于 Bridge Agent：
+
+- Bridge Agent 的回复也走 `appendGroupMessage()` → 前端收到 `group.message` 事件
+- 前端的 `detectAndForwardMentions()` 对 Bridge Agent 的回复同样有效
+- `scheduleSummaryCheck()` 的"UI 空闲检测"对 Bridge Agent 同样有效
+- `executeSummaryFlow()` 的两阶段设计对 Bridge Agent 透明
+
+---
+
+## 6. 与 AgentConfig 的关系
+
+现有 `AgentConfig`（`src/config/types.agents.ts`）中的 `runtime` 字段已经有了 `"acp"` 模式的概念：
+
+```typescript
+export type AgentRuntimeConfig =
+  | { type: "embedded" }
+  | { type: "acp"; acp?: AgentRuntimeAcpConfig };
+```
+
+Bridge Agent 可以视为第三种 runtime 类型，但**不建议**复用 `AgentConfig.runtime`，原因：
+
+1. `AgentConfig` 是全局 agent 配置，而 Bridge 配置是**群聊级别**的
+2. 同一个 agentId 可能在不同群聊中以不同方式参与（在群 A 是内部 Agent，在群 B 是 Bridge）
+3. Bridge 配置应该存储在 `GroupMember.bridge` 中，随群聊元数据持久化
+
+---
+
+## 7. Read-Only 策略豁免
+
+### 7.1 问题
+
+现有 `tool-policy.ts` 对群聊 Agent 强制 read-only。但 Bridge Agent 的核心价值就是能**写文件、执行命令**。
+
+### 7.2 方案
+
+Bridge Agent 绕过 `tool-policy.ts`（因为它不走 `dispatchInboundMessage()`，而是通过 PTY 直接运行外部 CLI）。CLI 自身的安全机制负责权限控制。
+
+**可行性**：🟢 可行。不存在技术障碍，只需要在 UI 层面做好标识。
+
+---
+
+## 8. 工作目录共享
+
+### 8.1 问题
+
+多个 Bridge Agent 可能同时操作同一个项目的不同文件。
+
+### 8.2 风险
+
+- 两个 CLI 同时编辑同一个文件 → 冲突
+- 一个 CLI 的修改破坏了另一个 CLI 正在工作的上下文
+
+### 8.3 缓解
+
+- 群聊的串行/mention 模式天然避免了同时操作（一个 Agent 回复完才触发下一个）
+- broadcast 模式下存在并行风险，但可以通过群公告限制工作范围
+- 文件锁机制超出本方案范围，属于后续优化
+
+**可行性**：🟡 基本可行，broadcast 模式需要注意。
+
+---
+
+## 9. 与非 TUI 方案的对比
+
+| 维度       | 非交互模式（`--print`） | TUI 方案（PTY + xterm.js） |
+| ---------- | ----------------------- | -------------------------- |
+| CLI 兼容性 | 仅支持非交互模式 CLI    | 支持所有终端程序           |
+| 实时进度   | ❌ 无流式输出           | ✅ 实时 TUI 可见           |
+| 上下文保持 | ❌ 每次调用独立         | ✅ 持久进程保持上下文      |
+| 工程复杂度 | 🟢 简单                 | 🟡 中等（但成熟）          |
+| 用户体验   | 🟡 较差                 | 🟢 优秀                    |
