@@ -331,8 +331,8 @@ describe("group-chat controller", () => {
         handleGroupMessageEvent(host as unknown as GroupChatState, msg2);
         await flushAsync(200);
 
-        // Advance past SUMMARY_DELAY_MS + PRE_SUMMARY_DELIVER_MS
-        await vi.advanceTimersByTimeAsync(16_000);
+        // Advance past SUMMARY_DELAY_MS (10s) — no pendingMentions so summary fires directly
+        await vi.advanceTimersByTimeAsync(11_000);
 
         // Should have summary call
         const summaryCalls = host.client.request.mock.calls.filter(

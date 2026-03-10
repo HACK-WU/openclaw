@@ -428,7 +428,6 @@ const summaryRounds = new Map<string, number>();
 const MAX_CHAIN_FORWARDS = 10;
 const MAX_CHAIN_DURATION_MS = 5 * 60_000; // 5 minutes
 const SUMMARY_DELAY_MS = 10_000; // Wait after all agents replied (summary trigger)
-const PRE_SUMMARY_DELIVER_MS = 5_000; // Deliver pending mentions 5s before summary
 const MAX_PENDING_WAIT_MS = 30_000; // Max wait for pending agents
 const MAX_SUMMARY_ROUNDS = 3;
 
@@ -538,10 +537,10 @@ function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
 }
 
 /**
- * Execute summary flow:
- * 1. Deliver pending mentions to non-initiator agents
- * 2. Wait 5 seconds for them to process
- * 3. Send summary to initiators
+ * Execute summary flow (two-phase):
+ * Phase 1: Deliver pending mentions → if delivered, re-enter scheduleSummaryCheck
+ *          to wait for agents to reply (observe, don't blind-wait).
+ * Phase 2: No pending mentions left → send summary to initiators.
  */
 async function executeSummaryFlow(host: GroupHost, groupId: string): Promise<void> {
   cancelSummaryTimer(groupId);
@@ -557,18 +556,31 @@ async function executeSummaryFlow(host: GroupHost, groupId: string): Promise<voi
     return;
   }
 
+  let delivered = false;
   summaryInFlight.add(groupId);
   try {
-    await deliverPendingMentions(host, groupId);
-    await new Promise((resolve) => setTimeout(resolve, PRE_SUMMARY_DELIVER_MS));
+    // Phase 1: deliver pending mentions to non-initiator agents
+    delivered = await deliverPendingMentions(host, groupId);
 
+    if (delivered) {
+      // Messages were delivered → agents may produce new replies with different opinions.
+      // Re-enter the scheduling loop so we wait for those replies before summarizing.
+      // pendingMentions for non-initiators are already cleared in deliverPendingMentions,
+      // so the next executeSummaryFlow invocation won't re-deliver them.
+      console.log(
+        `[group-chat] executeSummaryFlow: delivered pending mentions, re-entering wait loop`,
+      );
+      return; // finally block will clear summaryInFlight and re-schedule
+    }
+
+    // Phase 2: no pending mentions to deliver → send summary to initiators
     const latestChain = groupChainStates.get(groupId);
     if (latestChain?.initiators.length) {
       await sendSummaryMessage(host, groupId);
     }
   } finally {
     summaryInFlight.delete(groupId);
-    if (summaryRerunRequested.delete(groupId)) {
+    if (delivered || summaryRerunRequested.delete(groupId)) {
       scheduleSummaryCheck(host, groupId);
     }
   }
@@ -577,16 +589,19 @@ async function executeSummaryFlow(host: GroupHost, groupId: string): Promise<voi
 /**
  * Deliver pending @mention messages to non-initiator agents.
  * Initiators will receive their pending mentions in the summary message.
+ *
+ * @returns true if any messages were actually delivered (caller should
+ *          re-enter the scheduling loop to wait for agent replies).
  */
-async function deliverPendingMentions(host: GroupHost, groupId: string): Promise<void> {
+async function deliverPendingMentions(host: GroupHost, groupId: string): Promise<boolean> {
   const chain = groupChainStates.get(groupId);
   if (!chain || chain.pendingMentions.length === 0 || !host.client || !host.connected) {
-    return;
+    return false;
   }
 
   const meta = await resolveGroupMeta(host, groupId);
   if (!meta) {
-    return;
+    return false;
   }
 
   const memberIds = new Set(meta.members.map((m) => m.agentId));
@@ -638,7 +653,14 @@ async function deliverPendingMentions(host: GroupHost, groupId: string): Promise
       groupId,
       `📤 正在投递待处理消息给 ${agentsToDeliver.map((id) => `@${id}`).join(" ")}`,
     );
+
+    // Clear delivered (non-initiator) pending mentions.
+    // Keep initiator pending mentions — they will be included in the summary message.
+    // This ensures the next executeSummaryFlow invocation won't re-deliver.
+    chain.pendingMentions = chain.pendingMentions.filter((p) => initiatorSet.has(p.agentId));
   }
+
+  return agentsToDeliver.length > 0;
 }
 
 /** Send summary message to trigger initiators */

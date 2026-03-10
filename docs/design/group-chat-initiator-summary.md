@@ -683,11 +683,27 @@ async function detectAndForwardMentions(host: GroupHost, message: GroupChatMessa
 
 ### 4. 汇总前的消息投递
 
-触发逻辑改变：不再依赖 `group.stream (final)` 信号，改为检测 UI 是否有加载效果：
+触发逻辑改变：不再依赖 `group.stream (final)` 信号，改为检测 UI 是否有加载效果。
+
+#### 4.1 关键设计：观察式等待（而非盲等）
+
+**问题：** 投递待处理消息后，被投递的 agent 可能会产生新的回复（甚至包含不同看法）。如果投递后立刻盲等固定时间再汇总，可能导致：
+
+1. agent 的新回复还没生成完，initiator 就收到汇总，**错过新观点**
+2. agent 回复很快时，白白等待多余时间
+3. agent 的新回复触发了新的 @mention 链，和汇总产生竞争
+
+**解决方案：** `executeSummaryFlow` 采用两阶段设计：
+
+- **阶段一（投递）**：投递待处理消息给非 initiator 的 agent，然后**重新进入 `scheduleSummaryCheck` 等待循环**
+- **阶段二（汇总）**：等所有被投递的 agent 回复完毕（或超时），UI 再次空闲后，才发送汇总给 initiator
+
+这样 initiator 收到汇总时，能看到所有 agent 的最新观点（包括投递后产生的新回复）。
+
+#### 4.2 scheduleSummaryCheck
 
 ```typescript
 const SUMMARY_DELAY_MS = 10_000; // 汇总等待时间（UI 空闲后 10 秒）
-const PRE_SUMMARY_DELIVER_MS = 5_000; // 汇总前投递时间（汇总前 5 秒）
 const MAX_PENDING_WAIT_MS = 30_000; // 最大等待时间
 
 async function scheduleSummaryCheck(host: GroupHost, groupId: string): Promise<void> {
@@ -746,44 +762,76 @@ async function scheduleSummaryCheck(host: GroupHost, groupId: string): Promise<v
     }
   }
 }
+```
 
+#### 4.3 executeSummaryFlow（两阶段设计）
+
+```typescript
 /**
- * 执行汇总流程：先投递待处理消息，再触发汇总
+ * 执行汇总流程（两阶段）：
+ * 阶段一：投递待处理消息，然后重新等待 agent 回复
+ * 阶段二：所有 agent 回复完毕后，发送汇总给 initiator
  */
 async function executeSummaryFlow(host: GroupHost, groupId: string): Promise<void> {
   const chain = groupChainStates.get(groupId);
   if (!chain) return;
 
-  // 第一步：投递待处理的消息（给非 initiator 的 agent）
-  await deliverPendingMentions(host, groupId);
+  // 阶段一：检查是否有待投递的消息
+  const hasDelivered = await deliverPendingMentions(host, groupId);
 
-  // 第二步：等待 5 秒，让 agent 有机会处理
-  await sleep(PRE_SUMMARY_DELIVER_MS);
+  if (hasDelivered) {
+    // 有消息被投递了 → 不立刻汇总
+    // 重新进入 scheduleSummaryCheck 循环，等待投递触发的 agent 回复完毕
+    // 当 UI 再次空闲 + SUMMARY_DELAY_MS 后，会再次调用 executeSummaryFlow
+    // 此时 pendingMentions 已清空（在 deliverPendingMentions 中），不会重复投递
+    scheduleSummaryCheck(host, groupId);
+    return;
+  }
 
-  // 第三步：发送汇总（给 initiator）
+  // 阶段二：没有待投递消息（或已在上一轮投递完），直接发送汇总
   if (chain.initiators.length > 0) {
     await sendSummaryMessage(host, groupId, chain.initiators);
   }
 
-  // 第四步：清空状态
+  // 清空状态
   chain.mentionedAgents = [];
   chain.pendingMentions = [];
 }
 ```
 
+**防止无限循环的保障：**
+
+1. `deliverPendingMentions` 会清空已投递的 `pendingMentions`，所以下次进入 `executeSummaryFlow` 时 `hasDelivered` 为 false，直接进入阶段二
+2. 投递后的 agent 回复如果又产生新的 `pendingMentions`，会被正常追踪，但受 `MAX_SUMMARY_ROUNDS` 和 `MAX_CHAIN_FORWARDS` 限制
+3. `MAX_PENDING_WAIT_MS`（30 秒）兜底：即使 agent 一直不回复，超时后也会强制进入汇总
+
+#### 4.4 对比：盲等 vs 观察式等待
+
+| 场景                     | 盲等固定时间              | 观察式等待                     |
+| ------------------------ | ------------------------- | ------------------------------ |
+| 投递后 agent 有新观点    | ❌ 可能被忽略（5 秒不够） | ✅ 等 agent 回复完再汇总       |
+| agent 回复很快（< 5 秒） | 白等剩余时间              | ✅ 回复完就进入汇总倒计时      |
+| agent 回复很慢（> 5 秒） | ❌ 汇总已发出，新观点丢失 | ✅ 耐心等待，有超时保护        |
+| 投递触发新的 @mention 链 | ❌ 和汇总竞争             | ✅ 新链完成后再汇总            |
+| agent 不回复             | 等满 5 秒后汇总           | ✅ 超时后强制汇总（30 秒兜底） |
+
 ### 5. 投递待处理消息
 
-区分 initiator 和非 initiator 的处理方式：
+区分 initiator 和非 initiator 的处理方式。
+
+**关键：** 函数返回 `boolean`，表示是否实际投递了消息。调用方据此决定是重新等待还是直接汇总。
 
 ```typescript
 /**
  * 投递待处理的 @mention 消息
  * 非 initiator 的 agent 在汇总前收到消息
  * initiator 的消息会在汇总中一起处理
+ *
+ * @returns true 如果实际投递了消息（调用方应重新进入等待循环）
  */
-async function deliverPendingMentions(host: GroupHost, groupId: string): Promise<void> {
+async function deliverPendingMentions(host: GroupHost, groupId: string): Promise<boolean> {
   const chain = groupChainStates.get(groupId);
-  if (!chain || chain.pendingMentions.length === 0) return;
+  if (!chain || chain.pendingMentions.length === 0) return false;
 
   // 按顺序去重处理
   const deliverMap = new Map<string, PendingMention[]>();
@@ -799,6 +847,8 @@ async function deliverPendingMentions(host: GroupHost, groupId: string): Promise
     list.push(pending);
     deliverMap.set(pending.agentId, list);
   }
+
+  let delivered = false;
 
   // 按顺序投递（保持 mentionAgents 的顺序）
   for (const agentId of chain.mentionedAgents) {
@@ -819,10 +869,17 @@ async function deliverPendingMentions(host: GroupHost, groupId: string): Promise
       skipTranscript: true,
     });
 
+    delivered = true;
     console.log(
       `[group-chat] delivered pending mentions to ${agentId}: ${pendings.length} messages`,
     );
   }
+
+  // 清空已投递的非 initiator 消息，保留 initiator 的待处理消息
+  // 这样下次进入 executeSummaryFlow 时不会重复投递
+  chain.pendingMentions = chain.pendingMentions.filter((p) => chain.initiators.includes(p.agentId));
+
+  return delivered;
 }
 ```
 
@@ -907,12 +964,13 @@ if (isUILoading) {
 
 **延迟时间调整：**
 
-- 投递时间：**5 秒**（`PRE_SUMMARY_DELIVER_MS`）
-- 汇总时间：**10 秒**（`SUMMARY_DELAY_MS`）
+- 汇总时间：**10 秒**（`SUMMARY_DELAY_MS`，UI 空闲后等待）
+- 最大等待时间：**30 秒**（`MAX_PENDING_WAIT_MS`，超时强制汇总）
+- ~~投递时间：已移除 `PRE_SUMMARY_DELIVER_MS`~~（改为观察式等待，不再盲等固定时间）
 
 ```typescript
 const SUMMARY_DELAY_MS = 10_000; // 汇总等待时间
-const PRE_SUMMARY_DELIVER_MS = 5_000; // 汇总前投递时间
+const MAX_PENDING_WAIT_MS = 30_000; // 最大等待时间
 ```
 
 ### 8. 自动触发时显示加载效果
@@ -970,7 +1028,7 @@ test_4: 好的，我来处理 @test_2
 
 [UI 空闲后 10 秒]
 
-→ executeSummaryFlow() 开始
+→ executeSummaryFlow() 阶段一开始
 
 → deliverPendingMentions():
    - test_2 不在 initiators 中，发送：
@@ -978,19 +1036,52 @@ test_4: 好的，我来处理 @test_2
    - test_4 不在 initiators 中，发送：
      "[test_2]: 我认为需要 @test_4 来处理数据库部分
       [test_3]: 同意，@test_4 你能帮忙吗？"
+   - 返回 true（有消息被投递）
+   - 清空已投递的 pendingMentions（保留 initiator 的）
 
-→ 等待 5 秒
+→ hasDelivered = true → 不立刻汇总，重新进入 scheduleSummaryCheck
+
+[test_2 和 test_4 收到投递消息，开始生成回复]
+
+test_4: 收到，我有不同看法。经过进一步分析，Y 方案更好...
+        → 新的回复包含了不同观点
+        → 这些内容会被 test_1 在汇总时看到
+
+test_2: 了解，同意 test_4 的新方案
+
+[所有 agent 再次回复完毕，UI 空闲]
+
+[UI 空闲后 10 秒]
+
+→ executeSummaryFlow() 阶段二开始
+
+→ deliverPendingMentions():
+   - 无非 initiator 的待投递消息
+   - 返回 false
+
+→ hasDelivered = false → 进入汇总阶段
 
 → sendSummaryMessage():
    - test_1 在 initiators 中
-   - 发送汇总 @test_1
-   - 无待处理消息给 test_1
+   - 发送汇总 @test_1（包含 initiator 的待处理消息）
+   - test_1 此时能看到 test_4 的新观点（Y 方案）
 
 → 清空状态：
    - mentionedAgents = []
    - pendingMentions = []
+```
 
-→ test_1, test_2, test_4 收到各自的提醒消息
+**对比旧方案（盲等 5 秒）下的问题：**
+
+```
+[旧方案：投递后盲等 5 秒]
+
+→ deliverPendingMentions() 投递给 test_2 和 test_4
+→ 盲等 5 秒...
+→ test_4 还在生成包含新观点的回复...
+→ sendSummaryMessage() @test_1
+→ test_1 被触发回复，但此时 test_4 的新观点还没出来
+→ test_1 的回复基于不完整的信息 ← 问题！
 ```
 
 ### 9. 状态清空时机
