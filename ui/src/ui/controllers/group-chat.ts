@@ -1610,6 +1610,8 @@ export async function enterGroupChat(host: GroupHost, groupId: string): Promise<
   host.groupToolMessages = new Map();
   host.groupError = null;
   host.groupDraft = "";
+  // Clear stale stream buffers from the previous group to avoid ghost bubbles
+  streamBuffers.clear();
   await Promise.all([loadGroupInfo(host, groupId), loadGroupHistory(host, groupId)]);
 }
 
