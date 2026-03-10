@@ -95,15 +95,18 @@ export type GroupStreamPayload = {
 
 export type GroupSystemPayload = {
   groupId: string;
-  action: string;
+  event?: string;
+  action?: string;
   data?: unknown;
 };
 
 // ─── State ───
 
 export type GroupChatState = {
-  /** Currently viewed group ID, null if not in group chat view */
+  /** Currently viewed group ID, null if not in a group room */
   activeGroupId: string | null;
+  /** Whether the group chat area (list or room) is currently open */
+  groupListOpen: boolean;
   /** Loaded group metadata */
   activeGroupMeta: GroupSessionMeta | null;
   /** Group chat messages */
@@ -157,6 +160,7 @@ export type GroupDisbandDialogState = {
 
 export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   activeGroupId: null,
+  groupListOpen: false,
   activeGroupMeta: null,
   groupMessages: [],
   groupStreams: new Map(),
@@ -181,20 +185,147 @@ export type GroupHost = {
   connected: boolean;
 } & GroupChatState;
 
+const groupMetaCache = new Map<string, GroupSessionMeta>();
+const groupActiveStreamKeys = new Map<string, Set<string>>();
+const parsedMentionMessageIds = new Set<string>();
+const summaryInFlight = new Set<string>();
+const summaryRerunRequested = new Set<string>();
+
+function cacheGroupMeta(meta: GroupSessionMeta): GroupSessionMeta {
+  groupMetaCache.set(meta.groupId, meta);
+  return meta;
+}
+
+async function fetchGroupMeta(host: GroupHost, groupId: string): Promise<GroupSessionMeta | null> {
+  if (!host.client || !host.connected) {
+    return null;
+  }
+  try {
+    const meta = await host.client.request<GroupSessionMeta>("group.info", { groupId });
+    return meta ? cacheGroupMeta(meta) : null;
+  } catch (err) {
+    console.warn(`[group-chat] failed to fetch group meta for ${groupId}:`, err);
+    return null;
+  }
+}
+
+async function resolveGroupMeta(
+  host: GroupHost,
+  groupId: string,
+): Promise<GroupSessionMeta | null> {
+  if (host.activeGroupId === groupId && host.activeGroupMeta) {
+    return cacheGroupMeta(host.activeGroupMeta);
+  }
+  const cached = groupMetaCache.get(groupId);
+  if (cached) {
+    return cached;
+  }
+  return fetchGroupMeta(host, groupId);
+}
+
+async function refreshGroupMetaCache(host: GroupHost, groupId: string): Promise<void> {
+  const meta = await fetchGroupMeta(host, groupId);
+  if (!meta) {
+    return;
+  }
+  if (host.activeGroupId === groupId) {
+    host.activeGroupMeta = meta;
+  }
+}
+
+function getOrCreateActiveStreamSet(groupId: string): Set<string> {
+  let set = groupActiveStreamKeys.get(groupId);
+  if (!set) {
+    set = new Set<string>();
+    groupActiveStreamKeys.set(groupId, set);
+  }
+  return set;
+}
+
+function markGroupStreamActive(groupId: string, agentId: string, runId: string): void {
+  getOrCreateActiveStreamSet(groupId).add(`${agentId}:${runId}`);
+}
+
+function markGroupStreamInactive(groupId: string, agentId: string, runId: string): void {
+  const set = groupActiveStreamKeys.get(groupId);
+  if (!set) {
+    return;
+  }
+  set.delete(`${agentId}:${runId}`);
+  if (set.size === 0) {
+    groupActiveStreamKeys.delete(groupId);
+  }
+}
+
+function getGroupActiveStreamCount(groupId: string): number {
+  return groupActiveStreamKeys.get(groupId)?.size ?? 0;
+}
+
+function getParsedMentionMessageKey(groupId: string, messageId: string): string {
+  return `${groupId}:${messageId}`;
+}
+
+function hasParsedMentionMessage(groupId: string, messageId: string): boolean {
+  return parsedMentionMessageIds.has(getParsedMentionMessageKey(groupId, messageId));
+}
+
+function markParsedMentionMessage(groupId: string, messageId: string): void {
+  parsedMentionMessageIds.add(getParsedMentionMessageKey(groupId, messageId));
+}
+
+function clearParsedMentionMessages(groupId: string): void {
+  const prefix = `${groupId}:`;
+  for (const key of parsedMentionMessageIds) {
+    if (key.startsWith(prefix)) {
+      parsedMentionMessageIds.delete(key);
+    }
+  }
+}
+
+function resetGroupRoomState(host: GroupChatState): void {
+  host.activeGroupId = null;
+  host.activeGroupMeta = null;
+  host.groupMessages = [];
+  host.groupStreams = new Map();
+  host.groupPendingAgents = new Set();
+  host.groupToolMessages = new Map();
+  host.groupChatLoading = false;
+  host.groupSending = false;
+  host.groupDraft = "";
+  host.groupError = null;
+  host.groupAddMemberDialog = null;
+  host.groupDisbandDialog = null;
+  host.groupInfoPanelOpen = false;
+}
+
+export function openGroupList(host: GroupChatState): void {
+  host.groupListOpen = true;
+  resetGroupRoomState(host);
+}
+
+export function closeGroupChatView(host: GroupChatState): void {
+  host.groupListOpen = false;
+  host.groupCreateDialog = null;
+  resetGroupRoomState(host);
+}
+
 // ─── @mention Detection & Auto-Forward ───
 
 /**
- * Extract routing targets from lines that contain ONLY @mentions.
- * Uses exact matching based on member IDs (not regex patterns).
+ * Extract routable @mentions from message content.
+ *
+ * Historical note: the function name is retained for compatibility,
+ * but the current behavior matches product rules where both inline
+ * mentions and standalone mention lines can trigger routing.
  *
  * @param content - The message content to parse
  * @param memberIds - List of valid member agentIds for exact matching
- * @returns Array of member IDs mentioned on dedicated lines
+ * @returns Array of valid member IDs mentioned anywhere in the content
  *
  * Examples (with memberIds = ["dev", "test"]):
  * - "@dev" → ["dev"] (triggers routing)
  * - "@dev @test" → ["dev", "test"] (triggers routing to both)
- * - "请回答 @dev" → [] (same line has other content, no routing)
+ * - "请回答 @dev" → ["dev"] (inline mention also triggers routing)
  * - "@unknown" → [] (not a member, no routing)
  */
 export function extractDedicatedMentions(content: string, memberIds: string[]): string[] {
@@ -348,6 +479,18 @@ function cancelSummaryTimer(groupId: string): void {
   }
 }
 
+function getGroupSystemEventName(payload: GroupSystemPayload): string | null {
+  return payload.event ?? payload.action ?? null;
+}
+
+function requestSummaryCheck(host: GroupHost, groupId: string): void {
+  if (summaryInFlight.has(groupId)) {
+    summaryRerunRequested.add(groupId);
+    return;
+  }
+  scheduleSummaryCheck(host, groupId);
+}
+
 /** Schedule a summary check */
 function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
   const chain = groupChainStates.get(groupId);
@@ -360,45 +503,31 @@ function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
     return;
   }
 
-  // Check if UI is still loading (has pending agents or active streams)
-  const hasPendingAgents = host.groupPendingAgents.size > 0;
-  const hasActiveStreams = host.groupStreams.size > 0;
-  const isUILoading = hasPendingAgents || hasActiveStreams;
+  const hasPendingAgents = chain.pendingAgents.size > 0;
+  const activeStreamCount = getGroupActiveStreamCount(groupId);
+  const hasActiveStreams = activeStreamCount > 0;
+  const isConversationBusy = hasPendingAgents || hasActiveStreams;
 
   console.log(
     `[group-chat] scheduleSummaryCheck: group=${groupId} initiators=[${chain.initiators.join(",")}] ` +
       `pendingAgents=[${[...chain.pendingAgents].join(",")}] ` +
-      `UILoading=${isUILoading} (pending=${hasPendingAgents}, streams=${hasActiveStreams})`,
+      `busy=${isConversationBusy} (pending=${hasPendingAgents}, streams=${activeStreamCount})`,
   );
 
-  // Cancel existing timer
   cancelSummaryTimer(groupId);
 
-  // If UI is still loading, wait and retry
-  if (isUILoading) {
-    console.log(`[group-chat] scheduleSummaryCheck: UI still loading, waiting...`);
+  if (isConversationBusy) {
     const timer = window.setTimeout(() => {
       scheduleSummaryCheck(host, groupId);
-    }, 1000); // Check again in 1 second
+    }, 1000);
     summaryTimers.set(groupId, timer);
     return;
   }
 
-  // UI is idle, start the summary countdown
   const now = Date.now();
   const elapsed = now - chain.lastMessageAt;
   const totalWait = now - chain.startedAt;
-
-  let delay: number;
-
-  // Check for max wait time
-  if (totalWait >= MAX_PENDING_WAIT_MS) {
-    // Waited too long, trigger immediately
-    delay = 0;
-  } else {
-    // Wait SUMMARY_DELAY_MS from last message
-    delay = Math.max(0, SUMMARY_DELAY_MS - elapsed);
-  }
+  const delay = totalWait >= MAX_PENDING_WAIT_MS ? 0 : Math.max(0, SUMMARY_DELAY_MS - elapsed);
 
   console.log(`[group-chat] scheduleSummaryCheck: scheduling summary in ${delay}ms`);
 
@@ -415,6 +544,12 @@ function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
  * 3. Send summary to initiators
  */
 async function executeSummaryFlow(host: GroupHost, groupId: string): Promise<void> {
+  cancelSummaryTimer(groupId);
+  if (summaryInFlight.has(groupId)) {
+    summaryRerunRequested.add(groupId);
+    return;
+  }
+
   console.log(`[group-chat] executeSummaryFlow: starting for ${groupId}`);
   const chain = groupChainStates.get(groupId);
   if (!chain) {
@@ -422,15 +557,20 @@ async function executeSummaryFlow(host: GroupHost, groupId: string): Promise<voi
     return;
   }
 
-  // Step 1: Deliver pending mentions to non-initiators
-  await deliverPendingMentions(host, groupId);
+  summaryInFlight.add(groupId);
+  try {
+    await deliverPendingMentions(host, groupId);
+    await new Promise((resolve) => setTimeout(resolve, PRE_SUMMARY_DELIVER_MS));
 
-  // Step 2: Wait for agents to process
-  await new Promise((resolve) => setTimeout(resolve, PRE_SUMMARY_DELIVER_MS));
-
-  // Step 3: Send summary to initiators
-  if (chain.initiators.length > 0) {
-    await sendSummaryMessage(host, groupId);
+    const latestChain = groupChainStates.get(groupId);
+    if (latestChain?.initiators.length) {
+      await sendSummaryMessage(host, groupId);
+    }
+  } finally {
+    summaryInFlight.delete(groupId);
+    if (summaryRerunRequested.delete(groupId)) {
+      scheduleSummaryCheck(host, groupId);
+    }
   }
 }
 
@@ -440,28 +580,21 @@ async function executeSummaryFlow(host: GroupHost, groupId: string): Promise<voi
  */
 async function deliverPendingMentions(host: GroupHost, groupId: string): Promise<void> {
   const chain = groupChainStates.get(groupId);
-  if (!chain || chain.pendingMentions.length === 0) {
+  if (!chain || chain.pendingMentions.length === 0 || !host.client || !host.connected) {
     return;
   }
 
-  const meta = host.activeGroupMeta;
-  if (!meta || !host.client || !host.connected) {
+  const meta = await resolveGroupMeta(host, groupId);
+  if (!meta) {
     return;
   }
 
   const memberIds = new Set(meta.members.map((m) => m.agentId));
   const initiatorSet = new Set(chain.initiators);
-
-  // Group pending mentions by target agent (exclude initiators and left members)
   const deliverMap = new Map<string, PendingMention[]>();
 
   for (const pending of chain.pendingMentions) {
-    // Skip initiators (they get mentions in summary)
-    if (initiatorSet.has(pending.agentId)) {
-      continue;
-    }
-    // Skip agents who left the group
-    if (!memberIds.has(pending.agentId)) {
+    if (initiatorSet.has(pending.agentId) || !memberIds.has(pending.agentId)) {
       continue;
     }
 
@@ -470,19 +603,15 @@ async function deliverPendingMentions(host: GroupHost, groupId: string): Promise
     deliverMap.set(pending.agentId, list);
   }
 
-  // Collect agents to deliver to (for UI notification)
   const agentsToDeliver: string[] = [];
 
-  // Deliver in order of mentionedAgents
   for (const agentId of chain.mentionedAgents) {
     const pendings = deliverMap.get(agentId);
-    if (!pendings || pendings.length === 0) {
+    if (!pendings?.length) {
       continue;
     }
 
     agentsToDeliver.push(agentId);
-
-    // Sort by timestamp and merge messages
     const messages = pendings
       .toSorted((a, b) => a.message.timestamp - b.message.timestamp)
       .map((p) => `[${p.fromAgentId}]: ${p.message.content}`);
@@ -503,7 +632,6 @@ async function deliverPendingMentions(host: GroupHost, groupId: string): Promise
     }
   }
 
-  // Show delivery notification in UI
   if (agentsToDeliver.length > 0) {
     appendSystemMessageToUI(
       host,
@@ -520,16 +648,18 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
     return;
   }
 
-  // Check summary rounds limit
   const rounds = summaryRounds.get(groupId) ?? 0;
   if (rounds >= MAX_SUMMARY_ROUNDS) {
     console.log(`[group-chat] summary rounds limit: group=${groupId} rounds=${rounds}`);
     return;
   }
 
-  // Filter out initiators who left the group
-  const meta = host.activeGroupMeta;
-  if (!meta || !host.client || !host.connected) {
+  if (!host.client || !host.connected) {
+    return;
+  }
+
+  const meta = await resolveGroupMeta(host, groupId);
+  if (!meta) {
     return;
   }
 
@@ -538,23 +668,19 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
   );
 
   if (validInitiators.length === 0) {
+    resetChainState(groupId);
     return;
   }
 
-  // Increment summary rounds
   summaryRounds.set(groupId, rounds + 1);
-
-  // Show summary trigger notification
   appendSystemMessageToUI(host, groupId, `📢 汇总 @${validInitiators.join(" @")}`);
 
-  // Build summary message, including pending mentions for initiators
   let summaryContent = `请确认是否有新的想法或补充。
 
 如果当前讨论已结束或没有新内容，可以：
 - 不回复（跳过）
 - 回复简单语句，如"收到"、"明白"、"了解"`;
 
-  // Add pending mentions for each initiator
   for (const initiatorId of validInitiators) {
     const initiatorPendings = chain.pendingMentions.filter((p) => p.agentId === initiatorId);
 
@@ -577,16 +703,15 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
       skipTranscript: true,
     });
 
-    // Reset chain state after summary (clear for new round)
     const now = Date.now();
     groupChainStates.set(groupId, {
       count: 0,
       startedAt: now,
-      initiators: [], // Clear for new round
-      pendingAgents: new Set(validInitiators), // Track who was triggered
+      initiators: [],
+      pendingAgents: new Set(validInitiators),
       lastMessageAt: now,
-      mentionedAgents: [], // Clear mentioned agents
-      pendingMentions: [], // Clear pending mentions
+      mentionedAgents: [],
+      pendingMentions: [],
     });
 
     console.log(`[group-chat] summary sent: group=${groupId} to=[${validInitiators.join(",")}]`);
@@ -602,6 +727,9 @@ export function resetChainState(groupId: string): void {
   }
   groupChainStates.delete(groupId);
   cancelSummaryTimer(groupId);
+  summaryInFlight.delete(groupId);
+  summaryRerunRequested.delete(groupId);
+  clearParsedMentionMessages(groupId);
 }
 
 /** Get mentioned agents for a group (agents that have been triggered in current chain) */
@@ -630,8 +758,9 @@ export async function triggerSummary(host: GroupHost, groupId: string): Promise<
  * Detect @agentId markers in an agent's reply and auto-forward
  * the message to trigger the mentioned agents.
  *
- * IMPORTANT: Only mentions on DEDICATED LINES (lines with only @mentions)
- * trigger routing. Mentions on lines with other content are for display only.
+ * Both inline mentions and standalone mention lines can trigger routing.
+ * If a line contains only @mentions, that line is later treated as a
+ * routing-only marker and removed from forwarded content.
  *
  * NEW: If an agent has already been triggered in this chain, the mention
  * is saved for later delivery (before summary or in summary message).
@@ -646,38 +775,33 @@ export async function detectAndForwardMentions(
   if (message.sender.type !== "agent") {
     return;
   }
-  if (!host.client || !host.connected || !host.activeGroupMeta) {
+  if (!host.client || !host.connected) {
     return;
   }
 
-  const meta = host.activeGroupMeta;
-  // Get all member IDs for filtering dedicated mention lines
+  const meta = await resolveGroupMeta(host, message.groupId);
+  if (!meta) {
+    return;
+  }
+
   const allMemberIds = meta.members.map((m) => m.agentId);
-  // Get current chain state to exclude initiators from mention matching
-  // This prevents initiators from being unexpectedly triggered mid-conversation
   const currentChain = groupChainStates.get(message.groupId);
   const initiatorSet = new Set(currentChain?.initiators ?? []);
-  // Exclude initiators from memberIds so @initiator won't trigger them
   const memberIds = allMemberIds.filter((id) => !initiatorSet.has(id));
 
-  // Strip thinking tags before mention extraction to avoid false positives from thinking content
   const cleanContent =
     message.role === "assistant" ? stripThinkingTags(message.content) : message.content;
-  // Only extract mentions from DEDICATED LINES (lines with only @mentions)
   const dedicatedMentions = extractDedicatedMentions(cleanContent, memberIds);
 
   if (dedicatedMentions.length === 0) {
-    // No dedicated mention lines → chain naturally ends
-    // But if there are initiators, schedule summary check first
     const chain = groupChainStates.get(message.groupId);
     console.log(
       `[group-chat] no dedicated mentions, chain exists: ${!!chain}, initiators: [${chain?.initiators.join(",") ?? "none"}]`,
     );
     if (chain && chain.initiators.length > 0) {
-      // Update last message time and schedule summary
       chain.lastMessageAt = Date.now();
       console.log(`[group-chat] scheduling summary check due to no mentions`);
-      scheduleSummaryCheck(host, message.groupId);
+      requestSummaryCheck(host, message.groupId);
       return;
     }
     resetChainState(message.groupId);
@@ -689,11 +813,10 @@ export async function detectAndForwardMentions(
   const mentionedIds = [...new Set(dedicatedMentions.filter((id) => id !== senderAgentId))];
 
   if (mentionedIds.length === 0) {
-    // All mentions were to self, treat as no mentions
     const chain = groupChainStates.get(message.groupId);
     if (chain && chain.initiators.length > 0) {
       chain.lastMessageAt = Date.now();
-      scheduleSummaryCheck(host, message.groupId);
+      requestSummaryCheck(host, message.groupId);
       return;
     }
     resetChainState(message.groupId);
@@ -762,10 +885,8 @@ export async function detectAndForwardMentions(
 
   // Only trigger first-time mentions
   if (firstTimeMentions.length === 0) {
-    // All mentioned agents were already triggered
-    // Still schedule summary check if there are initiators
     if (chain.initiators.length > 0) {
-      scheduleSummaryCheck(host, message.groupId);
+      requestSummaryCheck(host, message.groupId);
     }
     return;
   }
@@ -779,9 +900,9 @@ export async function detectAndForwardMentions(
     chain.pendingAgents.add(id);
   }
 
-  // Remove dedicated mention lines from forwarded message (they're routing markers, not content)
+  // Remove pure mention lines from forwarded message (they are routing-only markers)
   // Strip thinking tags from forwarded content (thinking is not forwarded to triggered agents)
-  // Keep inline mentions as-is for display
+  // Keep inline mentions as-is in the forwarded message body
   const lines = cleanContent.split("\n");
   const contentLines = lines.filter((line) => {
     const trimmed = line.trim();
@@ -810,13 +931,16 @@ export async function detectAndForwardMentions(
   appendSystemMessageToUI(host, message.groupId, `🔄 触发 @${firstTimeMentions.join(" @")}`);
 
   // Predict which agents will respond so we can show pending indicators immediately
-  // This matches the behavior of manual @mentions
-  const currentPending = host.groupPendingAgents;
-  const newPending = new Set(currentPending);
-  for (const id of firstTimeMentions) {
-    newPending.add(id);
+  // This is only a UI concern for the currently active room. Chain state already
+  // tracks pending agents for all groups, including background groups.
+  if (host.activeGroupId === message.groupId) {
+    const currentPending = host.groupPendingAgents;
+    const newPending = new Set(currentPending);
+    for (const id of firstTimeMentions) {
+      newPending.add(id);
+    }
+    host.groupPendingAgents = newPending;
   }
-  host.groupPendingAgents = newPending;
 
   // Forward: reuse group.send with sender set to the replying agent
   // skipTranscript: true → backend skips duplicate write + broadcast
@@ -838,12 +962,13 @@ export async function detectAndForwardMentions(
         `⚠️ Server-side chain limit reached. Auto-forwarding has been stopped. ` +
           `Send a new message to start a fresh conversation.`,
       );
-      // Clear pending on error
-      const next = new Set(host.groupPendingAgents);
-      for (const id of firstTimeMentions) {
-        next.delete(id);
+      if (host.activeGroupId === message.groupId) {
+        const next = new Set(host.groupPendingAgents);
+        for (const id of firstTimeMentions) {
+          next.delete(id);
+        }
+        host.groupPendingAgents = next;
       }
-      host.groupPendingAgents = next;
     } else {
       console.error("[group-chat] forward mention failed:", err);
     }
@@ -852,6 +977,9 @@ export async function detectAndForwardMentions(
 
 /** Append a local system message to the UI (not persisted to backend) */
 function appendSystemMessageToUI(host: GroupChatState, groupId: string, content: string): void {
+  if (host.activeGroupId !== groupId) {
+    return;
+  }
   const msg: GroupChatMessage = {
     id: `sys-chain-${Date.now()}`,
     groupId,
@@ -915,8 +1043,13 @@ export async function loadGroupInfo(host: GroupHost, groupId: string): Promise<v
   host.groupChatLoading = true;
   try {
     const meta = await host.client.request<GroupSessionMeta>("group.info", { groupId });
-    host.activeGroupMeta = meta;
-    host.activeGroupId = groupId;
+    if (!meta) {
+      return;
+    }
+    cacheGroupMeta(meta);
+    if (host.activeGroupId === groupId) {
+      host.activeGroupMeta = meta;
+    }
   } catch (err) {
     host.groupError = `Failed to load group: ${String(err)}`;
   } finally {
@@ -956,22 +1089,18 @@ export async function sendGroupMessage(
     return;
   }
 
-  // Owner sends a new message → reset chain state but preserve initiators
   const existingChain = groupChainStates.get(groupId);
   const existingInitiators = existingChain?.initiators ?? [];
 
-  // Cancel any pending summary timer
   cancelSummaryTimer(groupId);
-
-  // Reset summary rounds (new conversation)
   summaryRounds.delete(groupId);
+  summaryRerunRequested.delete(groupId);
 
-  // Reset chain state with preserved initiators
   const now = Date.now();
   groupChainStates.set(groupId, {
     count: 0,
     startedAt: now,
-    initiators: existingInitiators, // Keep previous initiators
+    initiators: existingInitiators,
     pendingAgents: new Set(),
     lastMessageAt: now,
     mentionedAgents: [],
@@ -981,13 +1110,11 @@ export async function sendGroupMessage(
   host.groupSending = true;
   host.groupError = null;
 
-  // Predict which agents will respond so we can show pending indicators immediately
-  const meta = host.activeGroupMeta;
+  const meta = await resolveGroupMeta(host, groupId);
   if (meta) {
     const pendingAgents = resolvePendingAgents(meta, mentions);
     if (pendingAgents.length > 0) {
       host.groupPendingAgents = new Set(pendingAgents);
-      // Also add to chain's pendingAgents
       const chain = groupChainStates.get(groupId);
       if (chain) {
         for (const id of pendingAgents) {
@@ -1006,7 +1133,6 @@ export async function sendGroupMessage(
     host.groupDraft = "";
   } catch (err) {
     host.groupError = `Failed to send: ${String(err)}`;
-    // Clear pending on error
     host.groupPendingAgents = new Set();
   } finally {
     host.groupSending = false;
@@ -1065,11 +1191,12 @@ export async function deleteGroup(host: GroupHost, groupId: string): Promise<voi
   }
   try {
     await host.client.request("group.delete", { groupId });
+    resetChainState(groupId);
+    groupMetaCache.delete(groupId);
+    groupActiveStreamKeys.delete(groupId);
+    clearParsedMentionMessages(groupId);
     if (host.activeGroupId === groupId) {
-      host.activeGroupId = null;
-      host.activeGroupMeta = null;
-      host.groupMessages = [];
-      host.groupStreams = new Map();
+      openGroupList(host);
     }
     await loadGroupList(host);
   } catch (err) {
@@ -1227,7 +1354,6 @@ export function handleGroupMessageEvent(
   host: GroupChatState,
   payload: { groupId: string } & GroupChatMessage,
 ): void {
-  // Debug log: record received message
   console.log("[GROUP_CHAT_DEBUG] RECEIVED_MESSAGE", {
     timestamp: new Date().toISOString(),
     groupId: payload.groupId,
@@ -1241,42 +1367,45 @@ export function handleGroupMessageEvent(
     mentions: payload.mentions,
   });
 
-  if (payload.groupId !== host.activeGroupId) {
-    return;
-  }
-  // Deduplicate by message id
-  if (host.groupMessages.some((m) => m.id === payload.id)) {
-    console.log("[GROUP_CHAT_DEBUG] DUPLICATE_MESSAGE_SKIPPED", {
-      messageId: payload.id,
-    });
-    return;
-  }
-  host.groupMessages = [...host.groupMessages, payload];
-
-  // Track agent reply and schedule summary check
-  if (payload.sender.type === "agent") {
-    const chain = groupChainStates.get(payload.groupId);
-    if (chain) {
-      // Remove from pending agents (they replied)
-      chain.pendingAgents.delete(payload.sender.agentId);
-      chain.lastMessageAt = Date.now();
+  const isActiveGroup = payload.groupId === host.activeGroupId;
+  if (isActiveGroup) {
+    if (host.groupMessages.some((m) => m.id === payload.id)) {
+      console.log("[GROUP_CHAT_DEBUG] DUPLICATE_MESSAGE_SKIPPED", {
+        messageId: payload.id,
+      });
+    } else {
+      host.groupMessages = [...host.groupMessages, payload];
     }
-
-    // Auto-detect @mentions and forward (triggered when message is received)
-    // This is async, but the sync part (setting groupPendingAgents) happens immediately
-    void detectAndForwardMentions(host as GroupHost, payload).then(() => {
-      // Schedule summary check after @mention detection completes
-      // This ensures groupPendingAgents is set before we check UI loading state
-      scheduleSummaryCheck(host as GroupHost, payload.groupId);
-    });
   }
+
+  if (payload.sender.type !== "agent") {
+    return;
+  }
+
+  const chain = groupChainStates.get(payload.groupId);
+  if (chain) {
+    chain.pendingAgents.delete(payload.sender.agentId);
+    chain.lastMessageAt = Date.now();
+  }
+
+  if (hasParsedMentionMessage(payload.groupId, payload.id)) {
+    return;
+  }
+  markParsedMentionMessage(payload.groupId, payload.id);
+
+  void detectAndForwardMentions(host as GroupHost, payload)
+    .then(() => {
+      requestSummaryCheck(host as GroupHost, payload.groupId);
+    })
+    .catch((err) => {
+      console.error("[group-chat] detectAndForwardMentions failed:", err);
+    });
 }
 
 const streamBuffers = new Map<string, string>();
 let streamSyncTimer: number | null = null;
 
 export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStreamPayload): void {
-  // Debug log: record stream event
   console.log("[GROUP_CHAT_DEBUG] RECEIVED_STREAM", {
     timestamp: new Date().toISOString(),
     groupId: payload.groupId,
@@ -1289,23 +1418,20 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     messageContent: payload.message?.content?.slice(0, 100),
   });
 
-  if (payload.groupId !== host.activeGroupId) {
-    return;
-  }
-
-  // Handle both 'content' (backend) and 'text' (legacy frontend) fields
+  const isActiveGroup = payload.groupId === host.activeGroupId;
   const deltaText = payload.content ?? payload.text;
 
   if (payload.state === "delta" && typeof deltaText === "string") {
-    // Key for this agent's run (used for tool messages and stream buffers)
+    markGroupStreamActive(payload.groupId, payload.agentId, payload.runId);
+    if (!isActiveGroup) {
+      return;
+    }
+
     const streamKey = `${payload.agentId}:${payload.runId}`;
 
-    // Handle tool messages FIRST (even if text is empty)
-    // This ensures tool cards show immediately when tools start executing
     if (payload.toolMessages && payload.toolMessages.length > 0) {
       const currentToolMessages = host.groupToolMessages ?? new Map();
       const existingTools = currentToolMessages.get(streamKey) ?? [];
-      // Merge new tool messages, avoiding duplicates by id
       const newToolMap = new Map(existingTools.map((t) => [t.id, t]));
       for (const toolMsg of payload.toolMessages) {
         newToolMap.set(toolMsg.id, toolMsg);
@@ -1315,13 +1441,10 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
         Array.from(newToolMap.values()),
       );
 
-      // Create a placeholder stream entry for tool messages (if no text content yet)
-      // This allows tool cards to render even before the agent starts streaming text
       if (!streamBuffers.has(streamKey)) {
-        streamBuffers.set(streamKey, ""); // Empty placeholder
+        streamBuffers.set(streamKey, "");
       }
 
-      // Remove from pending and show streaming bubble with tool cards
       if (host.groupPendingAgents.has(payload.agentId)) {
         const next = new Set(host.groupPendingAgents);
         next.delete(payload.agentId);
@@ -1329,10 +1452,7 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
       }
     }
 
-    // Empty delta means "stream started but no content yet" - but tool messages may exist
-    // Still need to trigger sync so tool cards can render
     if (deltaText.length === 0) {
-      // Trigger UI sync for tool messages (even if no text content)
       if (!streamSyncTimer) {
         streamSyncTimer = window.setTimeout(() => {
           syncGroupStreams(host);
@@ -1342,15 +1462,12 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
       return;
     }
 
-    // Non-empty delta: remove from pending and show streaming bubble
     if (host.groupPendingAgents.has(payload.agentId)) {
       const next = new Set(host.groupPendingAgents);
       next.delete(payload.agentId);
       host.groupPendingAgents = next;
     }
 
-    // Buffer stream updates, throttle at 50ms
-    // Clean up old buffers for the same agent (if this is a new run)
     for (const [oldKey] of streamBuffers) {
       const [oldAgentId, oldRunId] = oldKey.split(":");
       if (oldAgentId === payload.agentId && oldRunId !== payload.runId) {
@@ -1370,31 +1487,38 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
   }
 
   if (payload.state === "final" || payload.state === "error" || payload.state === "aborted") {
-    // Remove from pending (in case we never got non-empty delta)
+    markGroupStreamInactive(payload.groupId, payload.agentId, payload.runId);
+    const chain = groupChainStates.get(payload.groupId);
+    if (chain) {
+      chain.pendingAgents.delete(payload.agentId);
+      chain.lastMessageAt = Date.now();
+    }
+
+    if (!isActiveGroup) {
+      requestSummaryCheck(host as GroupHost, payload.groupId);
+      return;
+    }
+
     if (host.groupPendingAgents.has(payload.agentId)) {
       const next = new Set(host.groupPendingAgents);
       next.delete(payload.agentId);
       host.groupPendingAgents = next;
     }
-    // Remove stream entry for this specific run
+
     const next = new Map(host.groupStreams);
     const currentStream = next.get(payload.agentId);
-    // Only remove if the runId matches (prevent removing a newer run)
     if (currentStream && currentStream.runId === payload.runId) {
       next.delete(payload.agentId);
     }
     host.groupStreams = next;
-    // Clear buffer for this specific run
+
     streamBuffers.delete(`${payload.agentId}:${payload.runId}`);
-    // Clear tool messages for this run (they're now in the transcript)
     const currentToolMessages = host.groupToolMessages ?? new Map();
     const toolNext = new Map(currentToolMessages);
     toolNext.delete(`${payload.agentId}:${payload.runId}`);
     host.groupToolMessages = toolNext;
 
-    // Schedule summary check when stream ends (UI may become idle)
-    scheduleSummaryCheck(host as GroupHost, payload.groupId);
-
+    requestSummaryCheck(host as GroupHost, payload.groupId);
     return;
   }
 }
@@ -1419,12 +1543,15 @@ function syncGroupStreams(host: GroupChatState): void {
 }
 
 export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSystemPayload): void {
-  if (payload.groupId !== host.activeGroupId) {
+  const eventName = getGroupSystemEventName(payload);
+  if (!eventName) {
     return;
   }
-  // System events can trigger state refreshes
-  // For now, append as a system message for display
-  if (payload.action === "round_limit") {
+
+  const isActiveGroup = payload.groupId === host.activeGroupId;
+  const groupHost = host as GroupHost;
+
+  if (eventName === "round_limit" && isActiveGroup) {
     const systemMsg: GroupChatMessage = {
       id: `sys-${Date.now()}`,
       groupId: payload.groupId,
@@ -1435,15 +1562,52 @@ export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSyste
       timestamp: Date.now(),
     };
     host.groupMessages = [...host.groupMessages, systemMsg];
+    return;
+  }
+
+  if (!groupHost.client || !groupHost.connected) {
+    return;
+  }
+
+  if (eventName === "archived") {
+    resetChainState(payload.groupId);
+    groupMetaCache.delete(payload.groupId);
+    groupActiveStreamKeys.delete(payload.groupId);
+    clearParsedMentionMessages(payload.groupId);
+    if (isActiveGroup) {
+      openGroupList(host);
+    }
+  }
+
+  const shouldRefreshMeta = new Set([
+    "assistant_changed",
+    "announcement_changed",
+    "member_added",
+    "member_removed",
+    "members_updated",
+    "mode_changed",
+    "name_changed",
+    "skills_changed",
+  ]);
+
+  if (shouldRefreshMeta.has(eventName)) {
+    void refreshGroupMetaCache(groupHost, payload.groupId);
+  }
+
+  if (eventName === "created" || eventName === "archived" || shouldRefreshMeta.has(eventName)) {
+    void loadGroupList(groupHost);
   }
 }
 
 /** Enter a group chat view */
 export async function enterGroupChat(host: GroupHost, groupId: string): Promise<void> {
+  host.groupListOpen = true;
   host.activeGroupId = groupId;
+  host.activeGroupMeta = groupMetaCache.get(groupId) ?? null;
   host.groupMessages = [];
   host.groupStreams = new Map();
   host.groupPendingAgents = new Set();
+  host.groupToolMessages = new Map();
   host.groupError = null;
   host.groupDraft = "";
   await Promise.all([loadGroupInfo(host, groupId), loadGroupHistory(host, groupId)]);
@@ -1484,14 +1648,7 @@ export async function exportGroupTranscript(host: GroupHost, groupId: string): P
   }
 }
 
-/** Leave group chat view */
+/** Leave group chat room and return to the group list view */
 export function leaveGroupChat(host: GroupChatState): void {
-  host.activeGroupId = null;
-  host.activeGroupMeta = null;
-  host.groupMessages = [];
-  host.groupStreams = new Map();
-  host.groupPendingAgents = new Set();
-  host.groupToolMessages = new Map();
-  host.groupError = null;
-  host.groupDraft = "";
+  openGroupList(host);
 }

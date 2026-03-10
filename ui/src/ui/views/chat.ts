@@ -43,8 +43,8 @@ export type ChatProps = {
   fallbackStatus?: FallbackIndicatorStatus | null;
   messages: unknown[];
   toolMessages: unknown[];
+  streamSegments: Array<{ text: string; ts: number }>;
   stream: string | null;
-  streamSegments: string[] | null;
   streamStartedAt: number | null;
   assistantAvatarUrl?: string | null;
   draft: string;
@@ -507,6 +507,7 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
 
     const normalized = normalizeMessage(item.message);
     const role = normalizeRoleForGrouping(normalized.role);
+    const senderLabel = role.toLowerCase() === "user" ? (normalized.senderLabel ?? null) : null;
     const timestamp = normalized.timestamp || Date.now();
 
     // Tool messages merge into the preceding assistant group to form
@@ -517,7 +518,11 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
       continue;
     }
 
-    if (!currentGroup || currentGroup.role !== role) {
+    if (
+      !currentGroup ||
+      currentGroup.role !== role ||
+      (role.toLowerCase() === "user" && currentGroup.senderLabel !== senderLabel)
+    ) {
       if (currentGroup) {
         result.push(currentGroup);
       }
@@ -525,6 +530,7 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
         kind: "group",
         key: `group:${role}:${item.key}`,
         role,
+        senderLabel,
         messages: [{ message: item.message, key: item.key }],
         timestamp,
         isStreaming: false,
@@ -583,12 +589,21 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       message: msg,
     });
   }
-  // Real-time tool stream messages (tool call/result cards).
-  // When streaming text is active, tool cards are rendered inside the streaming
-  // group to appear inline with the text. Otherwise, render them as separate items.
-  const hasActiveStream = props.stream !== null && props.stream.trim().length > 0;
-  if (!hasActiveStream) {
-    for (let i = 0; i < tools.length; i++) {
+  // Interleave stream segments and tool cards in order. Each segment
+  // contains text that was streaming before the corresponding tool started.
+  // This ensures correct visual ordering: text → tool → text → tool → ...
+  const segments = props.streamSegments ?? [];
+  const maxLen = Math.max(segments.length, tools.length);
+  for (let i = 0; i < maxLen; i++) {
+    if (i < segments.length && segments[i].text.trim().length > 0) {
+      items.push({
+        kind: "stream" as const,
+        key: `stream-seg:${props.sessionKey}:${i}`,
+        text: segments[i].text,
+        startedAt: segments[i].ts,
+      });
+    }
+    if (i < tools.length) {
       items.push({
         kind: "message",
         key: messageKey(tools[i], i + history.length),
@@ -607,8 +622,6 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
         key,
         text: props.stream,
         startedAt: props.streamStartedAt ?? Date.now(),
-        toolMessages: tools.length > 0 ? tools : undefined,
-        segments: props.streamSegments ?? undefined,
       });
     } else {
       // No text yet — show reading indicator; tool messages still show separately

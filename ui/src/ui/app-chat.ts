@@ -32,6 +32,7 @@ export type ChatHost = {
 
 // Note: This constant was previously used to limit sessions loaded in chat view.
 // Now all session loading uses the same default (no time limit) for consistency.
+export const CHAT_SESSIONS_ACTIVE_MINUTES = 0;
 
 export function isChatBusy(host: ChatHost) {
   return host.chatSending || Boolean(host.chatRunId);

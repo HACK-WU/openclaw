@@ -132,6 +132,7 @@ function getSelectedMention(): { agentId: string; agentName: string } | null {
 export type GroupChatViewProps = {
   connected: boolean;
   // State
+  groupListOpen: boolean;
   activeGroupId: string | null;
   activeGroupMeta: GroupSessionMeta | null;
   groupMessages: GroupChatMessage[];

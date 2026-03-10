@@ -6,7 +6,12 @@ import { syncUrlWithSessionKey } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { OpenClawApp } from "./app.ts";
 import { ChatState, loadChatHistory } from "./controllers/chat.ts";
-import { loadGroupList, enterGroupChat } from "./controllers/group-chat.ts";
+import {
+  closeGroupChatView,
+  enterGroupChat,
+  loadGroupList,
+  openGroupList,
+} from "./controllers/group-chat.ts";
 import { generateSessionTitle } from "./controllers/sessions.ts";
 import { formatRelativeTimestamp } from "./format.ts";
 import { getAvailableLocales, type LocaleCode } from "./i18n/index.ts";
@@ -89,12 +94,57 @@ export function renderTab(state: AppViewState, tab: Tab) {
   `;
 }
 
+function renderCronFilterIcon(hiddenCount: number) {
+  return html`
+    <span style="position: relative; display: inline-flex; align-items: center;">
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+      </svg>
+      ${
+        hiddenCount > 0
+          ? html`<span
+            style="
+              position: absolute;
+              top: -5px;
+              right: -6px;
+              background: var(--color-accent, #6366f1);
+              color: #fff;
+              border-radius: 999px;
+              font-size: 9px;
+              line-height: 1;
+              padding: 1px 3px;
+              pointer-events: none;
+            "
+          >${hiddenCount}</span
+          >`
+          : ""
+      }
+    </span>
+  `;
+}
+
 export function renderChatControls(state: AppViewState) {
   const mainSessionKey = resolveMainSessionKey(state.hello, state.sessionsResult);
+  const hideCron = state.sessionsHideCron ?? true;
+  const hiddenCronCount = hideCron
+    ? countHiddenCronSessions(state.sessionKey, state.sessionsResult)
+    : 0;
   const sessionOptions = resolveSessionOptions(
     state.sessionKey,
     state.sessionsResult,
     mainSessionKey,
+    hideCron,
   );
   const disableThinkingToggle = state.onboarding;
   const disableFocusToggle = state.onboarding;
@@ -274,6 +324,22 @@ export function renderChatControls(state: AppViewState) {
       >
         ${focusIcon}
       </button>
+      <button
+        class="btn btn--sm btn--icon ${hideCron ? "active" : ""}"
+        @click=${() => {
+          state.sessionsHideCron = !hideCron;
+        }}
+        aria-pressed=${hideCron}
+        title=${
+          hideCron
+            ? hiddenCronCount > 0
+              ? t("chat.showCronSessionsHidden", { count: String(hiddenCronCount) })
+              : t("chat.showCronSessions")
+            : t("chat.hideCronSessions")
+        }
+      >
+        ${renderCronFilterIcon(hiddenCronCount)}
+      </button>
     </div>
   `;
 }
@@ -329,6 +395,8 @@ function capitalize(s: string): string {
  * fallback display name.  Exported for testing.
  */
 export function parseSessionKey(key: string): SessionKeyInfo {
+  const normalized = key.toLowerCase();
+
   // ── Main session ─────────────────────────────────
   if (key === "main" || key === "agent:main:main") {
     // Show full session key format instead of generic "Main Session"
@@ -341,7 +409,7 @@ export function parseSessionKey(key: string): SessionKeyInfo {
   }
 
   // ── Cron job ─────────────────────────────────────
-  if (key.includes(":cron:")) {
+  if (normalized.startsWith("cron:") || key.includes(":cron:")) {
     return { prefix: "Cron:", fallbackName: "Cron Job:" };
   }
 
@@ -398,10 +466,30 @@ export function resolveSessionDisplayName(
   return fallbackName;
 }
 
+export function isCronSessionKey(key: string): boolean {
+  const normalized = key.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (normalized.startsWith("cron:")) {
+    return true;
+  }
+  if (!normalized.startsWith("agent:")) {
+    return false;
+  }
+  const parts = normalized.split(":").filter(Boolean);
+  if (parts.length < 3) {
+    return false;
+  }
+  const rest = parts.slice(2).join(":");
+  return rest.startsWith("cron:");
+}
+
 function resolveSessionOptions(
   sessionKey: string,
   sessions: SessionsListResult | null,
   mainSessionKey?: string | null,
+  hideCron = false,
 ) {
   const seen = new Set<string>();
   const options: Array<{ key: string; displayName?: string }> = [];
@@ -418,7 +506,8 @@ function resolveSessionOptions(
     });
   }
 
-  // Add current session key next
+  // Add current session key next — always include it even if it's a cron session,
+  // so the active session is never silently dropped from the select.
   if (!seen.has(sessionKey)) {
     seen.add(sessionKey);
     options.push({
@@ -427,10 +516,10 @@ function resolveSessionOptions(
     });
   }
 
-  // Add sessions from the result
+  // Add sessions from the result, optionally filtering out cron sessions.
   if (sessions?.sessions) {
     for (const s of sessions.sessions) {
-      if (!seen.has(s.key)) {
+      if (!seen.has(s.key) && !(hideCron && isCronSessionKey(s.key))) {
         seen.add(s.key);
         options.push({
           key: s.key,
@@ -441,6 +530,15 @@ function resolveSessionOptions(
   }
 
   return options;
+}
+
+/** Count sessions with a cron: key that would be hidden when hideCron=true. */
+function countHiddenCronSessions(sessionKey: string, sessions: SessionsListResult | null): number {
+  if (!sessions?.sessions) {
+    return 0;
+  }
+  // Don't count the currently active session even if it's a cron.
+  return sessions.sessions.filter((s) => isCronSessionKey(s.key) && s.key !== sessionKey).length;
 }
 
 const THEME_ORDER: ThemeMode[] = ["system", "light", "dark"];
@@ -695,8 +793,7 @@ function renderNavSessionItem(
           }
 
           // Leave group chat before switching to single chat session
-          state.activeGroupId = null;
-          state.activeGroupMeta = null;
+          closeGroupChatView(state);
 
           // 如果点击的不是当前会话，则切换到目标会话
           if (session.key !== state.sessionKey) {
@@ -850,25 +947,8 @@ export function renderNavGroupChats(state: AppViewState) {
             class="nav-label__action"
             @click=${(e: Event) => {
               e.stopPropagation();
-              const host = state as unknown as {
-                activeGroupId: string | null;
-                activeGroupMeta: unknown;
-                groupMessages: unknown[];
-                groupStreams: unknown;
-                groupCreateDialog: {
-                  name: string;
-                  selectedAgents: Array<{ agentId: string; role: "assistant" | "member" }>;
-                  messageMode: "unicast" | "broadcast";
-                  isBusy: boolean;
-                  error: string | null;
-                } | null;
-              };
-              // Clear active group meta to show list view, not room view
-              host.activeGroupId = "__list__";
-              host.activeGroupMeta = null;
-              host.groupMessages = [];
-              host.groupStreams = new Map();
-              host.groupCreateDialog = {
+              openGroupList(state);
+              state.groupCreateDialog = {
                 name: "",
                 selectedAgents: [],
                 messageMode: "unicast",

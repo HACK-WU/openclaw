@@ -39,9 +39,34 @@ function makeMessage(overrides?: Partial<GroupChatMessage>): GroupChatMessage {
   };
 }
 
+const DEFAULT_TEST_META = {
+  groupId: "g1",
+  name: "Test Group",
+  members: [
+    { agentId: "a1", role: "assistant" as const, joinedAt: 1 },
+    { agentId: "a2", role: "assistant" as const, joinedAt: 2 },
+    { agentId: "a3", role: "assistant" as const, joinedAt: 3 },
+  ],
+  memberRolePrompts: [] as Array<{ agentId: string; rolePrompt: string; updatedAt: number }>,
+  messageMode: "broadcast" as const,
+  announcement: "",
+  groupSkills: [] as string[],
+  maxRounds: 10,
+  maxConsecutive: 3,
+  archived: false,
+  createdAt: 1,
+  updatedAt: 1,
+};
+
 function makeMockClient() {
   return {
-    request: vi.fn().mockResolvedValue({}),
+    request: vi.fn().mockImplementation((method: string, params?: unknown) => {
+      if (method === "group.info") {
+        const p = params as { groupId?: string } | undefined;
+        return Promise.resolve({ ...DEFAULT_TEST_META, groupId: p?.groupId ?? "g1" });
+      }
+      return Promise.resolve({});
+    }),
   };
 }
 
@@ -52,27 +77,20 @@ function makeHost(overrides?: Partial<GroupChatState>) {
     ...state,
     client: mockClient,
     connected: true,
-    activeGroupMeta: {
-      groupId: "g1",
-      name: "Test Group",
-      members: [
-        { agentId: "a1", role: "assistant" as const, joinedAt: 1 },
-        { agentId: "a2", role: "assistant" as const, joinedAt: 2 },
-        { agentId: "a3", role: "assistant" as const, joinedAt: 3 },
-      ],
-      memberRolePrompts: [] as Array<{ agentId: string; rolePrompt: string; updatedAt: number }>,
-      messageMode: "broadcast" as const,
-      announcement: "",
-      groupSkills: [] as string[],
-      maxRounds: 10,
-      maxConsecutive: 3,
-      archived: false,
-      createdAt: 1,
-      updatedAt: 1,
-    },
+    activeGroupMeta: { ...DEFAULT_TEST_META },
   };
   // Cast to include mock client type for testing
   return host as typeof host & { client: ReturnType<typeof makeMockClient> };
+}
+
+/**
+ * Flush pending micro-tasks and advance timers by a small step.
+ * Use this after handleGroupMessageEvent to let the async
+ * detectAndForwardMentions fire-and-forget promise settle.
+ */
+async function flushAsync(ms = 100): Promise<void> {
+  // Flush micro-task queue (let Promises resolve)
+  await vi.advanceTimersByTimeAsync(ms);
 }
 
 describe("group-chat controller", () => {
@@ -94,19 +112,15 @@ describe("group-chat controller", () => {
   });
 
   afterEach(() => {
-    // Clean up any pending timers
-    vi.runAllTimers();
+    // Clear pending timers without running them (avoids infinite loops from
+    // scheduleSummaryCheck's recursive polling timer).
+    vi.clearAllTimers();
     vi.useRealTimers();
-  });
-
-  afterEach(() => {
-    // Clean up any pending timers
-    vi.runAllTimers();
   });
 
   describe("initiator summary mechanism", () => {
     describe("chain state management", () => {
-      it("creates new chain state for group", () => {
+      it("creates new chain state for group", async () => {
         const host = makeHost();
         host.activeGroupId = "g1"; // Set active group
 
@@ -117,13 +131,13 @@ describe("group-chat controller", () => {
         });
 
         handleGroupMessageEvent(host as unknown as GroupChatState, msg);
-        vi.runAllTimers();
+        await flushAsync(200);
 
         // Message should be added
         expect(host.groupMessages.some((m) => m.id === msg.id)).toBe(true);
       });
 
-      it("tracks pending agents in forward call", () => {
+      it("tracks pending agents in forward call", async () => {
         const host = makeHost();
         host.activeGroupId = "g1";
 
@@ -135,7 +149,7 @@ describe("group-chat controller", () => {
         });
 
         handleGroupMessageEvent(host as unknown as GroupChatState, msg);
-        vi.runAllTimers();
+        await flushAsync(200);
 
         // Check if a2 and a3 are mentioned in the forward call
         const forwardCalls = host.client.request.mock.calls.filter(
@@ -146,7 +160,7 @@ describe("group-chat controller", () => {
         expect(forwardCalls[0][1].mentions).toContain("a3");
       });
 
-      it("removes agents from pending when they reply", () => {
+      it("removes agents from pending when they reply", async () => {
         const host = makeHost();
         host.activeGroupId = "g1";
 
@@ -158,7 +172,7 @@ describe("group-chat controller", () => {
           groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg1);
-        vi.runAllTimers();
+        await flushAsync(200);
 
         // A2 replies
         const msg2 = makeMessage({
@@ -168,13 +182,13 @@ describe("group-chat controller", () => {
           groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg2);
-        vi.runAllTimers();
+        await flushAsync(200);
 
         // A2's reply should be added to messages
         expect(host.groupMessages.some((m) => m.id === "msg-2")).toBe(true);
       });
 
-      it("excludes initiators from mention matching pool", () => {
+      it("excludes initiators from mention matching pool", async () => {
         const host = makeHost();
         host.activeGroupId = "g1";
 
@@ -186,7 +200,7 @@ describe("group-chat controller", () => {
           groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg1);
-        vi.runAllTimers();
+        await flushAsync(200);
 
         // Verify A1 is tracked as initiator (A2 was mentioned)
         const forwardCallsAfter1 = host.client.request.mock.calls.filter(
@@ -206,7 +220,7 @@ describe("group-chat controller", () => {
           groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg2);
-        vi.runAllTimers();
+        await flushAsync(200);
 
         // @a1 should NOT be recognized as valid mention (A1 is excluded from pool)
         // So there should be NO new forward call with A1 as target
@@ -222,7 +236,7 @@ describe("group-chat controller", () => {
     });
 
     describe("summary scheduling", () => {
-      it("triggers summary after SUMMARY_DELAY_MS", () => {
+      it("triggers summary after SUMMARY_DELAY_MS", async () => {
         const host = makeHost();
         host.activeGroupId = "g1";
 
@@ -234,6 +248,7 @@ describe("group-chat controller", () => {
           groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg1);
+        await flushAsync(200);
 
         // A2 replies
         const msg2 = makeMessage({
@@ -243,9 +258,11 @@ describe("group-chat controller", () => {
           groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg2);
+        await flushAsync(200);
 
-        // Fast forward to SUMMARY_DELAY_MS (10s)
-        vi.advanceTimersByTime(10_001); // Slightly more than 10s
+        // Fast forward to SUMMARY_DELAY_MS (10s) — use advanceTimersByTimeAsync
+        // to also flush micro-tasks (promises) that summary flow generates
+        await vi.advanceTimersByTimeAsync(11_000);
 
         // Should trigger summary
         const summaryCallsAfter = host.client.request.mock.calls.filter(
@@ -254,7 +271,7 @@ describe("group-chat controller", () => {
         expect(summaryCallsAfter.length).toBeGreaterThan(0);
       });
 
-      it("waits up to MAX_PENDING_WAIT_MS for pending agents", () => {
+      it("waits up to MAX_PENDING_WAIT_MS for pending agents", async () => {
         const host = makeHost();
         host.activeGroupId = "g1";
 
@@ -266,6 +283,7 @@ describe("group-chat controller", () => {
           groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg1);
+        await flushAsync(200);
 
         // A2 replies
         const msg2 = makeMessage({
@@ -275,9 +293,10 @@ describe("group-chat controller", () => {
           groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg2);
+        await flushAsync(200);
 
         // Fast forward to MAX_PENDING_WAIT_MS (30s)
-        vi.advanceTimersByTime(30_001); // Slightly more than 30s
+        await vi.advanceTimersByTimeAsync(31_000);
 
         // Should trigger summary even though A3 hasn't replied
         const summaryCalls = host.client.request.mock.calls.filter(
@@ -288,7 +307,7 @@ describe("group-chat controller", () => {
     });
 
     describe("summary sending", () => {
-      it("sends summary message with correct parameters", () => {
+      it("sends summary message with correct parameters", async () => {
         const host = makeHost();
         host.activeGroupId = "g1";
 
@@ -300,6 +319,7 @@ describe("group-chat controller", () => {
           groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg1);
+        await flushAsync(200);
 
         // A2 replies
         const msg2 = makeMessage({
@@ -309,7 +329,10 @@ describe("group-chat controller", () => {
           groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg2);
-        vi.advanceTimersByTime(10_001);
+        await flushAsync(200);
+
+        // Advance past SUMMARY_DELAY_MS + PRE_SUMMARY_DELIVER_MS
+        await vi.advanceTimersByTimeAsync(16_000);
 
         // Should have summary call
         const summaryCalls = host.client.request.mock.calls.filter(
@@ -328,12 +351,13 @@ describe("group-chat controller", () => {
     });
 
     describe("owner interrupt", () => {
-      it("sends message to group", () => {
+      it("sends message to group", async () => {
         const host = makeHost();
+        host.activeGroupId = "g1";
 
         // Owner sends new message
-        void sendGroupMessage(host as unknown as GroupHost, "g1", "Owner message");
-        vi.runAllTimers();
+        await sendGroupMessage(host as unknown as GroupHost, "g1", "Owner message");
+        await flushAsync(200);
 
         // Should call group.send
         expect(host.client.request).toHaveBeenCalledWith(
@@ -363,31 +387,40 @@ describe("group-chat controller", () => {
         expect(summaryCalls.length).toBe(0);
       });
 
-      it("cancels automatic summary timer", () => {
+      it("cancels automatic summary timer", async () => {
         const host = makeHost();
+        host.activeGroupId = "g1";
 
         const msg1 = makeMessage({
           id: "msg-1",
           sender: { type: "agent", agentId: "a1" },
           content: "Answer\n@a2",
+          groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg1);
-        vi.runAllTimers();
+        await flushAsync(500);
 
         const msg2 = makeMessage({
           id: "msg-2",
           sender: { type: "agent", agentId: "a2" },
           content: "My response",
+          groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg2);
+        // Allow enough time for all async callbacks to settle,
+        // including the polling timer if pendingAgents was momentarily non-empty.
+        await flushAsync(2000);
 
-        // Cancel summary
+        // Clear all client calls so far — we only want to check calls AFTER cancel
+        host.client.request.mockClear();
+
+        // Cancel summary — this should cancel the scheduled summary timer
         cancelSummary(host as unknown as GroupHost, "g1");
 
-        // Advance past SUMMARY_DELAY_MS
-        vi.advanceTimersByTime(10_001);
+        // Advance past SUMMARY_DELAY_MS — no summary should fire
+        await vi.advanceTimersByTimeAsync(15_000);
 
-        // Should NOT trigger summary
+        // Should NOT trigger summary (it was cancelled)
         const summaryCalls = host.client.request.mock.calls.filter(
           (call: unknown[]) =>
             call[0] === "group.send" &&
@@ -420,7 +453,7 @@ describe("group-chat controller", () => {
     });
 
     describe("reset and cleanup", () => {
-      it("resets chain state", () => {
+      it("resets chain state", async () => {
         const host = makeHost();
         host.activeGroupId = "g1";
 
@@ -431,7 +464,7 @@ describe("group-chat controller", () => {
           groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg1);
-        vi.runAllTimers();
+        await flushAsync(200);
 
         // Reset chain state
         resetChainState("g1");
@@ -444,22 +477,24 @@ describe("group-chat controller", () => {
           groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg2);
-        vi.runAllTimers();
+        await flushAsync(200);
 
         // Message should be added
         expect(host.groupMessages.some((m) => m.id === "msg-2")).toBe(true);
       });
 
-      it("resets chain state when leaving group", () => {
+      it("resets chain state when leaving group", async () => {
         const host = makeHost();
+        host.activeGroupId = "g1";
 
         const msg1 = makeMessage({
           id: "msg-1",
           sender: { type: "agent", agentId: "a1" },
           content: "Answer\n@a2",
+          groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg1);
-        vi.runAllTimers();
+        await flushAsync(200);
 
         // Leave group
         leaveGroupChat(host);
@@ -471,16 +506,18 @@ describe("group-chat controller", () => {
     });
 
     describe("edge cases", () => {
-      it("skips summary when no initiators", () => {
+      it("skips summary when no initiators", async () => {
         const host = makeHost();
+        host.activeGroupId = "g1";
 
         const msg1 = makeMessage({
           id: "msg-1",
           sender: { type: "agent", agentId: "a1" },
           content: "No dedicated mentions",
+          groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg1);
-        vi.advanceTimersByTime(10_001);
+        await vi.advanceTimersByTimeAsync(11_000);
 
         // Should not send summary
         const summaryCalls = host.client.request.mock.calls.filter(
@@ -489,8 +526,9 @@ describe("group-chat controller", () => {
         expect(summaryCalls.length).toBe(0);
       });
 
-      it("skips summary when all initiators left group", () => {
+      it("skips summary when all initiators left group", async () => {
         const host = makeHost();
+        host.activeGroupId = "g1";
         // Remove all initiators from group
         host.activeGroupMeta = {
           ...host.activeGroupMeta,
@@ -504,17 +542,19 @@ describe("group-chat controller", () => {
           id: "msg-1",
           sender: { type: "agent", agentId: "a1" },
           content: "Answer\n@a2",
+          groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg1);
-        vi.runAllTimers();
+        await flushAsync(200);
 
         const msg2 = makeMessage({
           id: "msg-2",
           sender: { type: "agent", agentId: "a2" },
           content: "My response",
+          groupId: "g1",
         });
         handleGroupMessageEvent(host as unknown as GroupChatState, msg2);
-        vi.advanceTimersByTime(10_001);
+        await vi.advanceTimersByTimeAsync(11_000);
 
         // Should not send summary (all initiators left)
         const summaryCalls = host.client.request.mock.calls.filter(
@@ -673,18 +713,17 @@ describe("group-chat controller", () => {
       expect(mentions).toEqual(["dev", "test", "backend"]);
     });
 
-    it("does NOT extract mentions from lines with other content", () => {
+    it("extracts mentions from lines with other content", () => {
       const content = "这个问题请 @dev 帮忙看看。";
       const mentions = extractDedicatedMentions(content, memberIds);
-      expect(mentions).toEqual([]);
+      expect(mentions).toEqual(["dev"]);
     });
 
-    it("extracts only from dedicated lines, ignoring inline mentions", () => {
+    it("extracts inline mentions as routable mentions", () => {
       const content = `我刚才检查了 @dev 的配置，发现它使用的是 GPT-4。
 :@test 请你也分享一下你的配置。`;
       const mentions = extractDedicatedMentions(content, memberIds);
-      // Second line has other content, so it's NOT a dedicated mention line
-      expect(mentions).toEqual([]);
+      expect(mentions).toEqual(["dev", "test"]);
     });
 
     it("deduplicates mentions", () => {

@@ -1,3 +1,4 @@
+import { resetToolStream } from "../app-tool-stream.ts";
 import { extractText } from "../chat/message-extract.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
 import type { ChatAttachment } from "../ui-types.ts";
@@ -14,6 +15,29 @@ export const CHAT_STREAM_THROTTLE_MS = 50;
  * If chatRunId exists but no updates for this duration, auto-refresh.
  */
 export const CHAT_STREAM_TIMEOUT_MS = 60_000;
+
+const SILENT_REPLY_PATTERN = /^\s*NO_REPLY\s*$/;
+
+function isSilentReplyStream(text: string): boolean {
+  return SILENT_REPLY_PATTERN.test(text);
+}
+/** Client-side defense-in-depth: detect assistant messages whose text is purely NO_REPLY. */
+function isAssistantSilentReply(message: unknown): boolean {
+  if (!message || typeof message !== "object") {
+    return false;
+  }
+  const entry = message as Record<string, unknown>;
+  const role = typeof entry.role === "string" ? entry.role.toLowerCase() : "";
+  if (role !== "assistant") {
+    return false;
+  }
+  // entry.text takes precedence — matches gateway extractAssistantTextForSilentCheck
+  if (typeof entry.text === "string") {
+    return isSilentReplyStream(entry.text);
+  }
+  const text = extractText(message);
+  return typeof text === "string" && isSilentReplyStream(text);
+}
 
 export type ChatState = {
   client: GatewayBrowserClient | null;
@@ -162,6 +186,18 @@ export type ChatEventPayload = {
   errorMessage?: string;
 };
 
+function maybeResetToolStream(state: ChatState) {
+  const toolHost = state as ChatState & Partial<Parameters<typeof resetToolStream>[0]>;
+  if (
+    toolHost.toolStreamById instanceof Map &&
+    Array.isArray(toolHost.toolStreamOrder) &&
+    Array.isArray(toolHost.chatToolMessages) &&
+    Array.isArray(toolHost.chatStreamSegments)
+  ) {
+    resetToolStream(toolHost as Parameters<typeof resetToolStream>[0]);
+  }
+}
+
 export async function loadChatHistory(state: ChatState) {
   if (!state.client || !state.connected) {
     return;
@@ -178,7 +214,8 @@ export async function loadChatHistory(state: ChatState) {
       sessionKey: state.sessionKey,
       limit: 200,
     });
-    state.chatMessages = Array.isArray(res.messages) ? res.messages : [];
+    const messages = Array.isArray(res.messages) ? res.messages : [];
+    state.chatMessages = messages.filter((message) => !isAssistantSilentReply(message));
     state.chatThinkingLevel = res.thinkingLevel ?? null;
     // Restore active run state for Stop button visibility after refresh
     // Only restore if we don't already have an active run
@@ -189,6 +226,12 @@ export async function loadChatHistory(state: ChatState) {
       if (!state.chatStream) {
         state.chatStream = "";
       }
+    } else {
+      // Clear all streaming state — history includes tool results and text
+      // inline, so keeping streaming artifacts would cause duplicates.
+      maybeResetToolStream(state);
+      state.chatStream = null;
+      state.chatStreamStartedAt = null;
     }
   } catch (err) {
     state.lastError = String(err);
@@ -383,7 +426,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   if (payload.runId && state.chatRunId && payload.runId !== state.chatRunId) {
     if (payload.state === "final") {
       const finalMessage = normalizeFinalAssistantMessage(payload.message);
-      if (finalMessage) {
+      if (finalMessage && !isAssistantSilentReply(finalMessage)) {
         state.chatMessages = [...state.chatMessages, finalMessage];
         return null;
       }
@@ -394,7 +437,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
 
   if (payload.state === "delta") {
     const next = extractText(payload.message);
-    if (typeof next === "string") {
+    if (typeof next === "string" && !isSilentReplyStream(next)) {
       const current = state.chatStream ?? "";
       if (!current || next.length >= current.length) {
         // Use throttled buffer instead of direct state update
@@ -402,15 +445,28 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
         ts.buffer = next;
         // Capture segments from the payload (backend provides completed segment boundaries)
         const rawSegments = (payload as Record<string, unknown>).segments;
-        ts.segmentsBuffer = Array.isArray(rawSegments) ? (rawSegments as string[]) : null;
+        ts.segmentsBuffer = normalizeChatStreamSegments(
+          rawSegments,
+          ts.segmentsBuffer ?? state.chatStreamSegments,
+          state.chatStreamStartedAt,
+        );
         scheduleChatStreamSync(state, ts);
       }
     }
   } else if (payload.state === "final") {
     flushChatStream(state);
     const finalMessage = normalizeFinalAssistantMessage(payload.message);
-    if (finalMessage) {
+    if (finalMessage && !isAssistantSilentReply(finalMessage)) {
       state.chatMessages = [...state.chatMessages, finalMessage];
+    } else if (state.chatStream?.trim() && !isSilentReplyStream(state.chatStream)) {
+      state.chatMessages = [
+        ...state.chatMessages,
+        {
+          role: "assistant",
+          content: [{ type: "text", text: state.chatStream }],
+          timestamp: Date.now(),
+        },
+      ];
     }
     state.chatStream = null;
     state.chatStreamSegments = null;
@@ -419,11 +475,11 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   } else if (payload.state === "aborted") {
     flushChatStream(state);
     const normalizedMessage = normalizeAbortedAssistantMessage(payload.message);
-    if (normalizedMessage) {
+    if (normalizedMessage && !isAssistantSilentReply(normalizedMessage)) {
       state.chatMessages = [...state.chatMessages, normalizedMessage];
     } else {
       const streamedText = state.chatStream ?? "";
-      if (streamedText.trim()) {
+      if (streamedText.trim() && !isSilentReplyStream(streamedText)) {
         state.chatMessages = [
           ...state.chatMessages,
           {

@@ -2,7 +2,8 @@ import {
   GATEWAY_EVENT_UPDATE_AVAILABLE,
   type GatewayUpdateAvailableEventPayload,
 } from "../../../src/gateway/events.js";
-import { flushChatQueueForEvent } from "./app-chat.ts";
+import { ConnectErrorDetailCodes } from "../../../src/gateway/protocol/connect-error-details.js";
+import { CHAT_SESSIONS_ACTIVE_MINUTES, flushChatQueueForEvent } from "./app-chat.ts";
 import type { EventLogEntry } from "./app-events.ts";
 import {
   applySettings,
@@ -58,6 +59,24 @@ import type {
   UpdateAvailable,
 } from "./types.ts";
 
+function isGenericBrowserFetchFailure(message: string): boolean {
+  return /^(?:typeerror:\s*)?(?:fetch failed|failed to fetch)$/i.test(message.trim());
+}
+
+function formatAuthCloseErrorMessage(code: string | null, fallback: string): string {
+  const resolvedCode = code ?? "";
+  if (resolvedCode === ConnectErrorDetailCodes.AUTH_TOKEN_MISMATCH) {
+    return "unauthorized: gateway token mismatch (open dashboard URL with current token)";
+  }
+  if (resolvedCode === ConnectErrorDetailCodes.AUTH_RATE_LIMITED) {
+    return "unauthorized: too many failed authentication attempts (retry later)";
+  }
+  if (resolvedCode === ConnectErrorDetailCodes.AUTH_UNAUTHORIZED) {
+    return "unauthorized: authentication failed";
+  }
+  return fallback;
+}
+
 type GatewayHost = {
   settings: UiSettings;
   password: string;
@@ -84,6 +103,7 @@ type GatewayHost = {
   assistantName: string;
   assistantAvatar: string | null;
   assistantAgentId: string | null;
+  serverVersion: string | null;
   sessionKey: string;
   chatRunId: string | null;
   refreshSessionsAfterChat: Set<string>;
@@ -98,6 +118,33 @@ type SessionDefaultsSnapshot = {
   mainSessionKey?: string;
   scope?: string;
 };
+
+export function resolveControlUiClientVersion(params: {
+  gatewayUrl: string;
+  serverVersion: string | null;
+  pageUrl?: string;
+}): string | undefined {
+  const serverVersion = params.serverVersion?.trim();
+  if (!serverVersion) {
+    return undefined;
+  }
+  const pageUrl =
+    params.pageUrl ?? (typeof window === "undefined" ? undefined : window.location.href);
+  if (!pageUrl) {
+    return undefined;
+  }
+  try {
+    const page = new URL(pageUrl);
+    const gateway = new URL(params.gatewayUrl, page);
+    const allowedProtocols = new Set(["ws:", "wss:", "http:", "https:"]);
+    if (!allowedProtocols.has(gateway.protocol) || gateway.host !== page.host) {
+      return undefined;
+    }
+    return serverVersion;
+  } catch {
+    return undefined;
+  }
+}
 
 function normalizeSessionKeyForDefaults(
   value: string | undefined,
@@ -153,11 +200,16 @@ export function connectGateway(host: GatewayHost) {
   host.execApprovalError = null;
 
   const previousClient = host.client;
+  const clientVersion = resolveControlUiClientVersion({
+    gatewayUrl: host.settings.gatewayUrl,
+    serverVersion: host.serverVersion,
+  });
   const client = new GatewayBrowserClient({
     url: host.settings.gatewayUrl,
     token: host.settings.token.trim() ? host.settings.token : undefined,
     password: host.password.trim() ? host.password : undefined,
     clientName: "openclaw-control-ui",
+    clientVersion,
     mode: "webchat",
     instanceId: host.clientInstanceId,
     onHello: (hello) => {
@@ -177,7 +229,9 @@ export function connectGateway(host: GatewayHost) {
       clearChatStreamThrottle(host.sessionKey);
       host.chatRunId = null;
       (host as unknown as { chatStream: string | null }).chatStream = null;
-      (host as unknown as { chatStreamSegments: string[] | null }).chatStreamSegments = null;
+      (
+        host as unknown as { chatStreamSegments: Array<{ text: string; ts: number }> | null }
+      ).chatStreamSegments = null;
       (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
       void loadAssistantIdentity(host as unknown as OpenClawApp);
@@ -199,7 +253,10 @@ export function connectGateway(host: GatewayHost) {
         (typeof error?.code === "string" ? error.code : null);
       if (code !== 1012) {
         if (error?.message) {
-          host.lastError = error.message;
+          host.lastError =
+            host.lastErrorCode && isGenericBrowserFetchFailure(error.message)
+              ? formatAuthCloseErrorMessage(host.lastErrorCode, error.message)
+              : error.message;
           return;
         }
         host.lastError = `disconnected (${code}): ${reason || "no reason"}`;
@@ -239,21 +296,31 @@ function handleTerminalChatEvent(
   host: GatewayHost,
   payload: ChatEventPayload | undefined,
   state: ReturnType<typeof handleChatEvent>,
-) {
+): boolean {
   if (state !== "final" && state !== "error" && state !== "aborted") {
-    return;
+    return false;
   }
-  // Note: Don't reset tool stream here - tool cards should remain visible
-  // after conversation completes. resetToolStream is only for starting new conversations.
+  // Check if tool events were seen before resetting (resetToolStream clears toolStreamOrder).
+  const toolHost = host as unknown as Parameters<typeof resetToolStream>[0];
+  const hadToolEvents = toolHost.toolStreamOrder.length > 0;
+  resetToolStream(toolHost);
   void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
   const runId = payload?.runId;
-  if (!runId || !host.refreshSessionsAfterChat.has(runId)) {
-    return;
+  if (runId && host.refreshSessionsAfterChat.has(runId)) {
+    host.refreshSessionsAfterChat.delete(runId);
+    if (state === "final") {
+      void loadSessions(host as unknown as OpenClawApp, {
+        activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
+      });
+    }
   }
-  host.refreshSessionsAfterChat.delete(runId);
-  if (state === "final") {
-    void loadSessions(host as unknown as OpenClawApp);
+  // Reload history when tools were used so the persisted tool results
+  // replace the now-cleared streaming state.
+  if (hadToolEvents && state === "final") {
+    void loadChatHistory(host as unknown as OpenClawApp);
+    return true;
   }
+  return false;
 }
 
 function handleChatGatewayEvent(host: GatewayHost, payload: ChatEventPayload | undefined) {
@@ -264,8 +331,8 @@ function handleChatGatewayEvent(host: GatewayHost, payload: ChatEventPayload | u
     );
   }
   const state = handleChatEvent(host as unknown as OpenClawApp, payload);
-  handleTerminalChatEvent(host, payload, state);
-  if (state === "final" && shouldReloadHistoryForFinalEvent(payload)) {
+  const historyReloaded = handleTerminalChatEvent(host, payload, state);
+  if (state === "final" && !historyReloaded && shouldReloadHistoryForFinalEvent(payload)) {
     void loadChatHistory(host as unknown as OpenClawApp);
   }
 }
@@ -298,6 +365,16 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
           updateChatStreamFromAssistantText(app, agentPayload.data.text);
         }
       }
+    }
+    // Reload history after each tool result so the persisted text + tool
+    // output replaces any truncated streaming fragments.
+    const toolData = agentPayload?.data;
+    if (
+      agentPayload?.stream === "tool" &&
+      typeof toolData?.phase === "string" &&
+      toolData.phase === "result"
+    ) {
+      void loadChatHistory(host as unknown as OpenClawApp);
     }
     return;
   }
@@ -369,10 +446,23 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     }
     return;
   }
-  if (evt.event === "group.system" || evt.event === "group.members_updated") {
+  if (evt.event === "group.system") {
     const payload = evt.payload as GroupSystemPayload | undefined;
     if (payload) {
       handleGroupSystemEvent(host as unknown as GroupChatState, payload);
+    }
+    return;
+  }
+  if (evt.event === "group.members_updated") {
+    const payload = evt.payload as
+      | { groupId?: string; members?: unknown; data?: unknown }
+      | undefined;
+    if (payload?.groupId) {
+      handleGroupSystemEvent(host as unknown as GroupChatState, {
+        groupId: payload.groupId,
+        event: "members_updated",
+        data: payload.data ?? { members: payload.members },
+      });
     }
     return;
   }

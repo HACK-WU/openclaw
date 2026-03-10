@@ -183,7 +183,11 @@ export function handleBackgroundChatEvent(
       const current = bg.chatStream ?? "";
       if (!current || text.length >= current.length) {
         bg.chatStream = text;
-        bg.chatStreamSegments = payload.segments ?? null;
+        bg.chatStreamSegments = normalizeBackgroundSegments(
+          payload.segments,
+          bg.chatStreamSegments,
+          bg.chatStreamStartedAt,
+        );
       }
     }
   } else if (payload.state === "final") {

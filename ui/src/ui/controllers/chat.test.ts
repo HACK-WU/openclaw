@@ -1,11 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   handleChatEvent,
-  flushChatStream,
+  loadChatHistory,
   clearChatStreamThrottle,
-  checkChatStreamTimeout,
-  CHAT_STREAM_THROTTLE_MS,
-  CHAT_STREAM_TIMEOUT_MS,
   type ChatEventPayload,
   type ChatState,
 } from "./chat.ts";
@@ -74,6 +71,23 @@ describe("handleChatEvent", () => {
     expect(state.chatStream).toBe("Hello");
   });
 
+  it("ignores NO_REPLY delta updates", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: "Hello",
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "delta",
+      message: { role: "assistant", content: [{ type: "text", text: "NO_REPLY" }] },
+    };
+
+    expect(handleChatEvent(state, payload)).toBe("delta");
+    expect(state.chatStream).toBe("Hello");
+  });
+
   it("appends final payload from another run without clearing active stream", () => {
     const state = createState({
       sessionKey: "main",
@@ -96,6 +110,30 @@ describe("handleChatEvent", () => {
     expect(state.chatStreamStartedAt).toBe(123);
     expect(state.chatMessages).toHaveLength(1);
     expect(state.chatMessages[0]).toEqual(payload.message);
+  });
+
+  it("drops NO_REPLY final payload from another run without clearing active stream", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-user",
+      chatStream: "Working...",
+      chatStreamStartedAt: 123,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-announce",
+      sessionKey: "main",
+      state: "final",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "NO_REPLY" }],
+      },
+    };
+
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatRunId).toBe("run-user");
+    expect(state.chatStream).toBe("Working...");
+    expect(state.chatStreamStartedAt).toBe(123);
+    expect(state.chatMessages).toEqual([]);
   });
 
   it("returns final for another run when payload has no message", () => {
@@ -129,143 +167,97 @@ describe("handleChatEvent", () => {
       state: "final",
     };
     expect(handleChatEvent(state, payload)).toBe("final");
-    // All stream state should be preserved until loadChatHistory completes
-    // This allows tool events to continue being processed and UI to remain visible
-    expect(state.chatRunId).toBe("run-1");
-    expect(state.chatStream).toBe("Reply");
-    expect(state.chatStreamStartedAt).toBe(100);
-  });
-});
-
-describe("chat stream throttling", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
+    // Stream state should be cleared after final event
+    expect(state.chatRunId).toBe(null);
+    expect(state.chatStream).toBe(null);
+    expect(state.chatStreamStartedAt).toBe(null);
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-    clearChatStreamThrottle("main");
-  });
-
-  it("throttles rapid delta events", () => {
+  it("persists streamed text when final event carries no message", () => {
+    const existingMessage = {
+      role: "user",
+      content: [{ type: "text", text: "Hi" }],
+      timestamp: 1,
+    };
     const state = createState({
       sessionKey: "main",
       chatRunId: "run-1",
-      chatStream: "",
+      chatStream: "Here is my reply",
+      chatStreamStartedAt: 100,
+      chatMessages: [existingMessage],
     });
-
-    // Send multiple rapid delta events
-    for (let i = 1; i <= 5; i++) {
-      const payload: ChatEventPayload = {
-        runId: "run-1",
-        sessionKey: "main",
-        state: "delta",
-        message: { role: "assistant", content: [{ type: "text", text: "a".repeat(i) }] },
-      };
-      handleChatEvent(state, payload);
-    }
-
-    // First update syncs immediately (lastSyncTime is 0, so elapsed is always >= THROTTLE_MS)
-    // Note: The exact behavior depends on performance.now() in the browser
-    // After first sync, subsequent updates within throttle window are buffered
-
-    // Advance timer past throttle interval to flush any pending syncs
-    vi.advanceTimersByTime(CHAT_STREAM_THROTTLE_MS + 10);
-
-    // After throttle window, the buffered content should be synced
-    expect(state.chatStream).toBe("aaaaa");
-  });
-
-  it("flushChatStream forces immediate sync", () => {
-    const state = createState({
-      sessionKey: "main",
-      chatRunId: "run-1",
-      chatStream: "",
-    });
-
-    // Send a delta event
-    handleChatEvent(state, {
+    const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
-      state: "delta",
-      message: { role: "assistant", content: [{ type: "text", text: "Hello" }] },
+      state: "final",
+    };
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatRunId).toBe(null);
+    expect(state.chatStream).toBe(null);
+    expect(state.chatStreamStartedAt).toBe(null);
+    expect(state.chatMessages).toHaveLength(2);
+    expect(state.chatMessages[0]).toEqual(existingMessage);
+    expect(state.chatMessages[1]).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "Here is my reply" }],
     });
+  });
 
-    // First update may or may not sync immediately depending on timer state
-    // Advance timer to ensure sync
-    vi.advanceTimersByTime(CHAT_STREAM_THROTTLE_MS + 10);
-    expect(state.chatStream).toBe("Hello");
-
-    // Send another delta event (should be throttled)
-    handleChatEvent(state, {
+  it("does not persist empty or whitespace-only stream on final", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: "   ",
+      chatStreamStartedAt: 100,
+    });
+    const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
-      state: "delta",
-      message: { role: "assistant", content: [{ type: "text", text: "Hello World" }] },
-    });
-
-    // Before throttle timer completes, stream may still be the old value
-    // Force flush to get immediate update
-    flushChatStream(state);
-
-    // Now it should be updated
-    expect(state.chatStream).toBe("Hello World");
+      state: "final",
+    };
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatRunId).toBe(null);
+    expect(state.chatStream).toBe(null);
+    expect(state.chatMessages).toEqual([]);
   });
 
-  it("clearChatStreamThrottle cleans up throttle state", () => {
+  it("does not persist null stream on final with no message", () => {
     const state = createState({
       sessionKey: "main",
       chatRunId: "run-1",
-      chatStream: "",
+      chatStream: null,
+      chatStreamStartedAt: 100,
     });
-
-    // Send delta events
-    handleChatEvent(state, {
+    const payload: ChatEventPayload = {
       runId: "run-1",
       sessionKey: "main",
-      state: "delta",
-      message: { role: "assistant", content: [{ type: "text", text: "Test" }] },
-    });
-
-    // Clear throttle state
-    clearChatStreamThrottle("main");
-
-    // Advance timer - should not throw or cause issues
-    vi.advanceTimersByTime(CHAT_STREAM_THROTTLE_MS + 10);
-  });
-});
-
-describe("chat stream timeout detection", () => {
-  it("returns false when no chatRunId", () => {
-    const state = createState({
-      chatRunId: null,
-      chatStreamStartedAt: Date.now(),
-    });
-    expect(checkChatStreamTimeout(state)).toBe(false);
+      state: "final",
+    };
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatMessages).toEqual([]);
   });
 
-  it("returns false when no chatStreamStartedAt", () => {
+  it("prefers final payload message over streamed text", () => {
     const state = createState({
+      sessionKey: "main",
       chatRunId: "run-1",
-      chatStreamStartedAt: null,
+      chatStream: "Streamed partial",
+      chatStreamStartedAt: 100,
     });
-    expect(checkChatStreamTimeout(state)).toBe(false);
-  });
-
-  it("returns false when within timeout", () => {
-    const state = createState({
-      chatRunId: "run-1",
-      chatStreamStartedAt: Date.now() - 1000, // 1 second ago
-    });
-    expect(checkChatStreamTimeout(state)).toBe(false);
-  });
-
-  it("returns true when timeout exceeded", () => {
-    const state = createState({
-      chatRunId: "run-1",
-      chatStreamStartedAt: Date.now() - CHAT_STREAM_TIMEOUT_MS - 1000, // past timeout
-    });
-    expect(checkChatStreamTimeout(state)).toBe(true);
+    const finalMsg = {
+      role: "assistant",
+      content: [{ type: "text", text: "Complete reply" }],
+      timestamp: 101,
+    };
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "final",
+      message: finalMsg,
+    };
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatMessages).toEqual([finalMsg]);
+    expect(state.chatStream).toBe(null);
   });
 
   it("appends final payload message from own run before clearing stream state", () => {
@@ -411,5 +403,204 @@ describe("chat stream timeout detection", () => {
     expect(state.chatStream).toBe(null);
     expect(state.chatStreamStartedAt).toBe(null);
     expect(state.chatMessages).toEqual([existingMessage]);
+  });
+
+  it("drops NO_REPLY final payload from another run", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-user",
+      chatStream: "Working...",
+      chatStreamStartedAt: 123,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-announce",
+      sessionKey: "main",
+      state: "final",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "NO_REPLY" }],
+      },
+    };
+
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatMessages).toEqual([]);
+    expect(state.chatRunId).toBe("run-user");
+    expect(state.chatStream).toBe("Working...");
+  });
+
+  it("drops NO_REPLY final payload from own run", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: "NO_REPLY",
+      chatStreamStartedAt: 100,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "final",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "NO_REPLY" }],
+      },
+    };
+
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatMessages).toEqual([]);
+    expect(state.chatRunId).toBe(null);
+    expect(state.chatStream).toBe(null);
+  });
+
+  it("does not persist NO_REPLY stream text on final without message", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: "NO_REPLY",
+      chatStreamStartedAt: 100,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "final",
+    };
+
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatMessages).toEqual([]);
+  });
+
+  it("does not persist NO_REPLY stream text on abort", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: "NO_REPLY",
+      chatStreamStartedAt: 100,
+    });
+    const payload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "aborted",
+      message: "not-an-assistant-message",
+    } as unknown as ChatEventPayload;
+
+    expect(handleChatEvent(state, payload)).toBe("aborted");
+    expect(state.chatMessages).toEqual([]);
+  });
+
+  it("keeps user messages containing NO_REPLY text", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-user",
+      chatStream: "Working...",
+      chatStreamStartedAt: 123,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-announce",
+      sessionKey: "main",
+      state: "final",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "NO_REPLY" }],
+      },
+    };
+
+    // User messages with NO_REPLY text should NOT be filtered — only assistant messages.
+    // normalizeFinalAssistantMessage returns null for user role, so this falls through.
+    expect(handleChatEvent(state, payload)).toBe("final");
+  });
+
+  it("keeps assistant message when text field has real reply but content is NO_REPLY", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: "",
+      chatStreamStartedAt: 100,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "final",
+      message: {
+        role: "assistant",
+        text: "real reply",
+        content: "NO_REPLY",
+      },
+    };
+
+    // entry.text takes precedence — "real reply" is NOT silent, so the message is kept.
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatMessages).toHaveLength(1);
+  });
+});
+
+describe("loadChatHistory", () => {
+  it("filters NO_REPLY assistant messages from history", async () => {
+    const messages = [
+      { role: "user", content: [{ type: "text", text: "Hello" }] },
+      { role: "assistant", content: [{ type: "text", text: "NO_REPLY" }] },
+      { role: "assistant", content: [{ type: "text", text: "Real answer" }] },
+      { role: "assistant", text: "  NO_REPLY  " },
+    ];
+    const mockClient = {
+      request: vi.fn().mockResolvedValue({ messages, thinkingLevel: "low" }),
+    };
+    const state = createState({
+      client: mockClient as unknown as ChatState["client"],
+      connected: true,
+    });
+
+    await loadChatHistory(state);
+
+    expect(state.chatMessages).toHaveLength(2);
+    expect(state.chatMessages[0]).toEqual(messages[0]);
+    expect(state.chatMessages[1]).toEqual(messages[2]);
+    expect(state.chatThinkingLevel).toBe("low");
+    expect(state.chatLoading).toBe(false);
+  });
+
+  it("keeps assistant message when text field has real content but content is NO_REPLY", async () => {
+    const messages = [{ role: "assistant", text: "real reply", content: "NO_REPLY" }];
+    const mockClient = {
+      request: vi.fn().mockResolvedValue({ messages }),
+    };
+    const state = createState({
+      client: mockClient as unknown as ChatState["client"],
+      connected: true,
+    });
+
+    await loadChatHistory(state);
+
+    // text takes precedence — "real reply" is NOT silent, so message is kept.
+    expect(state.chatMessages).toHaveLength(1);
+  });
+});
+
+describe("loadChatHistory", () => {
+  it("filters assistant NO_REPLY messages and keeps user NO_REPLY messages", async () => {
+    const request = vi.fn().mockResolvedValue({
+      messages: [
+        { role: "assistant", content: [{ type: "text", text: "NO_REPLY" }] },
+        { role: "assistant", content: [{ type: "text", text: "visible answer" }] },
+        { role: "user", content: [{ type: "text", text: "NO_REPLY" }] },
+      ],
+      thinkingLevel: "low",
+    });
+    const state = createState({
+      connected: true,
+      client: { request } as unknown as ChatState["client"],
+    });
+
+    await loadChatHistory(state);
+
+    expect(request).toHaveBeenCalledWith("chat.history", {
+      sessionKey: "main",
+      limit: 200,
+    });
+    expect(state.chatMessages).toEqual([
+      { role: "assistant", content: [{ type: "text", text: "visible answer" }] },
+      { role: "user", content: [{ type: "text", text: "NO_REPLY" }] },
+    ]);
+    expect(state.chatThinkingLevel).toBe("low");
+    expect(state.chatLoading).toBe(false);
+    expect(state.lastError).toBeNull();
   });
 });

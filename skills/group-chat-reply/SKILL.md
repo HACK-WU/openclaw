@@ -11,13 +11,14 @@ You are currently participating in a **group chat** with multiple agents and a h
 
 ## ⚠️ IMPORTANT: @ Symbol Has Special Meaning
 
-In group chat, the `@` symbol is **reserved for mentioning agents**. Do NOT use `@` casually in your messages.
+In group chat, any unescaped `@agentId` that matches a group member may trigger routing. Do NOT use `@` casually in your messages.
 
-| What you want         | How to write it            | Example                |
-| --------------------- | -------------------------- | ---------------------- |
-| Route to an agent     | `@agentId` on its own line | `@dev`                 |
-| Display `@` literally | Escape with `\@`           | `\@dev` or `\@mention` |
-| Email address         | Escape the `@`             | `user\@example.com`    |
+| What you want            | How to write it                        | Example                     |
+| ------------------------ | -------------------------------------- | --------------------------- |
+| Route to an agent        | Use `@agentId` anywhere in the message | `@dev 请帮我看一下这个问题` |
+| Route to multiple agents | Mention each `@agentId`                | `@dev @test 请一起确认一下` |
+| Display `@` literally    | Escape with `\@`                       | `\@dev` or `\@mention`      |
+| Email address            | Escape the `@`                         | `user\@example.com`         |
 
 ## Communication Rules
 
@@ -29,19 +30,24 @@ In group chat, the `@` symbol is **reserved for mentioning agents**. Do NOT use 
 
 ### When to Mention
 
-Use `@agentId` on its **own line** when you want to **route your message to another agent** and trigger their response.
+Use `@agentId` whenever you want to **route your message to another agent** and trigger their response.
+Both inline mentions and standalone mention lines work.
 
 ### Placement Rules — CRITICAL
 
-| Scenario                         | Placement           | Behavior                              |
-| -------------------------------- | ------------------- | ------------------------------------- |
-| Routing (trigger agent response) | **Own line**, alone | Removes from display, routes to agent |
-| Informal mention (no routing)    | Within text         | Displays with highlight, no routing   |
-| Literal `@` display              | Escaped: `\@`       | Displays literally, never routes      |
+| Scenario                         | Placement                      | Behavior                                |
+| -------------------------------- | ------------------------------ | --------------------------------------- |
+| Routing (trigger agent response) | Within text or on its own line | Triggers routing to the mentioned agent |
+| Multiple agent routing           | Mention each `@agentId`        | Triggers routing to every valid mention |
+| Literal `@` display              | Escaped: `\@`                  | Displays literally, never routes        |
 
 ### ✅ Correct Usage
 
-**Routing to agent(s) — mention on its OWN LINE:**
+**Routing to agent(s) — inline mention or standalone mention line both work:**
+
+```
+这个问题请 @dev 帮忙看看。
+```
 
 ```
 请回答我的问题，我需要知道你的配置信息。
@@ -54,17 +60,8 @@ Use `@agentId` on its **own line** when you want to **route your message to anot
 ```
 
 ```
-各位请分享一下本周的工作进展。
-@dev @test @backend
+各位请分享一下本周的工作进展，@dev @test @backend 请分别补充。
 ```
-
-**Informal mention (no routing) — mention within text:**
-
-```
-我刚才检查了 @dev 的配置，发现它使用的是 GPT-4。
-```
-
-This will display with `@dev` highlighted but will NOT trigger routing.
 
 **Literal @ display — use escape character:**
 
@@ -79,28 +76,26 @@ This will display with `@dev` highlighted but will NOT trigger routing.
 ### ❌ Wrong Usage
 
 ```
-这个问题请 @dev 帮忙看看。
+我引用一下 @dev 刚才的说法，但这次并不想再次触发他。
 ```
 
-**Problem**: `@dev` on the same line as other text will NOT trigger routing. Put mentions on their **own line**.
+**Problem**: Any unescaped `@dev` will trigger routing again. If you only want to display it literally, write `\@dev`.
 
 ```
 我的邮箱是 user@example.com
 ```
 
-**Problem**: Unescaped `@` will be treated as a mention attempt. Use `user\@example.com` instead.
+**Problem**: Unescaped `@` may be treated as a mention attempt. Use `user\@example.com` instead.
 
 ```
-这个问题我无法回答，让其他人来处理吧。
-
 @dev
 ```
 
-**Problem**: Too vague. Always include a clear question or request when mentioning others.
+**Problem**: Routing works, but the request is too vague. Include a clear question or request when mentioning others.
 
 ## Multiple Members
 
-When mentioning multiple agents, put all mentions on the **same line** (at the beginning or end of your message):
+When mentioning multiple agents, you can mention them inline or put them on a standalone mention line:
 
 ```
 请各位分享一下本周的工作进展。
@@ -110,6 +105,10 @@ When mentioning multiple agents, put all mentions on the **same line** (at the b
 ```
 @dev @test
 两位请协作完成这个任务。
+```
+
+```
+请 @dev 和 @test 一起确认一下这个问题。
 ```
 
 ## Read-Only Mode
@@ -122,7 +121,7 @@ You are operating in **read-only mode** within this group chat:
 ## Best Practices
 
 - Keep replies concise and focused on the topic
-- Put `@agentId` on its **own line** to trigger routing
+- Use `@agentId` inline or on its own line when you need routing
 - Include a clear question or request when mentioning others
 - **Escape `@` with `\@`** when you need to display it literally (emails, casual references)
 - Do NOT announce "let me ask..." — just ask directly

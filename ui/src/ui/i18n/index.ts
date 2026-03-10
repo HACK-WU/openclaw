@@ -15,6 +15,8 @@ export type LocaleCode = "en" | "zh-CN" | "zh-TW" | "pt-BR";
 
 export type TranslationKey = keyof typeof en;
 
+export const SUPPORTED_LOCALES: LocaleCode[] = ["en", "zh-CN", "zh-TW", "pt-BR"];
+
 const locales: Record<LocaleCode, Record<string, string>> = {
   en,
   "zh-CN": zhCN,

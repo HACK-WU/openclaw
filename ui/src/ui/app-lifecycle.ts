@@ -82,12 +82,14 @@ function syncSidebarWithLatestPty(host: LifecycleHost) {
 type LifecycleHost = {
   basePath: string;
   client?: { stop: () => void } | null;
+  connectGeneration: number;
   connected?: boolean;
   tab: Tab;
   connected: boolean;
   assistantName: string;
   assistantAvatar: string | null;
   assistantAgentId: string | null;
+  serverVersion: string | null;
   chatHasAutoScrolled: boolean;
   chatManualRefreshInFlight: boolean;
   chatLoading: boolean;
@@ -111,9 +113,10 @@ type LifecycleHost = {
 };
 
 export function handleConnected(host: LifecycleHost) {
+  const connectGeneration = ++host.connectGeneration;
   host.basePath = inferBasePath();
-  void loadControlUiBootstrapConfig(host);
   applySettingsFromUrl(host as unknown as Parameters<typeof applySettingsFromUrl>[0]);
+  const bootstrapReady = loadControlUiBootstrapConfig(host);
   syncTabWithLocation(host as unknown as Parameters<typeof syncTabWithLocation>[0], true);
   syncThemeWithSettings(host as unknown as Parameters<typeof syncThemeWithSettings>[0]);
   attachThemeListener(host as unknown as Parameters<typeof attachThemeListener>[0]);
@@ -133,7 +136,12 @@ export function handleConnected(host: LifecycleHost) {
     handleChatHeartbeat(host);
   }, CHAT_HEARTBEAT_INTERVAL_MS);
 
-  connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
+  void bootstrapReady.finally(() => {
+    if (host.connectGeneration !== connectGeneration) {
+      return;
+    }
+    connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
+  });
   startNodesPolling(host as unknown as Parameters<typeof startNodesPolling>[0]);
   if (host.tab === "logs") {
     startLogsPolling(host as unknown as Parameters<typeof startLogsPolling>[0]);
@@ -160,7 +168,9 @@ function handleChatHeartbeat(host: LifecycleHost) {
     // Clear stale streaming state
     host.chatRunId = null;
     (host as unknown as { chatStream: string | null }).chatStream = null;
-    (host as unknown as { chatStreamSegments: string[] | null }).chatStreamSegments = null;
+    (
+      host as unknown as { chatStreamSegments: Array<{ text: string; ts: number }> | null }
+    ).chatStreamSegments = null;
     (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
     // Refresh chat history to get the actual state
     void loadChatHistory(host as unknown as Parameters<typeof loadChatHistory>[0]);
@@ -172,6 +182,7 @@ export function handleFirstUpdated(host: LifecycleHost) {
 }
 
 export function handleDisconnected(host: LifecycleHost) {
+  host.connectGeneration += 1;
   window.removeEventListener("popstate", host.popStateHandler);
   if (host.storageHandler) {
     window.removeEventListener("storage", host.storageHandler);
