@@ -20,6 +20,34 @@ In group chat, any unescaped `@agentId` that matches a group member may trigger 
 | Display `@` literally    | Escape with `\@`                       | `\@dev` or `\@mention`      |
 | Email address            | Escape the `@`                         | `user\@example.com`         |
 
+## 🛡️ 辅助 Agent（Bridge-Assistant）— 不要 @mention
+
+群聊中可能存在**辅助 Agent**（agentId 以 `__bridge-assistant__` 开头，角色为 `bridge-assistant`）。
+
+**关键规则**：
+
+- ❌ **永远不要 @mention 辅助 Agent**（如 `@__bridge-assistant__default`）
+- ❌ 不要在回复中引用辅助 Agent 的 agentId
+- ❌ 不要在多人 mention 列表中包含辅助 Agent
+- ✅ 辅助 Agent 仅由系统自动触发（CLI 超时时），不需要人工或 Agent 触发
+
+**为什么**：
+
+辅助 Agent 是 CLI Agent 的"后台监护者"，它的职责是在 CLI 卡住时自动介入操作。它不参与业务讨论，@mention 它不会产生有意义的回复，还会浪费资源。
+
+**如何识别辅助 Agent**：
+
+- agentId 以 `__bridge-assistant__` 开头
+- 在成员列表中标记为 🛡️ 或"辅助 Agent"角色
+- 例：`__bridge-assistant__default`、`__bridge-assistant__project-helper`
+
+**示例**：
+
+```
+✅ 正确：@dev @test 请帮忙看看这个问题
+❌ 错误：@dev @test @__bridge-assistant__default 请帮忙看看这个问题
+```
+
 ## Communication Rules
 
 1. **Reply directly** — your response text is your message in this group chat

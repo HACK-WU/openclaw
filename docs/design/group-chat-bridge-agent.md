@@ -6,14 +6,14 @@
 
 ## 文档索引
 
-| 文档                                                       | 内容                                                |
-| ---------------------------------------------------------- | --------------------------------------------------- |
-| [概览](./group-chat-bridge/README.md)                      | 方案概览、典型场景、核心架构                        |
-| [架构分析](./group-chat-bridge/architecture.md)            | 当前架构分析、可行性评估、Agent 类型扩展            |
-| [TUI 渲染流程](./group-chat-bridge/tui-rendering.md)       | PTY → xterm.js 五步保证、失败根因分析、终端尺寸同步 |
-| [前端组件设计](./group-chat-bridge/frontend-components.md) | 可折叠终端组件、双通道输出、完成检测策略            |
-| [技术实现](./group-chat-bridge/implementation.md)          | 文件清单、模块设计、实施阶段                        |
-| [风险与兼容性](./group-chat-bridge/risks.md)               | 技术风险、安全风险、向后兼容性                      |
+| 文档                                                       | 内容                                                                                                                     |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| [概览](./group-chat-bridge/README.md)                      | 方案概览、典型场景、核心架构                                                                                             |
+| [架构分析](./group-chat-bridge/architecture.md)            | 当前架构分析、可行性评估、Agent 类型扩展                                                                                 |
+| [TUI 渲染流程](./group-chat-bridge/tui-rendering.md)       | PTY → xterm.js 五步保证、失败根因分析、终端尺寸同步                                                                      |
+| [前端组件设计](./group-chat-bridge/frontend-components.md) | 可折叠终端组件、双通道输出、完成检测策略、CLI 超时与辅助 Agent、执行状态与终止、Skill 配置、CLI Agent 管理、群聊项目配置 |
+| [技术实现](./group-chat-bridge/implementation.md)          | 文件清单、模块设计、实施阶段                                                                                             |
+| [风险与兼容性](./group-chat-bridge/risks.md)               | 技术风险、安全风险、向后兼容性                                                                                           |
 
 ## 关联文档
 

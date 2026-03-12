@@ -6,28 +6,36 @@
 
 ### 1.1 新增文件
 
-| 文件                                      | 行数估算 | 说明                                               |
-| ----------------------------------------- | -------- | -------------------------------------------------- |
-| `src/group-chat/bridge-types.ts`          | ~50      | Bridge 配置、PTY 状态、完成检测策略类型            |
-| `src/group-chat/bridge-pty.ts`            | ~250     | PTY 进程管理器（创建/通信/尺寸同步/健康检查/重启） |
-| `src/group-chat/bridge-trigger.ts`        | ~200     | Bridge Agent 触发逻辑（双通道输出、完成检测）      |
-| `src/group-chat/terminal-events.ts`       | ~80      | `group.terminal` / `group.terminalResize` 事件定义 |
-| `ui/src/ui/components/bridge-terminal.ts` | ~300     | 前端可折叠终端组件（xterm.js 封装）                |
-| **合计**                                  | **~880** |                                                    |
+| 文件                                      | 行数估算  | 说明                                                                           |
+| ----------------------------------------- | --------- | ------------------------------------------------------------------------------ |
+| `src/group-chat/bridge-types.ts`          | ~80       | Bridge 配置、PTY 状态、完成检测、进程隔离类型                                  |
+| `src/group-chat/bridge-pty.ts`            | ~300      | PTY 进程管理器（创建/通信/尺寸同步/健康检查/重启/缓冲区）                      |
+| `src/group-chat/bridge-trigger.ts`        | ~250      | Bridge Agent 触发逻辑（双通道输出、完成检测、辅助 Agent 触发）                 |
+| `src/group-chat/bridge-assistant.ts`      | ~150      | 辅助 Agent 逻辑（TUI 分析、自主操作、重试兜底）                                |
+| `src/group-chat/terminal-events.ts`       | ~100      | `group.terminal` / `group.terminalResize` / `group.terminalReconnect` 事件定义 |
+| `ui/src/ui/components/bridge-terminal.ts` | ~350      | 前端可折叠终端组件（xterm.js 封装、纯文本提取、断线恢复）                      |
+| `ui/src/ui/views/cli-agent-config.ts`     | ~200      | CLI Agent 管理配置页面（路径校验、测试启动）                                   |
+| **合计**                                  | **~1430** |                                                                                |
 
 **说明**：TUI 方案不再需要 CLI 适配器模块（如 `bridge-adapters/claude-code.ts`），因为 PTY 统一处理所有终端程序，CLI 工具的差异通过配置参数（command/args/env）解决，而非代码适配。
 
 ### 1.2 改动文件
 
-| 文件                                  | 改动量      | 说明                                                      |
-| ------------------------------------- | ----------- | --------------------------------------------------------- |
-| `src/group-chat/types.ts`             | ~20 行      | 新增 `BridgeConfig` 类型，`GroupMember` 加 `bridge?` 字段 |
-| `src/group-chat/agent-trigger.ts`     | ~10 行      | 触发分叉判断                                              |
-| `src/group-chat/context-builder.ts`   | ~5 行       | Bridge Agent 标识                                         |
-| `src/gateway/server-methods/group.ts` | ~15 行      | 创建/添加成员时处理 bridge 配置                           |
-| `ui/src/ui/controllers/group-chat.ts` | ~50 行      | 处理 `group.terminal` / `group.terminalResize` 事件       |
-| `ui/src/ui/views/group-chat.ts`       | ~30 行      | 消息气泡中嵌入终端组件                                    |
-| **合计**                              | **~130 行** |                                                           |
+| 文件                                  | 改动量      | 说明                                                                                                                                                                                                                                                           |
+| ------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/group-chat/types.ts`             | ~55 行      | 新增 `BridgeConfig` 类型（含 `codebuddy`、`avatar`），`GroupMemberRole` 扩展 `"bridge-assistant"`，新增 `BRIDGE_ASSISTANT_PREFIX` 常量和 `isBridgeAssistant()` 辅助函数，`GroupMember` 加 `bridge?` 字段，`GroupConfig` 加 `project?` 和 `contextConfig?` 字段 |
+| `src/group-chat/agent-trigger.ts`     | ~10 行      | 触发分叉判断                                                                                                                                                                                                                                                   |
+| `src/group-chat/message-dispatch.ts`  | ~20 行      | @all 展开排除辅助 Agent、显式 @mention 过滤辅助 Agent、broadcast 排除辅助 Agent                                                                                                                                                                                |
+| `src/group-chat/group-store.ts`       | ~5 行       | `createGroup()` 参数类型扩展支持 `"bridge-assistant"` 角色                                                                                                                                                                                                     |
+| `src/group-chat/context-builder.ts`   | ~15 行      | Bridge Agent 标识；上下文消息截断逻辑                                                                                                                                                                                                                          |
+| `src/group-chat/bridge-assistant.ts`  | ~50 行      | 辅助 Agent 触发冷却机制；触发次数限制                                                                                                                                                                                                                          |
+| `src/group-chat/audit-logger.ts`      | ~60 行      | 辅助 Agent 操作审计日志（新增文件）                                                                                                                                                                                                                            |
+| `src/gateway/server-methods/group.ts` | ~40 行      | 创建/添加成员时处理 bridge 配置；群聊项目配置；路径校验；群聊解散时清理 CLI 进程；上下文配置                                                                                                                                                                   |
+| `ui/src/ui/controllers/group-chat.ts` | ~70 行      | 处理 `group.terminal` / `group.terminalResize` / `group.terminalReconnect` 事件；断线恢复                                                                                                                                                                      |
+| `ui/src/ui/views/group-chat.ts`       | ~40 行      | 消息气泡中嵌入终端组件；纯文本提取回传                                                                                                                                                                                                                         |
+| `ui/src/ui/views/agent-list.ts`       | ~30 行      | 智能体列表增加 CLI Agent 分类和入口                                                                                                                                                                                                                            |
+| `ui/src/ui/views/group-settings.ts`   | ~25 行      | 群聊设置中添加上下文配置 UI（新增文件）                                                                                                                                                                                                                        |
+| **合计**                              | **~420 行** |                                                                                                                                                                                                                                                                |
 
 ---
 
@@ -248,6 +256,91 @@
 
 **注意**：增量模式的前提是 CLI 真的"记住"了之前的上下文。不同 CLI 的行为可能不同，建议先以"完整上下文"模式开始，验证 CLI 的状态保持能力后再优化为增量模式。
 
+### 2.2.1 上下文消息截断策略
+
+**问题**：首次 @mention 时传输"完整上下文"，如果群聊历史消息很多，可能导致上下文过长，超出 CLI 处理能力或导致性能问题。
+
+**截断策略**：
+
+| 参数         | 默认值     | 说明                            |
+| ------------ | ---------- | ------------------------------- |
+| 最大消息数   | 30 条      | 最多传输最近 N 条消息           |
+| 最大字符数   | 50,000     | 上下文总字符数上限              |
+| 单条消息截断 | 2,000 字符 | 超长消息截断并添加 `[...]` 标记 |
+
+**截断优先级**：
+
+1. **优先保留最近消息**：从最新的消息开始，向前截取
+2. **优先保留 @mention 消息**：包含 CLI Agent @mention 的消息优先级更高
+3. **系统消息可选**：系统消息（如成员加入/退出）可省略
+
+**截断提示**：
+
+```
+# ================================================================================
+# 历史对话（最近 30 条，已省略更早的消息）
+# ================================================================================
+
+# > [省略了 15 条更早的消息]
+# > architect: 我来设计 JWT 认证方案
+# > architect: @claude-code 请实现后端 API
+# ...
+```
+
+**群聊级上下文数量配置**：
+
+Owner 可在群聊设置中调整上下文数量上限：
+
+```typescript
+// 群聊配置扩展
+export type GroupConfig = {
+  id: string;
+  name: string;
+  announcement?: string;
+  members: GroupMember[];
+  project?: {
+    directory?: string;
+    docs?: string[];
+  };
+  // 新增：上下文配置
+  contextConfig?: {
+    maxMessages?: number; // 最大消息数，默认 30
+    maxCharacters?: number; // 最大字符数，默认 50,000
+    includeSystemMessages?: boolean; // 是否包含系统消息，默认 false
+  };
+};
+```
+
+**前端配置 UI**：
+
+```
+┌──────────────────────────────────────┐
+│ 群聊设置                              │
+│                                      │
+│ ─── 上下文配置 ───                    │
+│                                      │
+│ 最大消息数：   [30    ] 条           │
+│              CLI Agent 被触发时最多   │
+│              获取的历史消息数量        │
+│                                      │
+│ 最大字符数：   [50000 ] 字符         │
+│              防止上下文过长           │
+│                                      │
+│ 包含系统消息： [ ]                   │
+│              是否将成员加入/退出等    │
+│              系统消息包含在上下文中    │
+│                                      │
+│ [保存修改]                           │
+└──────────────────────────────────────┘
+```
+
+**配置校验**：
+
+| 参数            | 最小值 | 最大值  | 默认值 |
+| --------------- | ------ | ------- | ------ |
+| `maxMessages`   | 5      | 100     | 30     |
+| `maxCharacters` | 10,000 | 200,000 | 50,000 |
+
 ### 2.3 `terminal-events.ts` — WebSocket 事件定义
 
 **新增事件**：
@@ -297,6 +390,8 @@
 | `BridgeConfig` 类型定义          | `bridge-types.ts`    | 0.5h   |
 | `GroupMember.bridge` 扩展        | `types.ts`           | 0.5h   |
 | PTY 进程管理器（创建/通信/重启） | `bridge-pty.ts`      | 4h     |
+| PTY 环形缓冲区（断线恢复用）     | `bridge-pty.ts`      | 1h     |
+| 进程隔离（按 groupId+agentId）   | `bridge-pty.ts`      | 0.5h   |
 | `group.terminal` 事件定义        | `terminal-events.ts` | 1h     |
 | `triggerBridgeAgent()`           | `bridge-trigger.ts`  | 3h     |
 | `triggerAgentReasoning()` 分叉   | `agent-trigger.ts`   | 0.5h   |
@@ -304,12 +399,11 @@
 
 ### Phase 2: 完成检测 + 双通道输出（预计 2 天）
 
-| 任务                      | 说明                        |
-| ------------------------- | --------------------------- |
-| 空闲超时检测              | 默认 5-10 秒无输出判定完成  |
-| 提示符模式匹配            | 检测 CLI 提示符精确判定完成 |
-| 纯文本提取                | 从 PTY 缓冲区剥离 ANSI 序列 |
-| `group.stream` final 事件 | 发送纯文本最终消息          |
+| 任务                      | 说明                       |
+| ------------------------- | -------------------------- |
+| 空闲超时检测              | 默认 5-10 秒无输出判定完成 |
+| 纯文本提取                | 前端终端组件提取可见文本   |
+| `group.stream` final 事件 | 发送纯文本最终消息         |
 
 ### Phase 3: 前端终端组件（预计 3-4 天）
 
@@ -321,19 +415,25 @@
 | 可折叠状态切换            | `bridge-terminal.ts`                   | 2h     |
 | 消息气泡集成              | `group-chat.ts`                        | 2h     |
 
-### Phase 4: UI 完善（预计 2 天）
+### Phase 4: UI 完善（预计 3 天）
 
-| 任务                        | 说明                                  |
-| --------------------------- | ------------------------------------- |
-| 创建群聊时选择 Bridge Agent | 类型选择 + 命令配置 UI                |
-| Bridge Agent 标识           | 成员列表/消息气泡中的 🔧 标识         |
-| Bridge 进程状态             | 在线/离线/忙碌 指示器                 |
-| Bridge Agent 权限提示       | "此 Agent 拥有文件读写和命令执行权限" |
+| 任务                        | 说明                                           |
+| --------------------------- | ---------------------------------------------- |
+| 创建群聊时选择 Bridge Agent | 类型选择 + 命令配置 UI                         |
+| CLI Agent 管理页面          | 配置表单 + CLI 类型预设 + 自动填充             |
+| CLI 路径校验                | 启动命令存在性检查 + 工作目录可达性检查        |
+| 测试启动功能                | 试启动 CLI 进程，验证配置正确性                |
+| Bridge Agent 标识           | 成员列表/消息气泡中的 🔧 标识                  |
+| Bridge 进程状态             | 在线/离线/忙碌 指示器                          |
+| Bridge Agent 权限提示       | "此 Agent 拥有文件读写和命令执行权限"          |
+| 群聊项目配置 UI             | 项目目录（锁定不可改）+ 项目说明文档（可修改） |
 
-### Phase 5: 增强（可选，预计 1-2 天）
+### Phase 5: 增强（可选，预计 2-3 天）
 
-| 任务             | 说明                                 |
-| ---------------- | ------------------------------------ |
-| 终端缓冲区持久化 | 折叠后仍可回看完整 TUI 记录          |
-| 多客户端尺寸同步 | 多人同时查看同一终端时的 resize 协调 |
-| 直接终端输入     | 允许用户在终端中直接打字（高级功能） |
+| 任务               | 说明                                 |
+| ------------------ | ------------------------------------ |
+| WebSocket 断线恢复 | 环形缓冲区 + 重连重放终端数据        |
+| 终端缓冲区持久化   | 折叠后仍可回看完整 TUI 记录          |
+| 多客户端尺寸同步   | 多人同时查看同一终端时的 resize 协调 |
+| 直接终端输入       | 允许用户在终端中直接打字（高级功能） |
+| 辅助 Agent 增强    | 操作历史审计、触发条件精细化         |
