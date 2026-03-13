@@ -134,6 +134,12 @@ type ManagedPty = {
   completionTimer: ReturnType<typeof setTimeout> | null;
   /** Completion idle seconds threshold. */
   completionIdleSecs: number;
+  /**
+   * When true, PTY output is still recorded (ringBuffer, recentTextLines)
+   * but the onRawData callback is NOT invoked, so the frontend does not
+   * receive the data.  Used during context injection to suppress echo.
+   */
+  inputPhase: boolean;
   /** Callback: raw PTY data for group.terminal broadcast. */
   onRawData?: (data: string) => void;
   /** Callback: completion detected (idle timeout with no output). */
@@ -247,6 +253,7 @@ export async function createBridgePty(params: {
     idleTimer: null,
     completionTimer: null,
     completionIdleSecs: params.completionIdleSecs ?? 8,
+    inputPhase: false,
     onRawData: params.onRawData,
     onCompletion: params.onCompletion,
     onExit: params.onExit,
@@ -295,6 +302,21 @@ export function writeToPty(groupId: string, agentId: string, data: string): bool
       error: err instanceof Error ? err.message : String(err),
     });
     return false;
+  }
+}
+
+/**
+ * Toggle the input-phase flag on a Bridge Agent's PTY.
+ *
+ * While `active` is true, raw PTY output is still recorded internally
+ * (ring buffer, recentTextLines) but is NOT broadcast to connected
+ * clients via the onRawData callback.  This prevents context-injection
+ * echo from leaking to the frontend terminal.
+ */
+export function setInputPhase(groupId: string, agentId: string, active: boolean): void {
+  const managed = ptyInstances.get(ptyKey(groupId, agentId));
+  if (managed) {
+    managed.inputPhase = active;
   }
 }
 
@@ -478,8 +500,11 @@ function handlePtyData(managed: ManagedPty, data: string): void {
   // Reset idle reclaim timer — activity detected
   resetIdleTimer(managed);
 
-  // Callback for raw data broadcast
-  managed.onRawData?.(data);
+  // Callback for raw data broadcast — suppressed during inputPhase
+  // so the frontend never sees context-injection echo.
+  if (!managed.inputPhase) {
+    managed.onRawData?.(data);
+  }
 }
 
 function handlePtyExit(managed: ManagedPty, event: PtyExitEvent): void {

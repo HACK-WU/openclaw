@@ -22,6 +22,7 @@ import {
   createBridgePty,
   getRecentVisibleText,
   isPtyRunning,
+  setInputPhase,
   startCompletionDetection,
   updateLastTranscriptIndex,
   writeToPty,
@@ -98,6 +99,8 @@ export async function triggerBridgeAgent(
       // Determine effective cwd
       const effectiveCwd = meta.project?.directory ?? bridgeConfig.cwd;
 
+      let outputReceived = false;
+
       await createBridgePty({
         groupId,
         agentId,
@@ -105,6 +108,7 @@ export async function triggerBridgeAgent(
         effectiveCwd,
         completionIdleSecs: DEFAULT_COMPLETION_IDLE_SECS,
         onRawData: (data) => {
+          outputReceived = true;
           // Channel 1: broadcast raw terminal data to all connected clients
           broadcastTerminalData(broadcast, groupId, agentId, data);
         },
@@ -122,12 +126,59 @@ export async function triggerBridgeAgent(
         },
       });
 
+      // Phase 1: PTY created → broadcast "running" so frontend renders terminal (collapsed)
       broadcastTerminalStatus(broadcast, groupId, agentId, "running", "CLI process started");
       isFirstInteraction = true;
+
+      // Phase 2: Wait for CLI to initialize and produce output (like test flow)
+      // First give the CLI 2s to boot up
+      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+
+      // Then wait up to 10s for some output (indicating the CLI is ready)
+      const waitStart = Date.now();
+      while (!outputReceived && isPtyRunning(groupId, agentId) && Date.now() - waitStart < 10_000) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 500));
+        if (signal.aborted) {
+          break;
+        }
+      }
+
+      if (signal.aborted) {
+        run.status = "aborted";
+        broadcastGroupStream(broadcast, {
+          groupId,
+          runId,
+          agentId,
+          agentName: agentId,
+          state: "aborted",
+        });
+        return { run, chainState };
+      }
+
+      // Phase 3: CLI is ready → broadcast "ready" status so frontend shows success indicator
+      broadcastTerminalStatus(
+        broadcast,
+        groupId,
+        agentId,
+        "ready",
+        outputReceived ? "CLI agent is ready" : "CLI agent started (no initial output)",
+      );
+
+      log.info("[BRIDGE_CLI_READY]", {
+        groupId,
+        agentId,
+        outputReceived,
+        waitMs: Date.now() - waitStart,
+      });
+    } else {
+      // PTY session already exists (for example after a page refresh or a
+      // follow-up @mention). Frontend terminal state is ephemeral, so we must
+      // rebroadcast a status event to make the terminal bubble visible again.
+      broadcastTerminalStatus(broadcast, groupId, agentId, "ready", "CLI agent session reused");
     }
 
-    // 2. Build context message for CLI
-    const contextMessage = buildCliContextMessage({
+    // 2. Build hidden context + visible request for the CLI.
+    const { contextMessage, requestContent } = buildCliContextMessage({
       meta,
       agentId,
       transcriptSnapshot,
@@ -135,9 +186,13 @@ export async function triggerBridgeAgent(
       bridgeConfig,
     });
 
-    // 3. Write context to PTY stdin
-    const written = writeToPty(groupId, agentId, contextMessage);
-    if (!written) {
+    // 3a. Inject hidden context first.
+    //     Suppress onRawData broadcast during this phase so the terminal does
+    //     not show the full injected context block.
+    setInputPhase(groupId, agentId, true);
+    const writtenContext = contextMessage ? writeToPty(groupId, agentId, contextMessage) : true;
+    if (!writtenContext) {
+      setInputPhase(groupId, agentId, false);
       run.status = "error";
       run.completedAt = Date.now();
       broadcastGroupStream(broadcast, {
@@ -146,7 +201,44 @@ export async function triggerBridgeAgent(
         agentId,
         agentName: agentId,
         state: "error",
-        error: "Failed to write to CLI process",
+        error: "Failed to write hidden CLI context",
+      });
+      return { run, chainState };
+    }
+
+    // Give the PTY a moment to absorb the hidden context before the visible
+    // request is typed, then re-enable broadcasting.
+    await new Promise<void>((r) => setTimeout(r, 150));
+    setInputPhase(groupId, agentId, false);
+
+    // 3b. Type the actual request visibly, then submit it with Enter.
+    const writtenRequest = writeToPty(groupId, agentId, requestContent);
+    if (!writtenRequest) {
+      run.status = "error";
+      run.completedAt = Date.now();
+      broadcastGroupStream(broadcast, {
+        groupId,
+        runId,
+        agentId,
+        agentName: agentId,
+        state: "error",
+        error: "Failed to write CLI request",
+      });
+      return { run, chainState };
+    }
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    const submitted = writeToPty(groupId, agentId, "\r");
+    if (!submitted) {
+      run.status = "error";
+      run.completedAt = Date.now();
+      broadcastGroupStream(broadcast, {
+        groupId,
+        runId,
+        agentId,
+        agentName: agentId,
+        state: "error",
+        error: "Failed to submit CLI request",
       });
       return { run, chainState };
     }
@@ -238,8 +330,10 @@ export async function triggerBridgeAgent(
 // ─── Context Message Builder ───
 
 /**
- * Build the context message that gets written to CLI's PTY stdin.
- * Uses # comment syntax for safe injection (CLI treats # as comments).
+ * Build the hidden context block and the visible request that will be
+ * submitted to the CLI. The context uses # comment syntax for safe injection
+ * (CLI treats # as comments), while the actual request is typed separately so
+ * the terminal behaves more like the test flow.
  */
 function buildCliContextMessage(params: {
   meta: GroupSessionEntry;
@@ -247,7 +341,7 @@ function buildCliContextMessage(params: {
   transcriptSnapshot: GroupChatMessage[];
   isFirstInteraction: boolean;
   bridgeConfig: BridgeConfig;
-}): string {
+}): { contextMessage: string; requestContent: string } {
   const {
     meta,
     agentId,
@@ -372,23 +466,46 @@ function buildCliContextMessage(params: {
 
   // The actual request (trigger message — the last user/agent message)
   const triggerMsg = transcriptSnapshot[transcriptSnapshot.length - 1];
-  const requestContent = triggerMsg?.content ?? "";
+  const requestContent = extractVisibleRequestContent(triggerMsg);
 
   sections.push(
     "# ================================================================================",
-    "# 用户请求（以下是实际需要处理的输入）",
-    "# ================================================================================",
-    "",
-    requestContent,
-    "",
+    "# 用户请求（下一次可见输入是实际需要处理的内容）",
     "# ================================================================================",
     "",
   );
 
-  return sections.join("\n");
+  return {
+    contextMessage: sections.join("\n"),
+    requestContent,
+  };
 }
 
 // ─── Transcript Truncation ───
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractVisibleRequestContent(triggerMsg: GroupChatMessage | undefined): string {
+  const raw = (triggerMsg?.content ?? "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  const mentions = triggerMsg?.mentions ?? [];
+  let cleaned = raw;
+
+  for (const mention of mentions) {
+    const mentionPattern = new RegExp(`(^|\\s)@${escapeRegExp(mention)}(?=\\s|$)`, "g");
+    cleaned = cleaned.replace(mentionPattern, "$1");
+  }
+
+  cleaned = cleaned.replace(/(^|\s)@all(?=\s|$)/g, "$1");
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
+
+  return cleaned || raw;
+}
 
 function truncateTranscript(
   messages: GroupChatMessage[],

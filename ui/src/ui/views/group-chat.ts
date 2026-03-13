@@ -206,7 +206,10 @@ export type GroupChatViewProps = {
   onOpenSidebar?: (content: string) => void;
   onCloseSidebar?: () => void;
   // Bridge terminal
-  bridgeTerminalStatuses?: Map<string, "idle" | "working" | "completed" | "error" | "disconnected">;
+  bridgeTerminalStatuses?: Map<
+    string,
+    "idle" | "working" | "ready" | "completed" | "error" | "disconnected"
+  >;
 };
 
 // ─── Main Render ───
@@ -320,8 +323,11 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
   const hasActiveStreams = groupStreams.size > 0;
   const hasPendingAgents = groupPendingAgents.size > 0;
 
-  // Pending agents that are NOT yet streaming (exclude agents already in groupStreams)
-  const pendingOnly = [...groupPendingAgents].filter((id) => !groupStreams.has(id));
+  // Pending agents that are NOT yet streaming and do not already have an
+  // active bridge terminal rendered.
+  const pendingOnly = [...groupPendingAgents].filter(
+    (id) => !groupStreams.has(id) && !props.bridgeTerminalStatuses?.has(id),
+  );
 
   // Sidebar state — overlay mode for group chat (covers members panel, does not push content)
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);

@@ -1549,6 +1549,7 @@ export function renderApp(state: AppViewState) {
                 groupAddMemberDialog: state.groupAddMemberDialog,
                 groupDisbandDialog: state.groupDisbandDialog,
                 groupInfoPanelOpen: state.groupInfoPanelOpen,
+                bridgeTerminalStatuses: state.bridgeTerminalStatuses,
                 agentsList: [
                   ...(state.agentsList?.agents ?? []).map((a) => ({
                     id: a.id,

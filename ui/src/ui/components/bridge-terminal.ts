@@ -26,7 +26,13 @@ let xtermCssText: string | null = null;
 
 // ─── Types ───
 
-export type BridgeTerminalStatus = "idle" | "working" | "completed" | "error" | "disconnected";
+export type BridgeTerminalStatus =
+  | "idle"
+  | "working"
+  | "ready"
+  | "completed"
+  | "error"
+  | "disconnected";
 
 /**
  * Event fired when xterm.js buffer text is extracted for transcript.
@@ -137,8 +143,8 @@ export class BridgeTerminal extends LitElement {
   /** Terminal status */
   @property({ type: String }) status: BridgeTerminalStatus = "idle";
 
-  /** Whether terminal is collapsed */
-  @state() private _collapsed = false;
+  /** Whether terminal is collapsed (default: collapsed, user clicks to expand) */
+  @state() private _collapsed = true;
 
   /** Whether xterm.js is loaded */
   @state() private _xtermLoaded = false;
@@ -203,6 +209,10 @@ export class BridgeTerminal extends LitElement {
 
     .bridge-terminal-header__status--working {
       color: #f9e2af;
+    }
+
+    .bridge-terminal-header__status--ready {
+      color: #a6e3a1;
     }
 
     .bridge-terminal-header__status--completed {
@@ -544,6 +554,8 @@ export class BridgeTerminal extends LitElement {
     switch (this.status) {
       case "working":
         return `🔧 ${this._cliDisplayName()} 正在工作...`;
+      case "ready":
+        return `✅ ${this._cliDisplayName()} 启动成功`;
       case "completed":
         return `📦 ${this._cliDisplayName()} 执行完毕`;
       case "error":

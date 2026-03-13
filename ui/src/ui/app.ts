@@ -225,6 +225,10 @@ export class OpenClawApp extends LitElement {
     draft: "",
     preview: false,
   };
+  @state() bridgeTerminalStatuses: Map<
+    string,
+    "idle" | "working" | "ready" | "completed" | "error" | "disconnected"
+  > = new Map();
   pendingGatewayToken: string | null = null;
 
   @state() configLoading = false;

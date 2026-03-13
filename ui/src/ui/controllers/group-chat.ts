@@ -159,7 +159,10 @@ export type GroupChatState = {
   groupInfoPanelOpen: boolean;
   // ─── Bridge Terminal state ───
   /** Active bridge terminal statuses (agentId → status) */
-  bridgeTerminalStatuses?: Map<string, "idle" | "working" | "completed" | "error" | "disconnected">;
+  bridgeTerminalStatuses?: Map<
+    string,
+    "idle" | "working" | "ready" | "completed" | "error" | "disconnected"
+  >;
 };
 
 export type GroupCreateDialogState = {
@@ -1755,10 +1758,12 @@ export type GroupTerminalStatusPayload = {
 /** Map backend BridgePtyStatus → frontend BridgeTerminalStatus. */
 function mapPtyStatusToTerminalStatus(
   backendStatus: string,
-): "idle" | "working" | "completed" | "error" | "disconnected" {
+): "idle" | "working" | "ready" | "completed" | "error" | "disconnected" {
   switch (backendStatus) {
     case "running":
       return "working";
+    case "ready":
+      return "ready";
     case "stuck":
       return "error";
     case "offline":
@@ -1789,12 +1794,16 @@ export function handleGroupTerminalEvent(
   const terminal = getBridgeTerminal(payload.groupId, payload.agentId);
 
   if (terminal) {
-    // Decode base64 data and write to terminal
+    // Decode base64 back to raw bytes before writing to xterm.
+    // Writing the binary string returned by atob() directly will corrupt
+    // multibyte UTF-8 characters (for example Chinese text) and can trigger
+    // xterm parser errors.
     try {
-      const decoded = atob(payload.data);
-      terminal.writeData(decoded);
+      const binary = atob(payload.data);
+      const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+      terminal.writeBinaryData(bytes);
     } catch {
-      // If not base64, write raw
+      // If decoding fails, fall back to raw text so output is still visible.
       terminal.writeData(payload.data);
     }
   }
@@ -1822,6 +1831,20 @@ export function handleGroupTerminalStatusEvent(
   const statuses = new Map(host.bridgeTerminalStatuses);
   statuses.set(payload.agentId, mappedStatus);
   host.bridgeTerminalStatuses = statuses;
+
+  // Once a bridge terminal has started or become ready, the generic pending
+  // indicator should disappear to avoid rendering the same agent twice.
+  if (
+    mappedStatus === "working" ||
+    mappedStatus === "ready" ||
+    mappedStatus === "completed" ||
+    mappedStatus === "error" ||
+    mappedStatus === "disconnected"
+  ) {
+    const nextPending = new Set(host.groupPendingAgents);
+    nextPending.delete(payload.agentId);
+    host.groupPendingAgents = nextPending;
+  }
 
   // When status becomes "completed", trigger text extraction and fold
   if (mappedStatus === "completed") {
