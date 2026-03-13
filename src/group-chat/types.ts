@@ -5,14 +5,31 @@
  * Kept in a single file to avoid circular imports.
  */
 
+import type { BridgeConfig, ContextConfig } from "./bridge-types.js";
+
 // ─── Group Member ───
 
-export type GroupMemberRole = "assistant" | "member";
+export type GroupMemberRole = "assistant" | "member" | "bridge-assistant";
+
+/**
+ * Bridge-assistant agent ID prefix.
+ * Any agentId starting with this prefix is treated as a bridge-assistant
+ * and excluded from normal dispatch (@all, broadcast, etc.).
+ */
+export const BRIDGE_ASSISTANT_PREFIX = "__bridge-assistant__";
+
+/** Check whether an agentId belongs to a bridge-assistant. */
+export function isBridgeAssistant(agentId: string): boolean {
+  return agentId.startsWith(BRIDGE_ASSISTANT_PREFIX);
+}
 
 export type GroupMember = {
   agentId: string;
   role: GroupMemberRole;
   joinedAt: number; // epoch ms
+  // ─── Bridge Agent fields ───
+  /** Present when this member is a Bridge (CLI) Agent. */
+  bridge?: BridgeConfig;
 };
 
 // ─── Role Prompt ───
@@ -51,6 +68,16 @@ export type GroupSessionEntry = {
   updatedAt: number;
   label?: string;
   archived?: boolean;
+  // ─── Bridge Agent extensions ───
+  /** Project configuration for Bridge Agents (optional). */
+  project?: {
+    /** Project root directory. CLI agents start in this cwd. */
+    directory?: string;
+    /** Paths to project documentation files for context injection. */
+    docs?: string[];
+  };
+  /** Context configuration for CLI agent interactions. */
+  contextConfig?: ContextConfig;
 };
 
 // ─── Group Index Entry (index.json — lightweight) ───

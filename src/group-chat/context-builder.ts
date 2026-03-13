@@ -9,6 +9,7 @@
 
 import { resolveRolePrompt } from "./role-prompt.js";
 import type { GroupSessionEntry } from "./types.js";
+import { isBridgeAssistant } from "./types.js";
 
 /**
  * Build the group chat context string for injection into an agent's system prompt.
@@ -26,7 +27,14 @@ export function buildGroupChatContext(params: {
   const sections: string[] = [];
 
   // 1. Group info
-  const roleName = member.role === "assistant" ? "Assistant (coordinator)" : "Member";
+  const roleName =
+    member.role === "assistant"
+      ? "Assistant (coordinator)"
+      : member.role === "bridge-assistant"
+        ? "Bridge Assistant (CLI monitor)"
+        : member.bridge
+          ? "Bridge Agent (CLI)"
+          : "Member";
   const modeDesc =
     meta.messageMode === "unicast"
       ? "Unicast — messages without @mentions go to the assistant only"
@@ -39,12 +47,15 @@ Your role: **${roleName}**
 Your agentId: \`${agentId}\`
 Message mode: ${modeDesc}`);
 
-  // 2. Member list
-  const memberLines = meta.members.map((m) => {
-    const roleLabel = m.role === "assistant" ? "Assistant" : "Member";
-    const selfMark = m.agentId === agentId ? " ← you" : "";
-    return `- **${m.agentId}** — ${roleLabel}${selfMark}`;
-  });
+  // 2. Member list (exclude bridge-assistants for cleaner display)
+  const memberLines = meta.members
+    .filter((m) => !isBridgeAssistant(m.agentId))
+    .map((m) => {
+      const roleLabel =
+        m.role === "assistant" ? "Assistant" : m.bridge ? "Bridge Agent (CLI)" : "Member";
+      const selfMark = m.agentId === agentId ? " ← you" : "";
+      return `- **${m.agentId}** — ${roleLabel}${selfMark}`;
+    });
   sections.push(`### Group Members
 - **Owner** (creator, human user)
 ${memberLines.join("\n")}`);
@@ -112,12 +123,23 @@ Use \`@agentId\` on its **own line** to route your message to another agent.
 **Key rule:** Mentions on a line with ONLY other mentions (no other text) will trigger routing. Mentions on a line with OTHER CONTENT will NOT trigger routing.`);
 
   // 6. Constraints
-  sections.push(`### Important Constraints
+  const isBridgeAgent = !!member.bridge;
+  if (isBridgeAgent) {
+    sections.push(`### Important Constraints
+- You are a **Bridge Agent (CLI)**: you have full file read/write and command execution capabilities
+- **Always respond when @-mentioned** — even for repeated questions
+- Keep responses concise and focused
+- Do NOT announce "let me ask..." — just ask directly with \`@agentId\`
+- **Escape \`@\` with \`\\@\`** when you need to display it literally (emails, casual references)
+- **Never output sensitive information** (API keys, passwords, tokens) in your responses`);
+  } else {
+    sections.push(`### Important Constraints
 - You are in **read-only mode**: you cannot write files, execute commands, or modify configurations
 - **Always respond when @-mentioned** — even for repeated questions
 - Keep responses concise and focused
 - Do NOT announce "let me ask..." — just ask directly with \`@agentId\`
 - **Escape \`@\` with \`\\@\`** when you need to display it literally (emails, casual references)`);
+  }
 
   return sections.join("\n\n");
 }

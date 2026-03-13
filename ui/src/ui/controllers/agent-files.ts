@@ -32,14 +32,15 @@ function mergeFileEntry(
   return { ...list, files: nextFiles };
 }
 
-export async function loadAgentFiles(state: AgentFilesState, agentId: string) {
+export async function loadAgentFiles(state: AgentFilesState, agentId: string, isCliAgent = false) {
   if (!state.client || !state.connected || state.agentFilesLoading) {
     return;
   }
   state.agentFilesLoading = true;
   state.agentFilesError = null;
   try {
-    const res = await state.client.request<AgentsFilesListResult | null>("agents.files.list", {
+    const method = isCliAgent ? "cliAgents.files.list" : "agents.files.list";
+    const res = await state.client.request<AgentsFilesListResult | null>(method, {
       agentId,
     });
     if (res) {
@@ -59,7 +60,7 @@ export async function loadAgentFileContent(
   state: AgentFilesState,
   agentId: string,
   name: string,
-  opts?: { force?: boolean; preserveDraft?: boolean },
+  opts?: { force?: boolean; preserveDraft?: boolean; isCliAgent?: boolean },
 ) {
   if (!state.client || !state.connected || state.agentFilesLoading) {
     return;
@@ -70,7 +71,8 @@ export async function loadAgentFileContent(
   state.agentFilesLoading = true;
   state.agentFilesError = null;
   try {
-    const res = await state.client.request<AgentsFilesGetResult | null>("agents.files.get", {
+    const method = opts?.isCliAgent ? "cliAgents.files.get" : "agents.files.get";
+    const res = await state.client.request<AgentsFilesGetResult | null>(method, {
       agentId,
       name,
     });
@@ -101,6 +103,7 @@ export async function saveAgentFile(
   agentId: string,
   name: string,
   content: string,
+  isCliAgent = false,
 ) {
   if (!state.client || !state.connected || state.agentFileSaving) {
     return;
@@ -108,7 +111,8 @@ export async function saveAgentFile(
   state.agentFileSaving = true;
   state.agentFilesError = null;
   try {
-    const res = await state.client.request<AgentsFilesSetResult | null>("agents.files.set", {
+    const method = isCliAgent ? "cliAgents.files.set" : "agents.files.set";
+    const res = await state.client.request<AgentsFilesSetResult | null>(method, {
       agentId,
       name,
       content,

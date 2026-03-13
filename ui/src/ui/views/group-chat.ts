@@ -22,12 +22,14 @@ import type {
   GroupToolMessage,
 } from "../controllers/group-chat.ts";
 import { getMentionedAgents } from "../controllers/group-chat.ts";
+import { isBridgeAssistantAgent } from "../controllers/group-chat.ts";
 import { stripThinkingTags } from "../format.ts";
 import { t } from "../i18n/index.ts";
 import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
 import type { ToolCard } from "../types/chat-types.ts";
 import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
+import "../components/bridge-terminal.ts";
 
 // ─── Mention Dropdown State ───
 let mentionDropdownState = {
@@ -159,8 +161,9 @@ export type GroupChatViewProps = {
   onDraftChange: (next: string) => void;
   onCreateGroup: (opts: {
     name?: string;
-    members: Array<{ agentId: string; role: "assistant" | "member" }>;
+    members: Array<{ agentId: string; role: "assistant" | "member" | "bridge-assistant" }>;
     messageMode?: "unicast" | "broadcast";
+    project?: { directory?: string; docs?: string[] };
   }) => void;
   onDeleteGroup: (groupId: string) => void;
   onOpenCreateDialog: () => void;
@@ -176,6 +179,12 @@ export type GroupChatViewProps = {
   onUpdateAnnouncement: (content: string) => void;
   onUpdateMaxRounds: (maxRounds: number) => void;
   onUpdateMaxConsecutive: (maxConsecutive: number) => void;
+  onUpdateContextConfig: (config: {
+    maxMessages?: number;
+    maxCharacters?: number;
+    includeSystemMessages?: boolean;
+  }) => void;
+  onUpdateProjectDocs: (docs: string[]) => void;
   onOpenDisbandDialog: () => void;
   onCloseDisbandDialog: () => void;
   onConfirmDisbandGroup: () => void;
@@ -196,6 +205,8 @@ export type GroupChatViewProps = {
   sidebarError?: string | null;
   onOpenSidebar?: (content: string) => void;
   onCloseSidebar?: () => void;
+  // Bridge terminal
+  bridgeTerminalStatuses?: Map<string, "idle" | "working" | "completed" | "error" | "disconnected">;
 };
 
 // ─── Main Render ───
@@ -395,6 +406,8 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                 props.onOpenSidebar,
               );
             })}
+
+            ${renderActiveBridgeTerminals(meta, props)}
 
             ${pendingOnly.map((agentId) =>
               renderPendingAgentIndicator(agentId, meta, props.agentsList),
@@ -735,6 +748,57 @@ function renderGroupStreamBubble(
 }
 
 /**
+ * Render active Bridge (CLI) Agent terminals in the message area.
+ * Shows a bridge-terminal component for each Bridge Agent that has
+ * an active terminal status (working/idle/error/disconnected).
+ */
+function renderActiveBridgeTerminals(meta: GroupSessionMeta, props: GroupChatViewProps) {
+  const statuses = props.bridgeTerminalStatuses;
+  if (!statuses || statuses.size === 0) {
+    return nothing;
+  }
+
+  const bridgeMembers = meta.members.filter((m) => m.bridge && !isBridgeAssistantAgent(m.agentId));
+
+  if (bridgeMembers.length === 0) {
+    return nothing;
+  }
+
+  return bridgeMembers
+    .filter((m) => statuses.has(m.agentId))
+    .map((m) => {
+      const status = statuses.get(m.agentId) ?? "idle";
+      const senderName = resolveSenderName(
+        { type: "agent", agentId: m.agentId },
+        meta,
+        props.agentsList,
+      );
+      const senderEmoji = resolveSenderEmoji(
+        { type: "agent", agentId: m.agentId },
+        meta,
+        props.agentsList,
+      );
+
+      return html`
+        <div class="chat-group assistant">
+          <div class="chat-avatar assistant">${senderEmoji}</div>
+          <div class="chat-group-messages">
+            <bridge-terminal
+              .groupId=${meta.groupId}
+              .agentId=${m.agentId}
+              .cliType=${m.bridge?.cliType ?? "custom"}
+              .status=${status}
+            ></bridge-terminal>
+            <div class="chat-group-footer">
+              <span class="chat-sender-name">${senderName}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+}
+
+/**
  * Render a "pending" indicator for an agent that is about to respond
  * but hasn't started streaming yet. Shows reading-indicator dots animation.
  */
@@ -791,28 +855,31 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
       <div class="group-members-panel__header">
         <div class="group-members-panel__header-left">
           <h3>${t("chat.group.memberList")}</h3>
-          <span class="group-members-panel__count">${meta.members.length}</span>
+          <span class="group-members-panel__count">${meta.members.filter((m) => !isBridgeAssistantAgent(m.agentId)).length}</span>
         </div>
       </div>
 
-      <!-- Member list -->
+      <!-- Member list (excluding bridge-assistants) -->
       <ul class="group-members-panel__list">
-        ${meta.members.map((m) => {
-          const displayName = resolveAgentName(m.agentId, props.agentsList);
-          const showId = displayName !== m.agentId;
-          return html`
-            <li class="group-members-panel__item">
-              <span class="group-members-panel__emoji">
-                ${resolveSenderEmoji({ type: "agent", agentId: m.agentId }, meta, props.agentsList)}
-              </span>
-              <span class="group-members-panel__text">
-                <span class="group-members-panel__name">${displayName}</span>
-                ${showId ? html`<span class="group-members-panel__id">@${m.agentId}</span>` : nothing}
-              </span>
-              <span class="group-members-panel__role badge badge--${m.role}">${m.role}</span>
-            </li>
-          `;
-        })}
+        ${meta.members
+          .filter((m) => !isBridgeAssistantAgent(m.agentId))
+          .map((m) => {
+            const displayName = resolveAgentName(m.agentId, props.agentsList);
+            const showId = displayName !== m.agentId;
+            const roleLabel = m.bridge ? "bridge" : m.role;
+            return html`
+              <li class="group-members-panel__item">
+                <span class="group-members-panel__emoji">
+                  ${resolveSenderEmoji({ type: "agent", agentId: m.agentId }, meta, props.agentsList)}
+                </span>
+                <span class="group-members-panel__text">
+                  <span class="group-members-panel__name">${displayName}</span>
+                  ${showId ? html`<span class="group-members-panel__id">@${m.agentId}</span>` : nothing}
+                </span>
+                <span class="group-members-panel__role badge badge--${roleLabel}">${roleLabel}</span>
+              </li>
+            `;
+          })}
       </ul>
     </div>
   `;
@@ -1030,6 +1097,158 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
           </div>
         </div>
 
+        <!-- Project Configuration -->
+        <div class="group-info-panel__section">
+          <label>Project Configuration</label>
+          <div class="group-info-panel__settings">
+            <div class="group-info-panel__setting-item">
+              <div class="group-info-panel__setting-header">
+                <span class="group-info-panel__setting-name">Project Directory</span>
+              </div>
+              ${
+                meta.project?.directory
+                  ? html`
+                  <div class="mono" style="font-size: 12px; padding: 4px 0; display: flex; align-items: center; gap: 6px;">
+                    <span>🔒</span>
+                    <span>${meta.project.directory}</span>
+                  </div>
+                  <span class="group-info-panel__setting-desc">Locked at creation. CLI Agents start in this directory.</span>
+                `
+                  : html`
+                      <span class="group-info-panel__setting-desc muted">Not configured. Set during group creation.</span>
+                    `
+              }
+            </div>
+            <div class="group-info-panel__setting-item">
+              <div class="group-info-panel__setting-header">
+                <span class="group-info-panel__setting-name">Project Docs</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                ${(meta.project?.docs ?? []).map(
+                  (doc, idx) => html`
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                      <span class="mono" style="font-size: 12px; flex: 1;">${doc}</span>
+                      <button
+                        class="btn btn--sm btn--icon"
+                        style="padding: 2px;"
+                        title="Remove"
+                        @click=${() => {
+                          const updated = [...(meta.project?.docs ?? [])];
+                          updated.splice(idx, 1);
+                          props.onUpdateProjectDocs(updated);
+                        }}
+                      >${icons.x}</button>
+                    </div>
+                  `,
+                )}
+                <div style="display: flex; gap: 6px; margin-top: 4px;">
+                  <input
+                    type="text"
+                    class="field"
+                    style="font-size: 12px; flex: 1;"
+                    placeholder="path/to/doc.md"
+                    id="project-doc-input"
+                    @keydown=${(e: KeyboardEvent) => {
+                      if (e.key === "Enter") {
+                        const input = e.target as HTMLInputElement;
+                        const val = input.value.trim();
+                        if (val) {
+                          props.onUpdateProjectDocs([...(meta.project?.docs ?? []), val]);
+                          input.value = "";
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    class="btn btn--sm btn--secondary"
+                    @click=${() => {
+                      const input = document.getElementById(
+                        "project-doc-input",
+                      ) as HTMLInputElement | null;
+                      if (input && input.value.trim()) {
+                        props.onUpdateProjectDocs([
+                          ...(meta.project?.docs ?? []),
+                          input.value.trim(),
+                        ]);
+                        input.value = "";
+                      }
+                    }}
+                  >+ Add</button>
+                </div>
+              </div>
+              <span class="group-info-panel__setting-desc">Files injected into agent context. Can be updated anytime.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Context Configuration -->
+        <div class="group-info-panel__section">
+          <label>Context Configuration</label>
+          <div class="group-info-panel__settings">
+            <div class="group-info-panel__setting-item">
+              <div class="group-info-panel__setting-header">
+                <span class="group-info-panel__setting-name">Max Messages</span>
+                <input
+                  type="number"
+                  class="field group-info-panel__setting-input"
+                  .value=${String(meta.contextConfig?.maxMessages ?? 30)}
+                  min="5"
+                  max="100"
+                  @change=${(e: Event) => {
+                    const value = parseInt((e.target as HTMLInputElement).value, 10);
+                    if (!isNaN(value) && value >= 5 && value <= 100) {
+                      props.onUpdateContextConfig({
+                        ...meta.contextConfig,
+                        maxMessages: value,
+                      });
+                    }
+                  }}
+                />
+              </div>
+              <span class="group-info-panel__setting-desc">Maximum number of history messages sent to CLI Agents (5-100).</span>
+            </div>
+            <div class="group-info-panel__setting-item">
+              <div class="group-info-panel__setting-header">
+                <span class="group-info-panel__setting-name">Max Characters</span>
+                <input
+                  type="number"
+                  class="field group-info-panel__setting-input"
+                  .value=${String(meta.contextConfig?.maxCharacters ?? 50000)}
+                  min="10000"
+                  max="200000"
+                  step="5000"
+                  @change=${(e: Event) => {
+                    const value = parseInt((e.target as HTMLInputElement).value, 10);
+                    if (!isNaN(value) && value >= 10000 && value <= 200000) {
+                      props.onUpdateContextConfig({
+                        ...meta.contextConfig,
+                        maxCharacters: value,
+                      });
+                    }
+                  }}
+                />
+              </div>
+              <span class="group-info-panel__setting-desc">Maximum total characters in context (10,000-200,000).</span>
+            </div>
+            <div class="group-info-panel__setting-item">
+              <div class="group-info-panel__setting-header">
+                <span class="group-info-panel__setting-name">Include System Messages</span>
+                <input
+                  type="checkbox"
+                  .checked=${meta.contextConfig?.includeSystemMessages ?? false}
+                  @change=${(e: Event) => {
+                    props.onUpdateContextConfig({
+                      ...meta.contextConfig,
+                      includeSystemMessages: (e.target as HTMLInputElement).checked,
+                    });
+                  }}
+                />
+              </div>
+              <span class="group-info-panel__setting-desc">Include member join/leave events in context.</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Danger Zone -->
         <div class="group-info-panel__section group-info-panel__section--danger">
           <label>${t("chat.group.dangerZone") || "Danger Zone"}</label>
@@ -1146,40 +1365,58 @@ function renderCreateGroupDialog(props: GroupChatViewProps) {
           <div class="form-field group-create__field">
             <label class="group-create__label">${t("chat.group.selectAgents")}</label>
             <div class="group-create__agents">
-              ${props.agentsList.map(
-                (agent) => html`
-                  <label class="group-create__agent-option">
-                    <input
-                      type="checkbox"
-                      .checked=${dialog.selectedAgents.some((s) => s.agentId === agent.id)}
-                      @change=${(e: Event) => {
-                        const checked = (e.target as HTMLInputElement).checked;
-                        if (checked) {
-                          const isFirst = dialog.selectedAgents.length === 0;
-                          dialog.selectedAgents = [
-                            ...dialog.selectedAgents,
-                            { agentId: agent.id, role: isFirst ? "assistant" : "member" },
-                          ];
-                        } else {
-                          dialog.selectedAgents = dialog.selectedAgents.filter(
-                            (s) => s.agentId !== agent.id,
-                          );
-                        }
-                      }}
-                    />
-                    <span class="group-create__agent-emoji">${agent.identity?.emoji ?? "🤖"}</span>
-                    <span class="group-create__agent-name">${agent.identity?.name ?? agent.id}</span>
-                    ${
-                      dialog.selectedAgents.find((s) => s.agentId === agent.id)?.role ===
-                      "assistant"
-                        ? html`
-                            <span class="badge badge--assistant">assistant</span>
-                          `
-                        : nothing
-                    }
-                  </label>
-                `,
-              )}
+              ${props.agentsList.map((agent) => {
+                const selected = dialog.selectedAgents.find((s) => s.agentId === agent.id);
+                return html`
+                    <label class="group-create__agent-option">
+                      <input
+                        type="checkbox"
+                        .checked=${Boolean(selected)}
+                        @change=${(e: Event) => {
+                          const checked = (e.target as HTMLInputElement).checked;
+                          if (checked) {
+                            const isFirst = dialog.selectedAgents.length === 0;
+                            dialog.selectedAgents = [
+                              ...dialog.selectedAgents,
+                              { agentId: agent.id, role: isFirst ? "assistant" : "member" },
+                            ];
+                          } else {
+                            dialog.selectedAgents = dialog.selectedAgents.filter(
+                              (s) => s.agentId !== agent.id,
+                            );
+                          }
+                        }}
+                      />
+                      <span class="group-create__agent-emoji">${agent.identity?.emoji ?? "🤖"}</span>
+                      <span class="group-create__agent-name">${agent.identity?.name ?? agent.id}</span>
+                      ${
+                        selected
+                          ? html`
+                          <select
+                            class="field group-create__role-select"
+                            style="margin-left: auto; width: auto; min-width: 120px; font-size: 12px; padding: 2px 6px;"
+                            .value=${selected.role}
+                            @click=${(e: Event) => e.stopPropagation()}
+                            @change=${(e: Event) => {
+                              const role = (e.target as HTMLSelectElement).value as
+                                | "assistant"
+                                | "member"
+                                | "bridge-assistant";
+                              dialog.selectedAgents = dialog.selectedAgents.map((s) =>
+                                s.agentId === agent.id ? { ...s, role } : s,
+                              );
+                            }}
+                          >
+                            <option value="assistant" ?selected=${selected.role === "assistant"}>assistant</option>
+                            <option value="member" ?selected=${selected.role === "member"}>member</option>
+                            <option value="bridge-assistant" ?selected=${selected.role === "bridge-assistant"}>bridge-assistant</option>
+                          </select>
+                        `
+                          : nothing
+                      }
+                    </label>
+                  `;
+              })}
             </div>
           </div>
           <div class="form-field group-create__field">
@@ -1197,6 +1434,37 @@ function renderCreateGroupDialog(props: GroupChatViewProps) {
               <option value="broadcast">Broadcast</option>
             </select>
           </div>
+          <!-- Project Configuration (optional) -->
+          <div class="form-field group-create__field">
+            <label class="group-create__label">Project Directory (optional)</label>
+            <input
+              type="text"
+              class="field group-create__input"
+              placeholder="/home/user/my-project"
+              .value=${dialog.projectDirectory}
+              @input=${(e: Event) => {
+                dialog.projectDirectory = (e.target as HTMLInputElement).value;
+              }}
+            />
+            <span class="group-create__hint" style="font-size: 11px; color: var(--muted); margin-top: 2px;">
+              CLI Agents will start in this directory. Locked after creation.
+            </span>
+          </div>
+          <div class="form-field group-create__field">
+            <label class="group-create__label">Project Docs (optional)</label>
+            <input
+              type="text"
+              class="field group-create__input"
+              placeholder="README.md, docs/architecture.md"
+              .value=${dialog.projectDocs}
+              @input=${(e: Event) => {
+                dialog.projectDocs = (e.target as HTMLInputElement).value;
+              }}
+            />
+            <span class="group-create__hint" style="font-size: 11px; color: var(--muted); margin-top: 2px;">
+              Comma-separated file paths injected into agent context.
+            </span>
+          </div>
           ${dialog.error ? html`<div class="modal-error">${dialog.error}</div>` : nothing}
         </div>
         <div class="modal-actions group-create-dialog__actions">
@@ -1211,10 +1479,21 @@ function renderCreateGroupDialog(props: GroupChatViewProps) {
             class="btn btn--primary"
             ?disabled=${dialog.isBusy || dialog.selectedAgents.length < 1}
             @click=${() => {
+              const project: { directory?: string; docs?: string[] } = {};
+              if (dialog.projectDirectory.trim()) {
+                project.directory = dialog.projectDirectory.trim();
+              }
+              if (dialog.projectDocs.trim()) {
+                project.docs = dialog.projectDocs
+                  .split(",")
+                  .map((d) => d.trim())
+                  .filter(Boolean);
+              }
               props.onCreateGroup({
                 name: dialog.name || undefined,
                 members: dialog.selectedAgents,
                 messageMode: dialog.messageMode,
+                ...(project.directory || project.docs ? { project } : {}),
               });
             }}
           >

@@ -19,9 +19,15 @@ import {
   loadAgents,
   loadToolsCatalog,
   createAgent,
+  createCliAgent,
   deleteAgent,
+  deleteCliAgent,
   setDefaultAgent,
   saveAgentsConfig,
+  loadCliAgents,
+  testCliAgent,
+  stopCliAgentTest,
+  sendTestInput,
 } from "./controllers/agents.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
@@ -108,7 +114,7 @@ import {
   resolveModelPrimary,
   sortLocaleStrings,
 } from "./views/agents-utils.ts";
-import { renderAgents } from "./views/agents.ts";
+import { renderAgents, type CliType } from "./views/agents.ts";
 import { renderChannels } from "./views/channels.ts";
 import { renderChat } from "./views/chat.ts";
 import { renderConfig } from "./views/config.ts";
@@ -762,8 +768,25 @@ export function renderApp(state: AppViewState) {
                 deleteBusy: state.agentDeleteBusy,
                 deleteError: state.agentDeleteError,
                 showDeleteConfirm: state.agentShowDeleteConfirm,
+                // CLI Agent create state
+                showCliCreateDialog: state.agentShowCliCreateDialog,
+                cliCreateForm: state.agentCliCreateForm,
+                cliCreateBusy: state.agentCliCreateBusy,
+                cliCreateError: state.agentCliCreateError,
+                showAddMenu: state.agentShowAddMenu,
+                // CLI Agents data (independent)
+                cliAgentsList: state.cliAgentsList,
+                cliAgentsLoading: state.cliAgentsLoading,
+                cliAgentsError: state.cliAgentsError,
+                // CLI Agent test state
+                cliTestRunning: state.cliTestRunning,
+                cliTestResult: state.cliTestResult,
+                // CLI Agent test terminal dialog
+                cliTestTerminalOpen: state.cliTestTerminalOpen,
+                cliTestTerminalData: state.cliTestTerminalData,
                 onRefresh: async () => {
                   await loadAgents(state);
+                  await loadCliAgents(state);
                   const nextSelected =
                     state.agentsSelectedId ??
                     state.agentsList?.defaultId ??
@@ -794,7 +817,10 @@ export function renderApp(state: AppViewState) {
                     void loadToolsCatalog(state, agentId);
                   }
                   if (state.agentsPanel === "files") {
-                    void loadAgentFiles(state, agentId);
+                    const isCli = Boolean(
+                      state.cliAgentsList?.agents?.some((a) => a.id === agentId),
+                    );
+                    void loadAgentFiles(state, agentId, isCli);
                   }
                   if (state.agentsPanel === "skills") {
                     void loadAgentSkills(state, agentId);
@@ -809,7 +835,11 @@ export function renderApp(state: AppViewState) {
                       state.agentFileActive = null;
                       state.agentFileContents = {};
                       state.agentFileDrafts = {};
-                      void loadAgentFiles(state, resolvedAgentId);
+                      const isCli = Boolean(
+                        !state.agentsList?.agents?.some((a) => a.id === resolvedAgentId) &&
+                        state.cliAgentsList?.agents?.some((a) => a.id === resolvedAgentId),
+                      );
+                      void loadAgentFiles(state, resolvedAgentId, isCli);
                     }
                   }
                   if (panel === "tools") {
@@ -827,13 +857,24 @@ export function renderApp(state: AppViewState) {
                     void state.loadCron();
                   }
                 },
-                onLoadFiles: (agentId) => loadAgentFiles(state, agentId),
+                onLoadFiles: (agentId) => {
+                  const isCli = Boolean(
+                    !state.agentsList?.agents?.some((a) => a.id === agentId) &&
+                    state.cliAgentsList?.agents?.some((a) => a.id === agentId),
+                  );
+                  void loadAgentFiles(state, agentId, isCli);
+                },
                 onSelectFile: (name) => {
                   state.agentFileActive = name;
                   if (!resolvedAgentId) {
                     return;
                   }
-                  void loadAgentFileContent(state, resolvedAgentId, name);
+                  const isCli = Boolean(
+                    resolvedAgentId &&
+                    !state.agentsList?.agents?.some((a) => a.id === resolvedAgentId) &&
+                    state.cliAgentsList?.agents?.some((a) => a.id === resolvedAgentId),
+                  );
+                  void loadAgentFileContent(state, resolvedAgentId, name, { isCliAgent: isCli });
                 },
                 onFileDraftChange: (name, content) => {
                   state.agentFileDrafts = { ...state.agentFileDrafts, [name]: content };
@@ -848,7 +889,12 @@ export function renderApp(state: AppViewState) {
                   }
                   const content =
                     state.agentFileDrafts[name] ?? state.agentFileContents[name] ?? "";
-                  void saveAgentFile(state, resolvedAgentId, name, content);
+                  const isCli = Boolean(
+                    resolvedAgentId &&
+                    !state.agentsList?.agents?.some((a) => a.id === resolvedAgentId) &&
+                    state.cliAgentsList?.agents?.some((a) => a.id === resolvedAgentId),
+                  );
+                  void saveAgentFile(state, resolvedAgentId, name, content, isCli);
                 },
                 onToolsProfileChange: (agentId, profile, clearAllow) => {
                   const index =
@@ -1032,9 +1078,10 @@ export function renderApp(state: AppViewState) {
                 },
                 // Create/Delete callbacks
                 onShowCreateDialog: () => {
-                  state.agentCreateForm = { name: "", workspace: "", emoji: "" };
+                  state.agentCreateForm = { name: "", agentId: "", workspace: "", emoji: "" };
                   state.agentCreateError = null;
                   state.agentShowCreateDialog = true;
+                  state.agentShowAddMenu = false;
                 },
                 onHideCreateDialog: () => {
                   state.agentShowCreateDialog = false;
@@ -1057,6 +1104,115 @@ export function renderApp(state: AppViewState) {
                       await loadAgentIdentity(state, newAgentId);
                       await loadToolsCatalog(state, newAgentId);
                     }
+                  }
+                },
+                // CLI Agent create callbacks
+                onShowCliCreateDialog: () => {
+                  state.agentCliCreateForm = {
+                    name: "claude-code",
+                    agentId: "",
+                    workspace: "",
+                    emoji: "🤖",
+                    cliType: "claude-code",
+                    command: "claude",
+                    args: "",
+                    env: [],
+                    timeout: 300,
+                    idleTimeout: 600,
+                  };
+                  state.agentCliCreateError = null;
+                  state.agentShowCliCreateDialog = true;
+                  state.agentShowAddMenu = false;
+                },
+                onHideCliCreateDialog: () => {
+                  state.agentShowCliCreateDialog = false;
+                },
+                onCliCreateFormChange: (field, value) => {
+                  state.agentCliCreateForm = { ...state.agentCliCreateForm, [field]: value };
+                },
+                onCliTypeChange: (cliType: CliType) => {
+                  const presets: Record<CliType, { name: string; command: string; emoji: string }> =
+                    {
+                      "claude-code": { name: "claude-code", command: "claude", emoji: "🤖" },
+                      opencode: { name: "opencode", command: "opencode", emoji: "🔧" },
+                      codebuddy: { name: "codebuddy", command: "codebuddy", emoji: "🛠️" },
+                      custom: { name: "", command: "", emoji: "🔧" },
+                    };
+                  const preset = presets[cliType];
+                  state.agentCliCreateForm = {
+                    ...state.agentCliCreateForm,
+                    cliType,
+                    name: preset.name,
+                    command: preset.command,
+                    emoji: preset.emoji,
+                  };
+                },
+                onCliEnvAdd: () => {
+                  state.agentCliCreateForm = {
+                    ...state.agentCliCreateForm,
+                    env: [...state.agentCliCreateForm.env, { key: "", value: "" }],
+                  };
+                },
+                onCliEnvRemove: (index: number) => {
+                  const env = [...state.agentCliCreateForm.env];
+                  env.splice(index, 1);
+                  state.agentCliCreateForm = { ...state.agentCliCreateForm, env };
+                },
+                onCliEnvChange: (index: number, field: "key" | "value", value: string) => {
+                  const env = [...state.agentCliCreateForm.env];
+                  env[index] = { ...env[index], [field]: value };
+                  state.agentCliCreateForm = { ...state.agentCliCreateForm, env };
+                },
+                onCreateCliAgent: async () => {
+                  // If workspace is empty, fill in from config defaults
+                  const cfgAny = configValue as {
+                    agents?: { defaults?: { workspace?: string } };
+                  } | null;
+                  const defaultWs = cfgAny?.agents?.defaults?.workspace || "";
+                  const formWithDefaults = {
+                    ...state.agentCliCreateForm,
+                    workspace: state.agentCliCreateForm.workspace || defaultWs,
+                  };
+                  const ok = await createCliAgent(state, formWithDefaults);
+                  if (ok) {
+                    state.agentShowCliCreateDialog = false;
+                    await loadCliAgents(state);
+                    const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
+                    if (agentIds.length > 0) {
+                      void loadAgentIdentities(state, agentIds);
+                    }
+                    await loadConfig(state);
+                  }
+                },
+                onToggleAddMenu: () => {
+                  state.agentShowAddMenu = !state.agentShowAddMenu;
+                },
+                // CLI Agent test callbacks
+                onCliAgentTest: async (agentId: string) => {
+                  // Open terminal dialog and clear previous data
+                  state.cliTestTerminalOpen = true;
+                  state.cliTestTerminalData = [];
+                  state.cliTestResult = null;
+                  await testCliAgent(state, agentId);
+                },
+                onCliAgentTestStop: async (agentId: string) => {
+                  await stopCliAgentTest(state, agentId);
+                },
+                onCliTestTerminalClose: () => {
+                  state.cliTestTerminalOpen = false;
+                  // Always stop the PTY — it stays alive after test completes for interactive use
+                  if (state.cliTestResult?.agentId) {
+                    void stopCliAgentTest(state, state.cliTestResult.agentId);
+                  }
+                },
+                onCliTestSendInput: (agentId: string, input: string) => {
+                  void sendTestInput(state, agentId, input);
+                },
+                // CLI Agent delete callback
+                onDeleteCliAgent: async (agentId: string) => {
+                  const ok = await deleteCliAgent(state, agentId);
+                  if (ok) {
+                    await loadCliAgents(state);
                   }
                 },
                 onShowDeleteConfirm: (agentId) => {
@@ -1389,10 +1545,18 @@ export function renderApp(state: AppViewState) {
                 groupAddMemberDialog: state.groupAddMemberDialog,
                 groupDisbandDialog: state.groupDisbandDialog,
                 groupInfoPanelOpen: state.groupInfoPanelOpen,
-                agentsList: (state.agentsList?.agents ?? []).map((a) => ({
-                  id: a.id,
-                  identity: a.identity as { name?: string; emoji?: string } | undefined,
-                })),
+                agentsList: [
+                  ...(state.agentsList?.agents ?? []).map((a) => ({
+                    id: a.id,
+                    identity: a.identity as { name?: string; emoji?: string } | undefined,
+                  })),
+                  ...(state.cliAgentsList?.agents ?? []).map((a) => ({
+                    id: a.id,
+                    identity: { name: a.name, emoji: a.emoji } as
+                      | { name?: string; emoji?: string }
+                      | undefined,
+                  })),
+                ],
                 onEnterGroup: (groupId) =>
                   void enterGroupChat(
                     state as unknown as Parameters<typeof enterGroupChat>[0],
@@ -1428,6 +1592,8 @@ export function renderApp(state: AppViewState) {
                     name: "",
                     selectedAgents: [],
                     messageMode: "unicast",
+                    projectDirectory: "",
+                    projectDocs: "",
                     isBusy: false,
                     error: null,
                   };
@@ -1525,6 +1691,32 @@ export function renderApp(state: AppViewState) {
                         state as unknown as Parameters<typeof updateGroupMaxConsecutive>[0],
                         state.activeGroupId!,
                         maxConsecutive,
+                      );
+                    })();
+                  }
+                },
+                onUpdateContextConfig: (config) => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { updateGroupContextConfig } =
+                        await import("./controllers/group-chat.ts");
+                      await updateGroupContextConfig(
+                        state as unknown as Parameters<typeof updateGroupContextConfig>[0],
+                        state.activeGroupId!,
+                        config,
+                      );
+                    })();
+                  }
+                },
+                onUpdateProjectDocs: (docs) => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { updateGroupProjectDocs } =
+                        await import("./controllers/group-chat.ts");
+                      await updateGroupProjectDocs(
+                        state as unknown as Parameters<typeof updateGroupProjectDocs>[0],
+                        state.activeGroupId!,
+                        docs,
                       );
                     })();
                   }

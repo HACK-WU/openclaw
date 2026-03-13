@@ -272,7 +272,7 @@ export class OpenClawApp extends LitElement {
   @state() toolsCatalogLoading = false;
   @state() toolsCatalogError: string | null = null;
   @state() toolsCatalogResult: ToolsCatalogResult | null = null;
-  @state() agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" =
+  @state() agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" | "test" =
     "overview";
   @state() agentFilesLoading = false;
   @state() agentFilesError: string | null = null;
@@ -291,12 +291,38 @@ export class OpenClawApp extends LitElement {
 
   // Agent create/delete state
   @state() agentShowCreateDialog = false;
-  @state() agentCreateForm = { name: "", workspace: "", emoji: "" };
+  @state() agentCreateForm = { name: "", agentId: "", workspace: "", emoji: "" };
   @state() agentCreateBusy = false;
   @state() agentCreateError: string | null = null;
   @state() agentDeleteBusy = false;
   @state() agentDeleteError: string | null = null;
   @state() agentShowDeleteConfirm: string | null = null;
+  // CLI Agent create state
+  @state() agentShowCliCreateDialog = false;
+  @state() agentCliCreateForm: import("./views/agents.ts").CliAgentCreateForm = {
+    name: "",
+    agentId: "",
+    workspace: "",
+    emoji: "🔧",
+    cliType: "claude-code",
+    command: "claude",
+    args: "",
+    env: [],
+    timeout: 300,
+    idleTimeout: 600,
+  };
+  @state() agentCliCreateBusy = false;
+  @state() agentCliCreateError: string | null = null;
+  @state() agentShowAddMenu = false;
+  // CLI Agents list state
+  @state() cliAgentsList: import("./views/agents.ts").CliAgentsListResult | null = null;
+  @state() cliAgentsLoading = false;
+  @state() cliAgentsError: string | null = null;
+  // CLI Agent test state
+  @state() cliTestRunning = false;
+  @state() cliTestResult: import("./views/agents.ts").CliTestResult | null = null;
+  @state() cliTestTerminalOpen = false;
+  @state() cliTestTerminalData: string[] = [];
   @state() agentConfigSaveSuccess = false;
 
   @state() sessionsLoading = false;

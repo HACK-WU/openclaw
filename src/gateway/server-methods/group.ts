@@ -6,8 +6,12 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { findCliAgentEntry } from "../../commands/cli-agents.config.js";
 import { triggerAgentReasoning } from "../../group-chat/agent-trigger.js";
 import { canTriggerAgent, createChainState } from "../../group-chat/anti-loop.js";
+import { cleanupGroupBridgeAgents, killBridgePty } from "../../group-chat/bridge-pty.js";
+import { resizePty } from "../../group-chat/bridge-pty.js";
+import type { BridgeConfig, ContextConfig } from "../../group-chat/bridge-types.js";
 import { buildGroupSessionKey } from "../../group-chat/group-session-key.js";
 import {
   archiveGroup,
@@ -41,10 +45,40 @@ import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 
 const log = getLogger("group-chat:handler");
 
+// ─── CLI Agent → Bridge Config Resolution ───
+// When a member is added without an explicit bridge config,
+// check if it matches a CLI Agent and auto-populate the bridge.
+
+function resolveBridgeForMember(member: {
+  agentId: string;
+  bridge?: BridgeConfig;
+}): BridgeConfig | undefined {
+  if (member.bridge) {
+    return member.bridge;
+  }
+  const cliEntry = findCliAgentEntry(member.agentId);
+  if (!cliEntry) {
+    return undefined;
+  }
+  return {
+    type: cliEntry.type,
+    command: cliEntry.command,
+    args: cliEntry.args,
+    cwd: cliEntry.cwd,
+    env: cliEntry.env,
+    timeout: cliEntry.timeout,
+    avatar: cliEntry.emoji,
+  };
+}
+
 // ─── Handlers ───
 
 const handleGroupCreate: GatewayRequestHandler = async ({ params, respond, context }) => {
-  const members = params.members as Array<{ agentId: string; role: "assistant" | "member" }>;
+  const members = params.members as Array<{
+    agentId: string;
+    role: "assistant" | "member" | "bridge-assistant";
+    bridge?: BridgeConfig;
+  }>;
   if (!Array.isArray(members) || members.length === 0) {
     respond(false, undefined, { message: "members is required and must be non-empty", code: 400 });
     return;
@@ -56,10 +90,18 @@ const handleGroupCreate: GatewayRequestHandler = async ({ params, respond, conte
     return;
   }
 
+  const project = params.project as { directory?: string; docs?: string[] } | undefined;
+  const contextConfig = params.contextConfig as ContextConfig | undefined;
+
   const entry = await createGroup({
     name: (params.name as string) || undefined,
-    members,
+    members: members.map((m) => ({
+      ...m,
+      bridge: resolveBridgeForMember(m) ?? m.bridge,
+    })),
     messageMode: (params.messageMode as "unicast" | "broadcast") || undefined,
+    project,
+    contextConfig,
   });
 
   respond(true, {
@@ -112,6 +154,10 @@ const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, conte
     respond(false, undefined, { message: "groupId is required", code: 400 });
     return;
   }
+
+  // Cleanup all Bridge Agent PTY processes before archiving
+  await cleanupGroupBridgeAgents(groupId, context.broadcast);
+
   await archiveGroup(groupId);
   respond(true, { ok: true });
   broadcastGroupSystem(context.broadcast, groupId, "archived", {});
@@ -119,7 +165,11 @@ const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, conte
 
 const handleGroupAddMembers: GatewayRequestHandler = async ({ params, respond, context }) => {
   const groupId = params.groupId as string;
-  const newMembers = params.members as Array<{ agentId: string; role?: "member" }>;
+  const newMembers = params.members as Array<{
+    agentId: string;
+    role?: "member" | "bridge-assistant";
+    bridge?: BridgeConfig;
+  }>;
   if (!groupId || !Array.isArray(newMembers) || newMembers.length === 0) {
     respond(false, undefined, { message: "groupId and members are required", code: 400 });
     return;
@@ -130,7 +180,13 @@ const handleGroupAddMembers: GatewayRequestHandler = async ({ params, respond, c
     const now = Date.now();
     for (const nm of newMembers) {
       if (!existingIds.has(nm.agentId)) {
-        meta.members.push({ agentId: nm.agentId, role: nm.role ?? "member", joinedAt: now });
+        const bridge = resolveBridgeForMember(nm);
+        meta.members.push({
+          agentId: nm.agentId,
+          role: nm.role ?? "member",
+          joinedAt: now,
+          ...(bridge ? { bridge } : {}),
+        });
       }
     }
     return meta;
@@ -154,16 +210,27 @@ const handleGroupRemoveMembers: GatewayRequestHandler = async ({ params, respond
     return;
   }
 
-  const updated = await updateGroupMeta(groupId, (meta) => {
+  // Before removing, check if any are Bridge Agents and cleanup PTY processes
+  const meta = loadGroupMeta(groupId);
+  if (meta) {
+    for (const id of agentIds) {
+      const member = meta.members.find((m) => m.agentId === id);
+      if (member?.bridge) {
+        await killBridgePty(groupId, id, "member_removed");
+      }
+    }
+  }
+
+  const updated = await updateGroupMeta(groupId, (m) => {
     const removeSet = new Set(agentIds);
     // Cannot remove the assistant
-    const assistant = meta.members.find((m) => m.role === "assistant");
+    const assistant = m.members.find((mem) => mem.role === "assistant");
     if (assistant && removeSet.has(assistant.agentId)) {
       removeSet.delete(assistant.agentId);
     }
-    meta.members = meta.members.filter((m) => !removeSet.has(m.agentId));
-    meta.memberRolePrompts = meta.memberRolePrompts.filter((p) => !removeSet.has(p.agentId));
-    return meta;
+    m.members = m.members.filter((mem) => !removeSet.has(mem.agentId));
+    m.memberRolePrompts = m.memberRolePrompts.filter((p) => !removeSet.has(p.agentId));
+    return m;
   });
 
   respond(true, { ok: true });
@@ -606,6 +673,142 @@ const handleGroupExportTranscript: GatewayRequestHandler = ({ params, respond })
   respond(true, { markdown, filename });
 };
 
+// ─── Terminal Resize Handler ───
+
+const handleGroupTerminalResize: GatewayRequestHandler = ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  const agentId = params.agentId as string;
+  const cols = params.cols as number;
+  const rows = params.rows as number;
+
+  if (!groupId || !agentId || !cols || !rows) {
+    respond(false, undefined, {
+      message: "groupId, agentId, cols, and rows are required",
+      code: 400,
+    });
+    return;
+  }
+
+  const success = resizePty(groupId, agentId, cols, rows);
+  respond(true, { ok: success });
+};
+
+// ─── Context Config Handler ───
+
+const handleGroupSetContextConfig: GatewayRequestHandler = async ({ params, respond, context }) => {
+  const groupId = params.groupId as string;
+  const contextConfig = params.contextConfig as ContextConfig | undefined;
+
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  // Validate config limits
+  if (contextConfig) {
+    if (contextConfig.maxMessages != null) {
+      if (contextConfig.maxMessages < 5 || contextConfig.maxMessages > 100) {
+        respond(false, undefined, {
+          message: "maxMessages must be between 5 and 100",
+          code: 400,
+        });
+        return;
+      }
+    }
+    if (contextConfig.maxCharacters != null) {
+      if (contextConfig.maxCharacters < 10_000 || contextConfig.maxCharacters > 200_000) {
+        respond(false, undefined, {
+          message: "maxCharacters must be between 10000 and 200000",
+          code: 400,
+        });
+        return;
+      }
+    }
+  }
+
+  await updateGroupMeta(groupId, (meta) => ({
+    ...meta,
+    contextConfig: contextConfig ?? undefined,
+  }));
+
+  respond(true, { ok: true });
+  broadcastGroupSystem(context.broadcast, groupId, "context_config_changed", { contextConfig });
+};
+
+// ─── Project Docs Handler ───
+// Updates the project documentation paths for a group.
+// Project directory is locked at creation time and cannot be changed.
+
+const handleGroupSetProjectDocs: GatewayRequestHandler = async ({ params, respond, context }) => {
+  const groupId = params.groupId as string;
+  const docs = params.docs as string[] | undefined;
+
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  if (docs != null && !Array.isArray(docs)) {
+    respond(false, undefined, { message: "docs must be an array of strings", code: 400 });
+    return;
+  }
+
+  // Validate doc paths (basic sanity checks)
+  if (docs) {
+    for (const doc of docs) {
+      if (typeof doc !== "string" || doc.includes("..")) {
+        respond(false, undefined, {
+          message: "Invalid document path: paths cannot contain '..'",
+          code: 400,
+        });
+        return;
+      }
+    }
+  }
+
+  await updateGroupMeta(groupId, (meta) => ({
+    ...meta,
+    project: {
+      ...meta.project,
+      docs: docs ?? [],
+    },
+  }));
+
+  respond(true, { ok: true });
+  broadcastGroupSystem(context.broadcast, groupId, "project_docs_changed", { docs });
+};
+
+// ─── Terminal Text Extracted Handler ───
+// Receives extracted plain text from the frontend's xterm.js buffer.
+// This is a "best effort" hint — the backend also extracts text from
+// its headless xterm instance as a fallback.
+
+const handleGroupTerminalTextExtracted: GatewayRequestHandler = ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  const agentId = params.agentId as string;
+  const text = params.text as string;
+
+  if (!groupId || !agentId || typeof text !== "string") {
+    respond(false, undefined, {
+      message: "groupId, agentId, and text are required",
+      code: 400,
+    });
+    return;
+  }
+
+  // For now, we acknowledge the text extraction. In a more sophisticated
+  // implementation, this would override the backend-extracted text for
+  // improved accuracy (xterm.js browser rendering > headless).
+  log.info("[GROUP_TERMINAL_TEXT_EXTRACTED]", {
+    groupId,
+    agentId,
+    textLength: text.length,
+    preview: text.slice(0, 100),
+  });
+
+  respond(true, { ok: true });
+};
+
 // ─── Export handler map ───
 
 export const groupHandlers: GatewayRequestHandlers = {
@@ -625,4 +828,9 @@ export const groupHandlers: GatewayRequestHandlers = {
   "group.history": handleGroupHistory,
   "group.abort": handleGroupAbort,
   "group.exportTranscript": handleGroupExportTranscript,
+  // Bridge Agent handlers
+  "group.terminalResize": handleGroupTerminalResize,
+  "group.setContextConfig": handleGroupSetContextConfig,
+  "group.setProjectDocs": handleGroupSetProjectDocs,
+  "group.terminalTextExtracted": handleGroupTerminalTextExtracted,
 };

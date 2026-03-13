@@ -952,6 +952,8 @@ export function renderNavGroupChats(state: AppViewState) {
                 name: "",
                 selectedAgents: [],
                 messageMode: "unicast",
+                projectDirectory: "",
+                projectDocs: "",
                 isBusy: false,
                 error: null,
               };

@@ -142,7 +142,7 @@ export type AppViewState = {
   toolsCatalogLoading: boolean;
   toolsCatalogError: string | null;
   toolsCatalogResult: ToolsCatalogResult | null;
-  agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron";
+  agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" | "test";
   agentFilesLoading: boolean;
   agentFilesError: string | null;
   agentFilesList: AgentsFilesListResult | null;
@@ -159,12 +159,27 @@ export type AppViewState = {
   agentSkillsAgentId: string | null;
   // Agent create/delete state
   agentShowCreateDialog: boolean;
-  agentCreateForm: { name: string; workspace: string; emoji: string };
+  agentCreateForm: { name: string; agentId: string; workspace: string; emoji: string };
   agentCreateBusy: boolean;
   agentCreateError: string | null;
   agentDeleteBusy: boolean;
   agentDeleteError: string | null;
   agentShowDeleteConfirm: string | null;
+  // CLI Agent create state
+  agentShowCliCreateDialog: boolean;
+  agentCliCreateForm: import("./views/agents.ts").CliAgentCreateForm;
+  agentCliCreateBusy: boolean;
+  agentCliCreateError: string | null;
+  agentShowAddMenu: boolean;
+  // CLI Agents list state (independent from general agents)
+  cliAgentsList: import("./views/agents.ts").CliAgentsListResult | null;
+  cliAgentsLoading: boolean;
+  cliAgentsError: string | null;
+  // CLI Agent test state
+  cliTestRunning: boolean;
+  cliTestResult: import("./views/agents.ts").CliTestResult | null;
+  cliTestTerminalOpen: boolean;
+  cliTestTerminalData: string[];
   // Agent config save feedback
   agentConfigSaveSuccess: boolean;
   sessionsLoading: boolean;

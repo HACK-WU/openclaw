@@ -23,6 +23,7 @@ import { getLogger } from "../logging.js";
 import { stripReasoningTagsFromText } from "../shared/text/reasoning-tags.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
 import { updateChainState } from "./anti-loop.js";
+import { triggerBridgeAgent } from "./bridge-trigger.js";
 import { buildGroupChatContext } from "./context-builder.js";
 import { buildGroupSessionKey } from "./group-session-key.js";
 import { broadcastGroupMessage, broadcastGroupStream } from "./parallel-stream.js";
@@ -177,6 +178,15 @@ export async function triggerAgentReasoning(
 ): Promise<TriggerAgentResult> {
   const { groupId, agentId, meta, transcriptSnapshot, triggerMessage, broadcast, signal } = params;
   let { chainState } = params;
+
+  // ─── Bridge Agent fork ───
+  // If the target agent has a bridge config, route to PTY-based Bridge Agent flow
+  // instead of the LLM-based reasoning flow.
+  const member = meta.members.find((m) => m.agentId === agentId);
+  if (member?.bridge) {
+    return triggerBridgeAgent(params, member.bridge);
+  }
+  // ─── End Bridge Agent fork ───
 
   const runId = randomUUID();
   const now = Date.now();

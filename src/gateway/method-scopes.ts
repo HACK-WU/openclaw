@@ -84,6 +84,9 @@ const METHOD_SCOPE_GROUPS: Record<OperatorScope, readonly string[]> = {
     "talk.config",
     "agents.files.list",
     "agents.files.get",
+    "cliAgents.list",
+    "cliAgents.files.list",
+    "cliAgents.files.get",
   ],
   [WRITE_SCOPE]: [
     "send",
@@ -127,6 +130,12 @@ const METHOD_SCOPE_GROUPS: Record<OperatorScope, readonly string[]> = {
     "set-heartbeats",
     "system-event",
     "agents.files.set",
+    "cliAgents.create",
+    "cliAgents.update",
+    "cliAgents.delete",
+    "cliAgents.files.set",
+    "cliAgents.test",
+    "cliAgents.testStop",
   ],
 };
 

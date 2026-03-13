@@ -5,6 +5,7 @@
  * Follows the same patterns as controllers/chat.ts.
  */
 
+import { getBridgeTerminal } from "../components/bridge-terminal.ts";
 import { stripThinkingTags } from "../format.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
 
@@ -12,8 +13,18 @@ import type { GatewayBrowserClient } from "../gateway.ts";
 
 export type GroupMember = {
   agentId: string;
-  role: "assistant" | "member";
+  role: "assistant" | "member" | "bridge-assistant";
   joinedAt: number;
+  /** Present when this member is a Bridge (CLI) Agent. */
+  bridge?: {
+    cliType: "claude-code" | "opencode" | "codebuddy" | "custom";
+    command: string;
+    args?: string[];
+    cwd?: string;
+    env?: Record<string, string>;
+    idleTimeout?: number;
+    avatar?: string;
+  };
 };
 
 export type GroupMemberRolePrompt = {
@@ -37,6 +48,17 @@ export type GroupSessionMeta = {
   updatedAt: number;
   /** Thinking level for all agents in this group */
   thinkingLevel?: string;
+  /** Project configuration for Bridge Agents. */
+  project?: {
+    directory?: string;
+    docs?: string[];
+  };
+  /** Context configuration for CLI agent interactions. */
+  contextConfig?: {
+    maxMessages?: number;
+    maxCharacters?: number;
+    includeSystemMessages?: boolean;
+  };
 };
 
 // Tool message for real-time display
@@ -135,12 +157,19 @@ export type GroupChatState = {
   groupDisbandDialog: GroupDisbandDialogState | null;
   /** Info panel open */
   groupInfoPanelOpen: boolean;
+  // ─── Bridge Terminal state ───
+  /** Active bridge terminal statuses (agentId → status) */
+  bridgeTerminalStatuses?: Map<string, "idle" | "working" | "completed" | "error" | "disconnected">;
 };
 
 export type GroupCreateDialogState = {
   name: string;
-  selectedAgents: Array<{ agentId: string; role: "assistant" | "member" }>;
+  selectedAgents: Array<{ agentId: string; role: "assistant" | "member" | "bridge-assistant" }>;
   messageMode: "unicast" | "broadcast";
+  /** Project directory for CLI Agents (optional). */
+  projectDirectory: string;
+  /** Project documentation paths (optional). */
+  projectDocs: string;
   isBusy: boolean;
   error: string | null;
 };
@@ -176,6 +205,7 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   groupDisbandDialog: null,
   groupAddMemberDialog: null,
   groupInfoPanelOpen: false,
+  bridgeTerminalStatuses: new Map(),
 };
 
 // ─── Helpers ───
@@ -296,6 +326,7 @@ function resetGroupRoomState(host: GroupChatState): void {
   host.groupAddMemberDialog = null;
   host.groupDisbandDialog = null;
   host.groupInfoPanelOpen = false;
+  host.bridgeTerminalStatuses = new Map();
 }
 
 export function openGroupList(host: GroupChatState): void {
@@ -1176,8 +1207,9 @@ export async function createGroup(
   host: GroupHost,
   opts: {
     name?: string;
-    members: Array<{ agentId: string; role: "assistant" | "member" }>;
+    members: Array<{ agentId: string; role: "assistant" | "member" | "bridge-assistant" }>;
     messageMode?: "unicast" | "broadcast";
+    project?: { directory?: string; docs?: string[] };
   },
 ): Promise<string | null> {
   if (!host.client || !host.connected) {
@@ -1313,6 +1345,26 @@ export async function updateGroupMaxConsecutive(
   maxConsecutive: number,
 ): Promise<void> {
   return updateGroupSettings(host, groupId, "setMaxConsecutive", { maxConsecutive });
+}
+
+export async function updateGroupContextConfig(
+  host: GroupHost,
+  groupId: string,
+  contextConfig: {
+    maxMessages?: number;
+    maxCharacters?: number;
+    includeSystemMessages?: boolean;
+  },
+): Promise<void> {
+  return updateGroupSettings(host, groupId, "setContextConfig", { contextConfig });
+}
+
+export async function updateGroupProjectDocs(
+  host: GroupHost,
+  groupId: string,
+  docs: string[],
+): Promise<void> {
+  return updateGroupSettings(host, groupId, "setProjectDocs", { docs });
 }
 
 export async function disbandGroup(host: GroupHost, groupId: string): Promise<void> {
@@ -1610,6 +1662,8 @@ export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSyste
     "mode_changed",
     "name_changed",
     "skills_changed",
+    "context_config_changed",
+    "project_docs_changed",
   ]);
 
   if (shouldRefreshMeta.has(eventName)) {
@@ -1632,6 +1686,7 @@ export async function enterGroupChat(host: GroupHost, groupId: string): Promise<
   host.groupToolMessages = new Map();
   host.groupError = null;
   host.groupDraft = "";
+  host.bridgeTerminalStatuses = new Map();
   // Clear stale stream buffers from the previous group to avoid ghost bubbles
   streamBuffers.clear();
   await Promise.all([loadGroupInfo(host, groupId), loadGroupHistory(host, groupId)]);
@@ -1675,4 +1730,164 @@ export async function exportGroupTranscript(host: GroupHost, groupId: string): P
 /** Leave group chat room and return to the group list view */
 export function leaveGroupChat(host: GroupChatState): void {
   openGroupList(host);
+}
+
+// ─── Bridge Terminal Event Handlers ───
+
+/** Payload from the `group.terminal` WebSocket event. */
+export type GroupTerminalPayload = {
+  groupId: string;
+  agentId: string;
+  /** Base64-encoded raw PTY output */
+  data: string;
+};
+
+/** Payload from the `group.terminalStatus` WebSocket event. */
+export type GroupTerminalStatusPayload = {
+  groupId: string;
+  agentId: string;
+  /** Backend sends BridgePtyStatus; mapped to frontend BridgeTerminalStatus below. */
+  status: string;
+  /** Optional message (e.g. error details) */
+  message?: string;
+};
+
+/** Map backend BridgePtyStatus → frontend BridgeTerminalStatus. */
+function mapPtyStatusToTerminalStatus(
+  backendStatus: string,
+): "idle" | "working" | "completed" | "error" | "disconnected" {
+  switch (backendStatus) {
+    case "running":
+      return "working";
+    case "stuck":
+      return "error";
+    case "offline":
+      return "disconnected";
+    case "idle":
+    case "working":
+    case "completed":
+    case "error":
+    case "disconnected":
+      return backendStatus;
+    default:
+      return "idle";
+  }
+}
+
+/**
+ * Handle `group.terminal` event — raw PTY data from a Bridge Agent.
+ * Routes data to the corresponding BridgeTerminal component.
+ */
+export function handleGroupTerminalEvent(
+  host: GroupChatState,
+  payload: GroupTerminalPayload,
+): void {
+  if (payload.groupId !== host.activeGroupId) {
+    return;
+  }
+
+  const terminal = getBridgeTerminal(payload.groupId, payload.agentId);
+
+  if (terminal) {
+    // Decode base64 data and write to terminal
+    try {
+      const decoded = atob(payload.data);
+      terminal.writeData(decoded);
+    } catch {
+      // If not base64, write raw
+      terminal.writeData(payload.data);
+    }
+  }
+
+  // Update status to working if not already set
+  const statuses = new Map(host.bridgeTerminalStatuses);
+  if (statuses.get(payload.agentId) !== "working") {
+    statuses.set(payload.agentId, "working");
+    host.bridgeTerminalStatuses = statuses;
+  }
+}
+
+/**
+ * Handle `group.terminalStatus` event — status change for a Bridge Agent.
+ */
+export function handleGroupTerminalStatusEvent(
+  host: GroupChatState,
+  payload: GroupTerminalStatusPayload,
+): void {
+  if (payload.groupId !== host.activeGroupId) {
+    return;
+  }
+
+  const mappedStatus = mapPtyStatusToTerminalStatus(payload.status);
+  const statuses = new Map(host.bridgeTerminalStatuses);
+  statuses.set(payload.agentId, mappedStatus);
+  host.bridgeTerminalStatuses = statuses;
+
+  // When status becomes "completed", trigger text extraction and fold
+  if (mappedStatus === "completed") {
+    const terminal = getBridgeTerminal(payload.groupId, payload.agentId);
+    if (terminal) {
+      terminal.completeAndFold();
+    }
+  }
+}
+
+/**
+ * Check if a group member is a Bridge Agent.
+ */
+export function isBridgeAgent(member: GroupMember): boolean {
+  return !!member.bridge;
+}
+
+/**
+ * Check if an agentId belongs to a bridge-assistant.
+ */
+export function isBridgeAssistantAgent(agentId: string): boolean {
+  return agentId.startsWith("__bridge-assistant__");
+}
+
+/**
+ * Get visible members (excluding bridge-assistants).
+ */
+export function getVisibleMembers(meta: GroupSessionMeta): GroupMember[] {
+  return meta.members.filter((m) => !isBridgeAssistantAgent(m.agentId));
+}
+
+/**
+ * Send a terminal resize request to the backend.
+ */
+export async function sendTerminalResize(
+  host: GroupHost,
+  groupId: string,
+  agentId: string,
+  cols: number,
+  rows: number,
+): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  try {
+    await host.client.request("group.terminalResize", { groupId, agentId, cols, rows });
+  } catch (err) {
+    console.warn("[group-chat] terminal resize failed:", err);
+  }
+}
+
+/**
+ * Send extracted terminal text back to the backend.
+ */
+export async function sendTerminalTextExtracted(
+  host: GroupHost,
+  groupId: string,
+  agentId: string,
+  text: string,
+): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  try {
+    await host.client.request("group.terminalTextExtracted", { groupId, agentId, text });
+  } catch (err) {
+    console.warn("[group-chat] terminal text extracted send failed:", err);
+  }
 }

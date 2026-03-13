@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { STATE_DIR } from "../config/paths.js";
+import type { BridgeConfig, ContextConfig } from "./bridge-types.js";
 import type { GroupIndexEntry, GroupMember, GroupSessionEntry } from "./types.js";
 
 // ─── Path resolution ───
@@ -150,8 +151,17 @@ export async function updateGroupIndex(
 
 export async function createGroup(params: {
   name?: string;
-  members: Array<{ agentId: string; role: "assistant" | "member" }>;
+  members: Array<{
+    agentId: string;
+    role: "assistant" | "member" | "bridge-assistant";
+    bridge?: BridgeConfig;
+  }>;
   messageMode?: "unicast" | "broadcast";
+  project?: {
+    directory?: string;
+    docs?: string[];
+  };
+  contextConfig?: ContextConfig;
 }): Promise<GroupSessionEntry> {
   const groupId = randomUUID();
   const now = Date.now();
@@ -160,6 +170,7 @@ export async function createGroup(params: {
     agentId: m.agentId,
     role: m.role,
     joinedAt: now,
+    ...(m.bridge ? { bridge: m.bridge } : {}),
   }));
 
   const entry: GroupSessionEntry = {
@@ -175,6 +186,8 @@ export async function createGroup(params: {
     compaction: { enabled: true, maxHistoryShare: 0.5, reserveTokensFloor: 20_000 },
     createdAt: now,
     updatedAt: now,
+    ...(params.project ? { project: params.project } : {}),
+    ...(params.contextConfig ? { contextConfig: params.contextConfig } : {}),
   };
 
   // Create directory and write meta

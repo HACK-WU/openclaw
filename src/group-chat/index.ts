@@ -13,3 +13,11 @@ export * from "./context-builder.js";
 export * from "./tool-policy.js";
 export * from "./role-prompt.js";
 export * from "./parallel-stream.js";
+
+// ─── Bridge Agent ───
+export * from "./bridge-types.js";
+export * from "./bridge-pty.js";
+export * from "./bridge-trigger.js";
+export * from "./bridge-assistant.js";
+export * from "./terminal-events.js";
+export * from "./audit-logger.js";

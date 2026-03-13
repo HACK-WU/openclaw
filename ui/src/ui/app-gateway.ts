@@ -14,7 +14,7 @@ import {
 import { handleAgentEvent, resetToolStream, type AgentEventPayload } from "./app-tool-stream.ts";
 import type { OpenClawApp } from "./app.ts";
 import { shouldReloadHistoryForFinalEvent } from "./chat-event-reload.ts";
-import { loadAgents, loadToolsCatalog } from "./controllers/agents.ts";
+import { loadAgents, loadToolsCatalog, loadCliAgents } from "./controllers/agents.ts";
 import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
 import {
   loadChatHistory,
@@ -35,11 +35,15 @@ import {
   handleGroupMessageEvent,
   handleGroupStreamEvent,
   handleGroupSystemEvent,
+  handleGroupTerminalEvent,
+  handleGroupTerminalStatusEvent,
   loadGroupList,
   type GroupChatMessage,
   type GroupStreamPayload,
   type GroupSystemPayload,
   type GroupChatState,
+  type GroupTerminalPayload,
+  type GroupTerminalStatusPayload,
 } from "./controllers/group-chat.ts";
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadSessions } from "./controllers/sessions.ts";
@@ -237,6 +241,7 @@ export function connectGateway(host: GatewayHost) {
       void loadAssistantIdentity(host as unknown as OpenClawApp);
       void loadAgents(host as unknown as OpenClawApp);
       void loadToolsCatalog(host as unknown as OpenClawApp);
+      void loadCliAgents(host as unknown as OpenClawApp);
       void loadNodes(host as unknown as OpenClawApp, { quiet: true });
       void loadDevices(host as unknown as OpenClawApp, { quiet: true });
       void loadGroupList(host as unknown as Parameters<typeof loadGroupList>[0]);
@@ -463,6 +468,33 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         event: "members_updated",
         data: payload.data ?? { members: payload.members },
       });
+    }
+    return;
+  }
+
+  // CLI Agent test terminal output events
+  if (evt.event === "cliAgents.testOutput") {
+    const payload = evt.payload as { agentId?: string; data?: string } | undefined;
+    if (payload?.data) {
+      // Store base64 data directly; cli-test-terminal component will decode it
+      const app = host as unknown as OpenClawApp;
+      app.cliTestTerminalData = [...app.cliTestTerminalData, payload.data];
+    }
+    return;
+  }
+
+  // Bridge Agent terminal events
+  if (evt.event === "group.terminal") {
+    const payload = evt.payload as GroupTerminalPayload | undefined;
+    if (payload) {
+      handleGroupTerminalEvent(host as unknown as GroupChatState, payload);
+    }
+    return;
+  }
+  if (evt.event === "group.terminalStatus") {
+    const payload = evt.payload as GroupTerminalStatusPayload | undefined;
+    if (payload) {
+      handleGroupTerminalStatusEvent(host as unknown as GroupChatState, payload);
     }
     return;
   }

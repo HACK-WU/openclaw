@@ -50,6 +50,8 @@ export const AgentsCreateParamsSchema = Type.Object(
     workspace: NonEmptyString,
     emoji: Type.Optional(Type.String()),
     avatar: Type.Optional(Type.String()),
+    /** Optional explicit AgentID. When omitted, auto-generated from name. */
+    agentId: Type.Optional(NonEmptyString),
   },
   { additionalProperties: false },
 );

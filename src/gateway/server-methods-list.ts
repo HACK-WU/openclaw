@@ -117,6 +117,21 @@ const BASE_METHODS = [
   "group.history",
   "group.abort",
   "group.exportTranscript",
+  "group.setName",
+  "group.terminalResize",
+  "group.setContextConfig",
+  "group.setProjectDocs",
+  "group.terminalTextExtracted",
+  // CLI Agent methods
+  "cliAgents.list",
+  "cliAgents.create",
+  "cliAgents.update",
+  "cliAgents.delete",
+  "cliAgents.files.list",
+  "cliAgents.files.get",
+  "cliAgents.files.set",
+  "cliAgents.test",
+  "cliAgents.testStop",
 ];
 
 export function listGatewayMethods(): string[] {
@@ -149,4 +164,9 @@ export const GATEWAY_EVENTS = [
   "group.stream",
   "group.system",
   "group.members_updated",
+  // Bridge Agent terminal events
+  "group.terminal",
+  "group.terminalStatus",
+  // CLI Agent test events
+  "cliAgents.testOutput",
 ];

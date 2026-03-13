@@ -8,6 +8,7 @@ import {
 import {
   DEFAULT_AGENTS_FILENAME,
   DEFAULT_BOOTSTRAP_FILENAME,
+  DEFAULT_BRIDGE_FILENAME,
   DEFAULT_HEARTBEAT_FILENAME,
   DEFAULT_IDENTITY_FILENAME,
   DEFAULT_MEMORY_ALT_FILENAME,
@@ -70,7 +71,11 @@ const BOOTSTRAP_FILE_NAMES_POST_ONBOARDING = BOOTSTRAP_FILE_NAMES.filter(
 
 const MEMORY_FILE_NAMES = [DEFAULT_MEMORY_FILENAME, DEFAULT_MEMORY_ALT_FILENAME] as const;
 
-const ALLOWED_FILE_NAMES = new Set<string>([...BOOTSTRAP_FILE_NAMES, ...MEMORY_FILE_NAMES]);
+const ALLOWED_FILE_NAMES = new Set<string>([
+  ...BOOTSTRAP_FILE_NAMES,
+  ...MEMORY_FILE_NAMES,
+  DEFAULT_BRIDGE_FILENAME,
+]);
 
 function resolveAgentWorkspaceFileOrRespondError(
   params: Record<string, unknown>,
@@ -497,7 +502,12 @@ export const agentsHandlers: GatewayRequestHandlers = {
 
     const cfg = loadConfig();
     const rawName = String(params.name ?? "").trim();
-    const agentId = normalizeAgentId(rawName);
+    // Use explicit agentId when provided; otherwise auto-generate from name.
+    const explicitId =
+      typeof params.agentId === "string" && params.agentId.trim()
+        ? params.agentId.trim()
+        : undefined;
+    const agentId = explicitId ?? normalizeAgentId(rawName);
     if (agentId === DEFAULT_AGENT_ID) {
       respond(
         false,
