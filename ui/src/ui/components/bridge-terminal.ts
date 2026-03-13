@@ -19,6 +19,11 @@
 import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
+// xterm.css raw content — injected into Shadow DOM so xterm renders correctly.
+// Without this, the hidden textarea helper, viewport, and screen elements are unstyled
+// and appear as visible white boxes / garbled text.
+let xtermCssText: string | null = null;
+
 // ─── Types ───
 
 export type BridgeTerminalStatus = "idle" | "working" | "completed" | "error" | "disconnected";
@@ -266,6 +271,27 @@ export class BridgeTerminal extends LitElement {
     .working-indicator {
       animation: pulse 1.5s ease-in-out infinite;
     }
+
+    /* xterm.js theme overrides */
+    .xterm .xterm-viewport {
+      background: #1e1e2e !important;
+    }
+
+    /*
+     * Critical xterm.js helper textarea fix — prevents it from appearing as
+     * a visible white box in Shadow DOM when the full xterm.css hasn't loaded yet.
+     */
+    .xterm .xterm-helper-textarea {
+      position: absolute;
+      opacity: 0;
+      left: -9999em;
+      top: 0;
+      width: 0;
+      height: 0;
+      z-index: -5;
+      overflow: hidden;
+      resize: none;
+    }
   `;
 
   connectedCallback() {
@@ -380,6 +406,21 @@ export class BridgeTerminal extends LitElement {
       const xtermModule = await import("@xterm/xterm");
       // @ts-expect-error -- @xterm/addon-fit may not be installed yet
       const { FitAddon } = await import("@xterm/addon-fit");
+
+      // Dynamically load xterm.css and inject into Shadow DOM
+      if (!xtermCssText) {
+        try {
+          const cssModule = await import("@xterm/xterm/css/xterm.css?raw");
+          xtermCssText = cssModule.default;
+        } catch {
+          // Fallback: CSS not available
+        }
+      }
+      if (xtermCssText && this.shadowRoot) {
+        const xtermSheet = new CSSStyleSheet();
+        xtermSheet.replaceSync(xtermCssText);
+        this.shadowRoot.adoptedStyleSheets = [...this.shadowRoot.adoptedStyleSheets, xtermSheet];
+      }
 
       this._TerminalClass = xtermModule.Terminal;
       this._xtermLoaded = true;

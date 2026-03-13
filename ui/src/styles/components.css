@@ -2622,21 +2622,28 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .agent-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
   padding: 6px 14px;
   font-size: 12px;
   font-weight: 600;
   background: var(--secondary);
+  color: inherit;
   cursor: pointer;
   outline: none;
   -webkit-appearance: none;
   appearance: none;
   line-height: 1.2;
   white-space: nowrap;
+  min-height: 30px;
+  box-sizing: border-box;
   transition:
     border-color var(--duration-fast) ease,
     background var(--duration-fast) ease,
