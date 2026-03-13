@@ -320,6 +320,7 @@ export class OpenClawApp extends LitElement {
   @state() cliAgentsError: string | null = null;
   // CLI Agent test state
   @state() cliTestRunning = false;
+  @state() cliTestingAgentId: string | null = null;
   @state() cliTestResult: import("./views/agents.ts").CliTestResult | null = null;
   @state() cliTestTerminalOpen = false;
   @state() cliTestTerminalData: string[] = [];

@@ -1193,6 +1193,7 @@ export function renderApp(state: AppViewState) {
                   state.cliTestTerminalOpen = true;
                   state.cliTestTerminalData = [];
                   state.cliTestResult = null;
+                  state.cliTestingAgentId = agentId;
                   await testCliAgent(state, agentId);
                 },
                 onCliAgentTestStop: async (agentId: string) => {
@@ -1200,10 +1201,13 @@ export function renderApp(state: AppViewState) {
                 },
                 onCliTestTerminalClose: () => {
                   state.cliTestTerminalOpen = false;
-                  // Always stop the PTY — it stays alive after test completes for interactive use
-                  if (state.cliTestResult?.agentId) {
-                    void stopCliAgentTest(state, state.cliTestResult.agentId);
+                  // Always stop the PTY — use cliTestingAgentId so we can clean up
+                  // even when the test is still in progress (cliTestResult is null).
+                  const agentId = state.cliTestingAgentId ?? state.cliTestResult?.agentId;
+                  if (agentId) {
+                    void stopCliAgentTest(state, agentId);
                   }
+                  state.cliTestingAgentId = null;
                 },
                 onCliTestSendInput: (agentId: string, input: string) => {
                   void sendTestInput(state, agentId, input);

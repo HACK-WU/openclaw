@@ -177,6 +177,7 @@ export type AppViewState = {
   cliAgentsError: string | null;
   // CLI Agent test state
   cliTestRunning: boolean;
+  cliTestingAgentId: string | null;
   cliTestResult: import("./views/agents.ts").CliTestResult | null;
   cliTestTerminalOpen: boolean;
   cliTestTerminalData: string[];
