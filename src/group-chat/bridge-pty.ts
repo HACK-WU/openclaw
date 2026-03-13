@@ -151,6 +151,8 @@ type ManagedPty = {
 // ─── Global PTY Registry ───
 
 const ptyInstances = new Map<string, ManagedPty>();
+const frontendExtractedTexts = new Map<string, string>();
+const frontendExtractedTextWaiters = new Map<string, Set<(text: string | null) => void>>();
 
 function ptyKey(groupId: string, agentId: string): string {
   return `${groupId}:${agentId}`;
@@ -380,6 +382,73 @@ export function getRecentVisibleText(groupId: string, agentId: string, maxLines 
 }
 
 /**
+ * Clear any cached frontend-extracted terminal text before a new bridge run.
+ */
+export function clearFrontendExtractedText(groupId: string, agentId: string): void {
+  frontendExtractedTexts.delete(ptyKey(groupId, agentId));
+}
+
+/**
+ * Record terminal text extracted from the frontend xterm.js buffer.
+ */
+export function recordFrontendExtractedText(groupId: string, agentId: string, text: string): void {
+  const key = ptyKey(groupId, agentId);
+  frontendExtractedTexts.set(key, text);
+
+  const waiters = frontendExtractedTextWaiters.get(key);
+  if (!waiters || waiters.size === 0) {
+    return;
+  }
+
+  frontendExtractedTextWaiters.delete(key);
+  for (const resolve of waiters) {
+    resolve(text);
+  }
+}
+
+/**
+ * Wait briefly for the frontend's xterm-rendered extraction to arrive.
+ * Falls back to null when no active frontend responds in time.
+ */
+export function waitForFrontendExtractedText(
+  groupId: string,
+  agentId: string,
+  timeoutMs = 1_500,
+): Promise<string | null> {
+  const key = ptyKey(groupId, agentId);
+  const existing = frontendExtractedTexts.get(key);
+  if (existing !== undefined) {
+    return Promise.resolve(existing);
+  }
+
+  return new Promise<string | null>((resolve) => {
+    const waiters =
+      frontendExtractedTextWaiters.get(key) ?? new Set<(text: string | null) => void>();
+    frontendExtractedTextWaiters.set(key, waiters);
+
+    const waiter = (text: string | null) => {
+      clearTimeout(timer);
+      waiters.delete(waiter);
+      if (waiters.size === 0) {
+        frontendExtractedTextWaiters.delete(key);
+      }
+      resolve(text);
+    };
+
+    waiters.add(waiter);
+
+    const timer = setTimeout(() => {
+      waiters.delete(waiter);
+      if (waiters.size === 0) {
+        frontendExtractedTextWaiters.delete(key);
+      }
+      resolve(null);
+    }, timeoutMs);
+    timer.unref();
+  });
+}
+
+/**
  * Terminate a single Bridge Agent PTY process.
  * Sends SIGTERM → waits → SIGKILL if needed.
  */
@@ -599,6 +668,8 @@ async function destroyPtyInstance(managed: ManagedPty, reason: string): Promise<
   // Clear ring buffer
   managed.ringBuffer.clear();
   managed.recentTextLines = [];
+  frontendExtractedTexts.delete(ptyKey(managed.groupId, managed.agentId));
+  frontendExtractedTextWaiters.delete(ptyKey(managed.groupId, managed.agentId));
   managed.state.status = "offline";
 }
 

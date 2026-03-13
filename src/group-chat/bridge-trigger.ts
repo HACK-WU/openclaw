@@ -19,12 +19,14 @@ import { getLogger } from "../logging.js";
 import type { TriggerAgentParams, TriggerAgentResult } from "./agent-trigger.js";
 import { updateChainState } from "./anti-loop.js";
 import {
+  clearFrontendExtractedText,
   createBridgePty,
   getRecentVisibleText,
   isPtyRunning,
   setInputPhase,
   startCompletionDetection,
   updateLastTranscriptIndex,
+  waitForFrontendExtractedText,
   writeToPty,
 } from "./bridge-pty.js";
 import type { BridgeConfig } from "./bridge-types.js";
@@ -243,7 +245,10 @@ export async function triggerBridgeAgent(
       return { run, chainState };
     }
 
-    // 4. Start completion detection and wait for completion or timeout
+    // 4. Start completion detection and wait for completion or timeout.
+    //    Clear any stale frontend extraction first so we only consume the
+    //    xterm-rendered text from this run.
+    clearFrontendExtractedText(groupId, agentId);
     startCompletionDetection(groupId, agentId);
 
     const timeout = bridgeConfig.timeout ?? DEFAULT_REPLY_TIMEOUT_MS;
@@ -585,31 +590,47 @@ async function waitForCompletion(params: {
   broadcast: GatewayBroadcastFn;
   runId: string;
 }): Promise<string> {
-  const { groupId, agentId, signal, timeoutMs } = params;
+  const { groupId, agentId, signal, timeoutMs, broadcast } = params;
 
   return new Promise<string>((resolve) => {
     let resolved = false;
 
-    const finish = (text: string) => {
+    const cleanup = () => {
+      clearTimeout(globalTimer);
+      clearInterval(pollInterval);
+      signal.removeEventListener("abort", onAbort);
+    };
+
+    const finishImmediate = (text: string) => {
       if (resolved) {
         return;
       }
       resolved = true;
-      clearTimeout(globalTimer);
-      signal.removeEventListener("abort", onAbort);
+      cleanup();
       resolve(text);
+    };
+
+    const finishFromTerminal = (fallbackText: string) => {
+      if (resolved) {
+        return;
+      }
+      resolved = true;
+      cleanup();
+      void resolveCompletedTerminalText({ groupId, agentId, broadcast, fallbackText }).then(
+        resolve,
+      );
     };
 
     // Global timeout
     const globalTimer = setTimeout(() => {
       const text = getRecentVisibleText(groupId, agentId);
-      finish(text);
+      finishFromTerminal(text);
     }, timeoutMs);
     globalTimer.unref();
 
     // Abort signal
     const onAbort = () => {
-      finish("");
+      finishImmediate("");
     };
     signal.addEventListener("abort", onAbort, { once: true });
 
@@ -623,10 +644,8 @@ async function waitForCompletion(params: {
 
       // Check if PTY is still running
       if (!isPtyRunning(groupId, agentId)) {
-        clearInterval(pollInterval);
         const text = getRecentVisibleText(groupId, agentId);
-        finish(text);
-        return;
+        finishFromTerminal(text);
       }
     }, 2_000);
     pollInterval.unref();
@@ -638,9 +657,24 @@ async function waitForCompletion(params: {
 
     // Check for immediate completion (PTY may have already finished)
     if (!isPtyRunning(groupId, agentId)) {
-      clearInterval(pollInterval);
       const text = getRecentVisibleText(groupId, agentId);
-      finish(text);
+      finishFromTerminal(text);
     }
   });
+}
+
+async function resolveCompletedTerminalText(params: {
+  groupId: string;
+  agentId: string;
+  broadcast: GatewayBroadcastFn;
+  fallbackText: string;
+}): Promise<string> {
+  const { groupId, agentId, broadcast, fallbackText } = params;
+
+  broadcastTerminalStatus(broadcast, groupId, agentId, "completed", "CLI response completed");
+
+  const frontendText = await waitForFrontendExtractedText(groupId, agentId);
+  const preferredText = frontendText?.trim() ? frontendText : fallbackText;
+
+  return preferredText.trim();
 }

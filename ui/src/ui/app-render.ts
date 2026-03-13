@@ -87,6 +87,8 @@ import {
   openDisbandGroupDialog,
   closeDisbandGroupDialog,
   confirmDisbandGroup,
+  sendTerminalResize,
+  sendTerminalTextExtracted,
 } from "./controllers/group-chat.ts";
 import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
@@ -1636,6 +1638,21 @@ export function renderApp(state: AppViewState) {
                 },
                 onRefresh: () =>
                   void loadGroupList(state as unknown as Parameters<typeof loadGroupList>[0]),
+                onTerminalResize: (groupId, agentId, cols, rows) =>
+                  void sendTerminalResize(
+                    state as unknown as Parameters<typeof sendTerminalResize>[0],
+                    groupId,
+                    agentId,
+                    cols,
+                    rows,
+                  ),
+                onTerminalTextExtracted: (groupId, agentId, text) =>
+                  void sendTerminalTextExtracted(
+                    state as unknown as Parameters<typeof sendTerminalTextExtracted>[0],
+                    groupId,
+                    agentId,
+                    text,
+                  ),
                 // Group settings callbacks
                 onUpdateGroupName: (name) => {
                   if (state.activeGroupId) {

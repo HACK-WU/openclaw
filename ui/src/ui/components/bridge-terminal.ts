@@ -78,6 +78,45 @@ export function getBridgeTerminal(groupId: string, agentId: string): BridgeTermi
   return bridgeTerminalRegistry.get(registryKey(groupId, agentId)) ?? null;
 }
 
+function isTerminalChromeLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return false;
+  }
+  return /^[─━│┃┌┐└┘├┤┬┴┼═║╔╗╚╝╠╣╦╩╬\-\s]+$/.test(trimmed) || /^[█▉▊▋▌▍▎▏▄▖▗▘▝▐]+$/.test(trimmed);
+}
+
+function normalizeExtractedTerminalText(text: string): string {
+  const sourceLines = text.replace(/\r\n?/g, "\n").split("\n");
+  const cleanedLines: string[] = [];
+
+  for (const rawLine of sourceLines) {
+    const line = rawLine.replace(/\u00a0/g, " ").trimEnd();
+
+    if (isTerminalChromeLine(line)) {
+      continue;
+    }
+
+    if (!line.trim()) {
+      if (cleanedLines[cleanedLines.length - 1] !== "") {
+        cleanedLines.push("");
+      }
+      continue;
+    }
+
+    cleanedLines.push(line);
+  }
+
+  while (cleanedLines[0] === "") {
+    cleanedLines.shift();
+  }
+  while (cleanedLines[cleanedLines.length - 1] === "") {
+    cleanedLines.pop();
+  }
+
+  return cleanedLines.join("\n");
+}
+
 // ─── Terminal Interface (for xterm.js or fallback) ───
 
 interface ITerminalLike {
@@ -88,6 +127,8 @@ interface ITerminalLike {
   rows: number;
   /** Extract visible text from terminal buffer */
   extractText(): string;
+  /** Wait until queued terminal writes have been flushed */
+  whenIdle(): Promise<void>;
 }
 
 /**
@@ -119,7 +160,11 @@ class PlainTextTerminal implements ITerminalLike {
   }
 
   extractText(): string {
-    return this.buffer.join("").trim();
+    return normalizeExtractedTerminalText(this.buffer.join(""));
+  }
+
+  whenIdle(): Promise<void> {
+    return Promise.resolve();
   }
 
   getContent(): string {
@@ -151,6 +196,9 @@ export class BridgeTerminal extends LitElement {
 
   /** Internal terminal instance */
   private _terminal: ITerminalLike | null = null;
+
+  /** Track terminal initialisation so completion waits for xterm if available. */
+  private _initTerminalPromise: Promise<void> | null = null;
 
   /** Container element for xterm.js rendering */
   private _terminalContainer: HTMLElement | null = null;
@@ -309,7 +357,8 @@ export class BridgeTerminal extends LitElement {
     if (this.groupId && this.agentId) {
       bridgeTerminalRegistry.set(registryKey(this.groupId, this.agentId), this);
     }
-    void this._initTerminal();
+    this._initTerminalPromise = this._initTerminal();
+    void this._initTerminalPromise;
   }
 
   disconnectedCallback() {
@@ -461,9 +510,26 @@ export class BridgeTerminal extends LitElement {
         terminal.loadAddon(this._fitAddon);
         terminal.open(this._terminalContainer);
 
+        let pendingWrites = 0;
+        const idleResolvers: Array<() => void> = [];
+        const resolveIdle = () => {
+          if (pendingWrites !== 0) {
+            return;
+          }
+          while (idleResolvers.length > 0) {
+            idleResolvers.shift()?.();
+          }
+        };
+
         // Create wrapper with extractText support
         const terminalWrapper: ITerminalLike = {
-          write: (data: string | Uint8Array) => terminal.write(data),
+          write: (data: string | Uint8Array) => {
+            pendingWrites++;
+            terminal.write(data, () => {
+              pendingWrites = Math.max(0, pendingWrites - 1);
+              resolveIdle();
+            });
+          },
           clear: () => terminal.clear(),
           dispose: () => terminal.dispose(),
           get cols() {
@@ -477,12 +543,22 @@ export class BridgeTerminal extends LitElement {
             const lines: string[] = [];
             for (let i = 0; i < buffer.length; i++) {
               const line = buffer.getLine(i);
-              if (line) {
-                lines.push(line.translateToString(true));
+              if (!line) {
+                continue;
+              }
+              const translated = line.translateToString(true);
+              if (line.isWrapped && lines.length > 0) {
+                lines[lines.length - 1] += translated;
+              } else {
+                lines.push(translated);
               }
             }
-            return lines.filter((line) => line.trim().length > 0).join("\n");
+            return normalizeExtractedTerminalText(lines.join("\n"));
           },
+          whenIdle: () =>
+            pendingWrites === 0
+              ? Promise.resolve()
+              : new Promise<void>((resolve) => idleResolvers.push(resolve)),
         };
 
         this._terminal = terminalWrapper;
@@ -491,7 +567,7 @@ export class BridgeTerminal extends LitElement {
         if (this._plainTextTerminal) {
           const buffered = this._plainTextTerminal.getContent();
           if (buffered) {
-            terminal.write(buffered);
+            terminalWrapper.write(buffered);
           }
           this._plainTextTerminal = null;
         }
@@ -613,12 +689,22 @@ export class BridgeTerminal extends LitElement {
 
   /**
    * Called when the terminal should complete and fold.
-   * Extracts text and fires the extract event.
+   * Waits for queued xterm writes to flush before extracting visible text.
    */
   completeAndFold(): void {
     this.status = "completed";
-    this.fireTextExtracted();
-    this.collapse();
+    void this._completeAndFoldAfterFlush();
+  }
+
+  private async _completeAndFoldAfterFlush(): Promise<void> {
+    try {
+      await this._initTerminalPromise?.catch(() => {});
+      await this._terminal?.whenIdle();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    } finally {
+      this.fireTextExtracted();
+      this.collapse();
+    }
   }
 }
 

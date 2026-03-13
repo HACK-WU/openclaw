@@ -12,6 +12,10 @@ import { renderInlineToolCards } from "../chat/grouped-render.ts";
 import { extractThinkingCached, formatReasoningMarkdown } from "../chat/message-extract.ts";
 import { extractToolCards, classifyToolCards } from "../chat/tool-cards.ts";
 import { typewriter } from "../chat/typewriter-directive.ts";
+import {
+  BridgeTerminalResizeEvent,
+  BridgeTerminalTextExtractedEvent,
+} from "../components/bridge-terminal.ts";
 import type {
   GroupChatMessage,
   GroupSessionMeta,
@@ -29,7 +33,6 @@ import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
 import type { ToolCard } from "../types/chat-types.ts";
 import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
-import "../components/bridge-terminal.ts";
 
 // ─── Mention Dropdown State ───
 let mentionDropdownState = {
@@ -190,6 +193,8 @@ export type GroupChatViewProps = {
   onConfirmDisbandGroup: () => void;
   // Export transcript
   onExportTranscript: () => void;
+  onTerminalResize?: (groupId: string, agentId: string, cols: number, rows: number) => void;
+  onTerminalTextExtracted?: (groupId: string, agentId: string, text: string) => void;
   // Announcement editor
   announcementEditor: { open: boolean; draft: string; preview: boolean };
   onOpenAnnouncementEditor: () => void;
@@ -333,7 +338,26 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
 
   return html`
-    <div class="group-chat-room">
+    <div
+      class="group-chat-room"
+      @bridge-terminal-resize=${(event: Event) => {
+        const resizeEvent = event as BridgeTerminalResizeEvent;
+        props.onTerminalResize?.(
+          resizeEvent.groupId,
+          resizeEvent.agentId,
+          resizeEvent.cols,
+          resizeEvent.rows,
+        );
+      }}
+      @bridge-terminal-text-extracted=${(event: Event) => {
+        const extractedEvent = event as BridgeTerminalTextExtractedEvent;
+        props.onTerminalTextExtracted?.(
+          extractedEvent.groupId,
+          extractedEvent.agentId,
+          extractedEvent.text,
+        );
+      }}
+    >
       <div class="group-chat-room__header">
         <div class="group-chat-room__header-info">
           <span class="group-chat-room__header-name">👥 ${meta.name || meta.groupId.slice(0, 8)}</span>

@@ -9,8 +9,12 @@ import { randomUUID } from "node:crypto";
 import { findCliAgentEntry } from "../../commands/cli-agents.config.js";
 import { triggerAgentReasoning } from "../../group-chat/agent-trigger.js";
 import { canTriggerAgent, createChainState } from "../../group-chat/anti-loop.js";
-import { cleanupGroupBridgeAgents, killBridgePty } from "../../group-chat/bridge-pty.js";
-import { resizePty } from "../../group-chat/bridge-pty.js";
+import {
+  cleanupGroupBridgeAgents,
+  killBridgePty,
+  recordFrontendExtractedText,
+  resizePty,
+} from "../../group-chat/bridge-pty.js";
 import type { BridgeConfig, ContextConfig } from "../../group-chat/bridge-types.js";
 import { buildGroupSessionKey } from "../../group-chat/group-session-key.js";
 import {
@@ -780,8 +784,9 @@ const handleGroupSetProjectDocs: GatewayRequestHandler = async ({ params, respon
 
 // ─── Terminal Text Extracted Handler ───
 // Receives extracted plain text from the frontend's xterm.js buffer.
-// This is a "best effort" hint — the backend also extracts text from
-// its headless xterm instance as a fallback.
+// This is the preferred transcript source for bridge terminals because it
+// reflects the real browser xterm rendering; backend extraction remains a
+// fallback when no active frontend is available.
 
 const handleGroupTerminalTextExtracted: GatewayRequestHandler = ({ params, respond }) => {
   const groupId = params.groupId as string;
@@ -796,9 +801,8 @@ const handleGroupTerminalTextExtracted: GatewayRequestHandler = ({ params, respo
     return;
   }
 
-  // For now, we acknowledge the text extraction. In a more sophisticated
-  // implementation, this would override the backend-extracted text for
-  // improved accuracy (xterm.js browser rendering > headless).
+  recordFrontendExtractedText(groupId, agentId, text);
+
   log.info("[GROUP_TERMINAL_TEXT_EXTRACTED]", {
     groupId,
     agentId,

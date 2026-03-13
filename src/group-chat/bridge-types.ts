@@ -37,7 +37,14 @@ export type BridgeConfig = {
 
 // ─── PTY Process State ───
 
-export type BridgePtyStatus = "idle" | "running" | "ready" | "stuck" | "error" | "offline";
+export type BridgePtyStatus =
+  | "idle"
+  | "running"
+  | "ready"
+  | "completed"
+  | "stuck"
+  | "error"
+  | "offline";
 
 /**
  * Runtime state of a single PTY process instance.
