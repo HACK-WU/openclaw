@@ -215,6 +215,8 @@ export type GroupChatViewProps = {
     string,
     "idle" | "working" | "ready" | "completed" | "error" | "disconnected"
   >;
+  /** Terminal replay buffers (Base64-encoded, for page refresh restoration) */
+  bridgeTerminalReplayBuffers?: Map<string, string>;
 };
 
 // ─── Main Render ───
@@ -818,6 +820,7 @@ function renderActiveBridgeTerminals(meta: GroupSessionMeta, props: GroupChatVie
               .agentId=${m.agentId}
               .cliType=${m.bridge?.cliType ?? "custom"}
               .status=${status}
+              .replayBuffer=${props.bridgeTerminalReplayBuffers?.get(m.agentId)}
             ></bridge-terminal>
             <div class="chat-group-footer">
               <span class="chat-sender-name">${senderName}</span>

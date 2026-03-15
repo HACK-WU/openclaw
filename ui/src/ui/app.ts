@@ -318,6 +318,11 @@ export class OpenClawApp extends LitElement {
   @state() agentCliCreateBusy = false;
   @state() agentCliCreateError: string | null = null;
   @state() agentShowAddMenu = false;
+  // CLI Agent edit state
+  @state() agentShowCliEditDialog = false;
+  @state() agentCliEditAgentId: string | null = null;
+  @state() agentCliEditBusy = false;
+  @state() agentCliEditError: string | null = null;
   // CLI Agents list state
   @state() cliAgentsList: import("./views/agents.ts").CliAgentsListResult | null = null;
   @state() cliAgentsLoading = false;

@@ -2985,6 +2985,12 @@
   flex-shrink: 0;
 }
 
+.add-menu-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
 .add-menu-title {
   font-size: 14px;
   font-weight: 600;

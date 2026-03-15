@@ -21,7 +21,7 @@ import { updateChainState } from "./anti-loop.js";
 import {
   clearFrontendExtractedText,
   createBridgePty,
-  getRecentVisibleText,
+  getPtyState,
   isPtyRunning,
   setInputPhase,
   startCompletionDetection,
@@ -35,6 +35,7 @@ import {
   DEFAULT_CONTEXT_MAX_CHARACTERS,
   DEFAULT_CONTEXT_MAX_MESSAGES,
   DEFAULT_REPLY_TIMEOUT_MS,
+  DEFAULT_ROLE_REMINDER_INTERVAL,
   MAX_SINGLE_MESSAGE_CHARS,
 } from "./bridge-types.js";
 import { broadcastGroupMessage, broadcastGroupStream } from "./parallel-stream.js";
@@ -180,8 +181,9 @@ export async function triggerBridgeAgent(
     }
 
     // 2. Build hidden context + visible request for the CLI.
-    const { contextMessage, requestContent } = buildCliContextMessage({
+    const { contextMessage, requestContent, roleReminderSent } = buildCliContextMessage({
       meta,
+      groupId,
       agentId,
       transcriptSnapshot,
       isFirstInteraction,
@@ -262,7 +264,9 @@ export async function triggerBridgeAgent(
     });
 
     // Update transcript index for incremental context next time
-    updateLastTranscriptIndex(groupId, agentId, transcriptSnapshot.length);
+    updateLastTranscriptIndex(groupId, agentId, transcriptSnapshot.length, {
+      roleReminderSent,
+    });
 
     // 5. If we got a reply, write it to transcript
     if (replyText && replyText.trim()) {
@@ -342,13 +346,15 @@ export async function triggerBridgeAgent(
  */
 function buildCliContextMessage(params: {
   meta: GroupSessionEntry;
+  groupId: string;
   agentId: string;
   transcriptSnapshot: GroupChatMessage[];
   isFirstInteraction: boolean;
   bridgeConfig: BridgeConfig;
-}): { contextMessage: string; requestContent: string } {
+}): { contextMessage: string; requestContent: string; roleReminderSent: boolean } {
   const {
     meta,
+    groupId,
     agentId,
     transcriptSnapshot,
     isFirstInteraction,
@@ -360,8 +366,11 @@ function buildCliContextMessage(params: {
   const maxMessages = contextConfig?.maxMessages ?? DEFAULT_CONTEXT_MAX_MESSAGES;
   const maxChars = contextConfig?.maxCharacters ?? DEFAULT_CONTEXT_MAX_CHARACTERS;
   const includeSystemMessages = contextConfig?.includeSystemMessages ?? false;
+  const roleReminderInterval =
+    contextConfig?.roleReminderInterval ?? DEFAULT_ROLE_REMINDER_INTERVAL;
 
   const sections: string[] = [];
+  let roleReminderSent = false;
 
   if (isFirstInteraction) {
     // Full context for first interaction
@@ -434,20 +443,32 @@ function buildCliContextMessage(params: {
     }
   } else {
     // Incremental context for subsequent interactions
-    sections.push(
-      "# ================================================================================",
-      "# 角色提醒（请保持角色一致性）",
-      "# ================================================================================",
-      "",
-      `# 你的身份：${agentId}（Bridge Agent）`,
-      `# 你的角色：${member?.role === "assistant" ? "管理员" : "代码实现专家"}`,
-      "",
-    );
+    // Check if we need to send role reminder based on interval
+    const ptyState = getPtyState(groupId, agentId);
+    const interactionCount = ptyState?.interactionCount ?? 0;
+    const lastRoleReminderAt = ptyState?.lastRoleReminderAt ?? 0;
+    const shouldSendRoleReminder = interactionCount - lastRoleReminderAt >= roleReminderInterval;
+
+    if (shouldSendRoleReminder) {
+      // Send role reminder
+      sections.push(
+        "# ================================================================================",
+        "# 角色提醒（请保持角色一致性）",
+        "# ================================================================================",
+        "",
+        `# 你的身份：${agentId}（Bridge Agent）`,
+        `# 你的角色：${member?.role === "assistant" ? "管理员" : "代码实现专家"}`,
+        "",
+      );
+      roleReminderSent = true;
+    }
+
+    // Get lastTranscriptIndex from PTY state for incremental context
+    const lastTranscriptIndex = ptyState?.lastTranscriptIndex ?? 0;
 
     // Only include messages since last interaction
-    // Use lastTranscriptIndex from PTY state — but we receive the full snapshot,
-    // so we slice from what we've already seen
-    const newMessages = transcriptSnapshot.slice(-maxMessages);
+    // Slice from lastTranscriptIndex + 1 to get new messages only
+    const newMessages = transcriptSnapshot.slice(lastTranscriptIndex + 1);
     if (newMessages.length > 0) {
       sections.push(
         "# ================================================================================",
@@ -483,6 +504,7 @@ function buildCliContextMessage(params: {
   return {
     contextMessage: sections.join("\n"),
     requestContent,
+    roleReminderSent,
   };
 }
 
@@ -610,21 +632,18 @@ async function waitForCompletion(params: {
       resolve(text);
     };
 
-    const finishFromTerminal = (fallbackText: string) => {
+    const finishFromTerminal = () => {
       if (resolved) {
         return;
       }
       resolved = true;
       cleanup();
-      void resolveCompletedTerminalText({ groupId, agentId, broadcast, fallbackText }).then(
-        resolve,
-      );
+      void resolveCompletedTerminalText({ groupId, agentId, broadcast }).then(resolve);
     };
 
     // Global timeout
     const globalTimer = setTimeout(() => {
-      const text = getRecentVisibleText(groupId, agentId);
-      finishFromTerminal(text);
+      finishFromTerminal();
     }, timeoutMs);
     globalTimer.unref();
 
@@ -644,8 +663,7 @@ async function waitForCompletion(params: {
 
       // Check if PTY is still running
       if (!isPtyRunning(groupId, agentId)) {
-        const text = getRecentVisibleText(groupId, agentId);
-        finishFromTerminal(text);
+        finishFromTerminal();
       }
     }, 2_000);
     pollInterval.unref();
@@ -657,8 +675,7 @@ async function waitForCompletion(params: {
 
     // Check for immediate completion (PTY may have already finished)
     if (!isPtyRunning(groupId, agentId)) {
-      const text = getRecentVisibleText(groupId, agentId);
-      finishFromTerminal(text);
+      finishFromTerminal();
     }
   });
 }
@@ -667,14 +684,15 @@ async function resolveCompletedTerminalText(params: {
   groupId: string;
   agentId: string;
   broadcast: GatewayBroadcastFn;
-  fallbackText: string;
 }): Promise<string> {
-  const { groupId, agentId, broadcast, fallbackText } = params;
+  const { groupId, agentId, broadcast } = params;
 
   broadcastTerminalStatus(broadcast, groupId, agentId, "completed", "CLI response completed");
 
+  // Only use frontend-extracted text, no fallback to backend PTY buffer
   const frontendText = await waitForFrontendExtractedText(groupId, agentId);
-  const preferredText = frontendText?.trim() ? frontendText : fallbackText;
 
-  return preferredText.trim();
+  // frontendText is null only when frontend is not available
+  // In that case, return empty string (no output)
+  return (frontendText ?? "").trim();
 }

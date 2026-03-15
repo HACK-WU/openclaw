@@ -1,6 +1,11 @@
 import type { GatewayBrowserClient } from "../gateway.ts";
 import type { AgentsListResult, ToolsCatalogResult } from "../types.ts";
-import type { CliAgentCreateForm, CliAgentsListResult, CliTestResult } from "../views/agents.ts";
+import type {
+  CliAgentCreateForm,
+  CliAgentsListResult,
+  CliTestResult,
+  CliType,
+} from "../views/agents.ts";
 import { saveConfig } from "./config.ts";
 import type { ConfigState } from "./config.ts";
 
@@ -21,10 +26,18 @@ export type AgentsState = {
   // CLI Agent create state
   agentCliCreateBusy?: boolean;
   agentCliCreateError?: string | null;
+  agentCliCreateForm?: CliAgentCreateForm;
+  agentShowCliCreateDialog?: boolean;
+  agentShowAddMenu?: boolean;
   // CLI Agents list state
   cliAgentsList?: CliAgentsListResult | null;
   cliAgentsLoading?: boolean;
   cliAgentsError?: string | null;
+  // CLI Agent edit state
+  agentCliEditBusy?: boolean;
+  agentCliEditError?: string | null;
+  agentCliEditAgentId?: string | null;
+  agentShowCliEditDialog?: boolean;
   // CLI Agent test state
   cliTestRunning?: boolean;
   cliTestResult?: CliTestResult | null;
@@ -338,5 +351,90 @@ export async function sendTestInput(
     await state.client.request("cliAgents.testSendInput", { agentId, input });
   } catch {
     // Best-effort
+  }
+}
+
+/**
+ * Show CLI Agent edit dialog and load current config into the form.
+ */
+export function showCliEditDialog(state: AgentsState, agentId: string): void {
+  const agent = state.cliAgentsList?.agents.find((a) => a.id === agentId);
+  if (!agent) {
+    state.agentCliEditError = `CLI Agent "${agentId}" not found`;
+    return;
+  }
+
+  // Load current config into the create form (reuse the same form state)
+  state.agentCliCreateForm = {
+    name: agent.name,
+    agentId: agent.id,
+    workspace: agent.cwd || "",
+    emoji: agent.emoji || "🔧",
+    cliType: agent.type as CliType,
+    command: agent.command,
+    args: Array.isArray(agent.args) ? agent.args.join(" ") : "",
+    env: agent.env ? Object.entries(agent.env).map(([key, value]) => ({ key, value })) : [],
+    timeout: agent.timeout ? Math.round(agent.timeout / 1000) : 300,
+    idleTimeout: 600, // Default value
+  };
+
+  state.agentCliEditAgentId = agentId;
+  state.agentShowCliEditDialog = true;
+  state.agentCliEditError = null;
+}
+
+/**
+ * Hide CLI Agent edit dialog.
+ */
+export function hideCliEditDialog(state: AgentsState): void {
+  state.agentShowCliEditDialog = false;
+}
+
+/**
+ * Update CLI Agent configuration via `cliAgents.update` RPC.
+ */
+export async function updateCliAgent(state: AgentsState): Promise<boolean> {
+  if (!state.client || !state.connected || !state.agentCliEditAgentId) {
+    return false;
+  }
+
+  state.agentCliEditBusy = true;
+  state.agentCliEditError = null;
+
+  try {
+    const cliCreateForm = state.agentCliCreateForm;
+    const agentCliEditAgentId = state.agentCliEditAgentId;
+
+    if (!cliCreateForm) {
+      state.agentCliEditError = "Form not initialized";
+      return false;
+    }
+
+    // Build env object from the form's key-value array
+    const envObj: Record<string, string> = {};
+    for (const e of cliCreateForm.env) {
+      if (e.key.trim()) {
+        envObj[e.key.trim()] = e.value;
+      }
+    }
+
+    await state.client.request("cliAgents.update", {
+      agentId: agentCliEditAgentId,
+      name: cliCreateForm.name,
+      command: cliCreateForm.command,
+      args: cliCreateForm.args.trim() ? cliCreateForm.args.trim().split(/\s+/) : undefined,
+      cwd: cliCreateForm.workspace || undefined,
+      env: Object.keys(envObj).length > 0 ? envObj : undefined,
+      timeout: cliCreateForm.timeout * 1000,
+      emoji: cliCreateForm.emoji || "🔧",
+    });
+
+    await loadCliAgents(state);
+    return true;
+  } catch (err) {
+    state.agentCliEditError = String(err);
+    return false;
+  } finally {
+    state.agentCliEditBusy = false;
   }
 }

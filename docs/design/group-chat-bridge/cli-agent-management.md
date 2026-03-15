@@ -649,12 +649,12 @@ triggerBridgeAgent(params, member.bridge)    ← 走 Bridge 路径
     │            command/args/cwd/env 来自 member.bridge
     │            （bridge 数据在加入群聊时从 cli-agents/bridge.json 读入）
     │
-    ├── 2. 构建上下文消息
+    ├── 2. 构建上下文消息（详见 [CLI Agent 上下文](./cli-agent-context.md)）
     │      buildCliContextMessage()
-    │      ├── 群公告
-    │      ├── 项目说明文档内容
-    │      ├── 最近 N 条群聊消息摘要
-    │      └── 当前用户请求
+    │      ├── 判断首次/后续交互
+    │      ├── 获取群公告、项目说明文档
+    │      ├── 获取历史消息（完整/增量）
+    │      └── 格式化为注释包裹的消息
     │
     ├── 3. 写入 PTY stdin
     │      pty.write(contextMessage + "\n")
@@ -676,6 +676,8 @@ triggerBridgeAgent(params, member.bridge)    ← 走 Bridge 路径
            group.stream final → 纯文本消息
            appendGroupMessage() → 持久化
 ```
+
+> **上下文消息格式、首次/后续交互模式、截断策略等详见 [CLI Agent 上下文](./cli-agent-context.md) 文档。**
 
 ### 5.4 与通用 Agent 触发的对比
 

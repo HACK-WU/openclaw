@@ -65,7 +65,7 @@ export type AgentCreateForm = {
   emoji: string;
 };
 
-export type CliType = "claude-code" | "opencode" | "codebuddy" | "custom";
+export type CliType = "claude-code" | "opencode" | "codebuddy" | "qwen" | "custom";
 
 export type CliAgentCreateForm = {
   name: string;
@@ -86,6 +86,7 @@ const _CLI_PRESETS: Record<CliType, { name: string; command: string; emoji: stri
   "claude-code": { name: "claude-code", command: "claude", emoji: "🤖" },
   opencode: { name: "opencode", command: "opencode", emoji: "🔧" },
   codebuddy: { name: "codebuddy", command: "codebuddy", emoji: "🛠️" },
+  qwen: { name: "qwen", command: "qwen", emoji: "🐉" },
   custom: { name: "", command: "", emoji: "🔧" },
 };
 
@@ -113,7 +114,6 @@ export type AgentsProps = {
   agentFileActive: string | null;
   agentFileContents: Record<string, string>;
   agentFileDrafts: Record<string, string>;
-  agentFileContents: Record<string, string>;
   agentFileSaving: boolean;
   agentIdentityLoading: boolean;
   agentIdentityError: string | null;
@@ -142,6 +142,11 @@ export type AgentsProps = {
   cliCreateBusy: boolean;
   cliCreateError: string | null;
   showAddMenu: boolean;
+  // CLI Agent edit state
+  showCliEditDialog: boolean;
+  cliEditAgentId: string | null;
+  cliEditBusy: boolean;
+  cliEditError: string | null;
   // CLI Agents data (independent from agentsList)
   cliAgentsList: CliAgentsListResult | null;
   cliAgentsLoading: boolean;
@@ -188,6 +193,10 @@ export type AgentsProps = {
   onCliEnvChange: (index: number, field: "key" | "value", value: string) => void;
   onCreateCliAgent: () => void;
   onToggleAddMenu: () => void;
+  // CLI Agent edit callbacks
+  onShowCliEditDialog: (agentId: string) => void;
+  onHideCliEditDialog: () => void;
+  onUpdateCliAgent: () => void;
   // CLI Agent test callbacks
   onCliAgentTest: (agentId: string) => void;
   onCliAgentTestStop: (agentId: string) => void;
@@ -345,10 +354,10 @@ export function renderAgents(props: AgentsProps) {
                           }}
                         >
                           <span class="add-menu-icon">🤖</span>
-                          <div>
-                            <div class="add-menu-title">通用 Agent</div>
-                            <div class="add-menu-desc">添加带工作空间和身份的 Agent</div>
-                          </div>
+                          <span class="add-menu-content">
+                            <span class="add-menu-title">通用 Agent</span>
+                            <span class="add-menu-desc">添加带工作空间和身份的 Agent</span>
+                          </span>
                         </button>
                         <button
                           class="add-menu-item"
@@ -357,10 +366,10 @@ export function renderAgents(props: AgentsProps) {
                           }}
                         >
                           <span class="add-menu-icon">🔧</span>
-                          <div>
-                            <div class="add-menu-title">CLI Agent</div>
-                            <div class="add-menu-desc">添加外部 CLI 工具 (Claude Code, OpenCode 等)</div>
-                          </div>
+                          <span class="add-menu-content">
+                            <span class="add-menu-title">CLI Agent</span>
+                            <span class="add-menu-desc">添加外部 CLI 工具 (Claude Code, OpenCode 等)</span>
+                          </span>
                         </button>
                       </div>
                     `
@@ -590,6 +599,7 @@ export function renderAgents(props: AgentsProps) {
     </div>
     ${props.showCreateDialog ? renderCreateAgentDialog(props) : nothing}
     ${props.showCliCreateDialog ? renderCreateCliAgentDialog(props) : nothing}
+    ${props.showCliEditDialog ? renderEditCliAgentDialog(props) : nothing}
     ${props.showDeleteConfirm ? renderDeleteConfirmOverlay(props) : nothing}
   `;
 }
@@ -614,6 +624,11 @@ function renderCliAgentDetail(props: AgentsProps, agent: CliAgentsListResult["ag
       <div class="agent-header-meta">
         <div class="mono">${agent.id}</div>
         <span class="agent-pill agent-pill--cli">CLI</span>
+        <button
+          class="btn btn--sm"
+          ?disabled=${props.cliCreateBusy}
+          @click=${() => props.onShowCliEditDialog(agent.id)}
+        >Edit</button>
         <button
           class="btn btn--sm danger"
           ?disabled=${props.deleteBusy}
@@ -816,7 +831,10 @@ function renderCliTestTerminalDialog(
       : "";
 
   return html`
-    <div class="dialog-overlay" @click=${props.onCliTestTerminalClose}>
+    <div class="dialog-overlay" @click=${(e: Event) => {
+      e.stopPropagation();
+      props.onCliTestTerminalClose();
+    }}>
       <div
         class="dialog-card"
         style="width: 960px; max-width: 95vw; max-height: 85vh; display: flex; flex-direction: column;"
@@ -1305,7 +1323,10 @@ function renderCreateAgentDialog(props: AgentsProps) {
     agentIdValue.trim().length > 0 &&
     AGENT_ID_PATTERN.test(agentIdValue.trim());
   return html`
-    <div class="dialog-overlay" @click=${props.onHideCreateDialog}>
+    <div class="dialog-overlay" @click=${(e: Event) => {
+      e.stopPropagation();
+      props.onHideCreateDialog();
+    }}>
       <div class="dialog-card" @click=${(e: Event) => e.stopPropagation()}>
         <div class="card-title">Create Agent</div>
         <div class="card-sub">Add a new agent with its own workspace and identity.</div>
@@ -1398,10 +1419,14 @@ function renderCreateCliAgentDialog(props: AgentsProps) {
     { value: "claude-code", label: "Claude Code" },
     { value: "opencode", label: "OpenCode" },
     { value: "codebuddy", label: "CodeBuddy" },
+    { value: "qwen", label: "Qwen" },
     { value: "custom", label: "Custom" },
   ];
   return html`
-    <div class="dialog-overlay" @click=${props.onHideCliCreateDialog}>
+    <div class="dialog-overlay" @click=${(e: Event) => {
+      e.stopPropagation();
+      props.onHideCliCreateDialog();
+    }}>
       <div class="dialog-card dialog-card--wide" @click=${(e: Event) => e.stopPropagation()}>
         <div class="card-title">添加 CLI Agent</div>
         <div class="card-sub">添加外部 CLI 编码工具作为 Agent，可在群聊中使用。</div>
@@ -1602,13 +1627,243 @@ function renderCreateCliAgentDialog(props: AgentsProps) {
   `;
 }
 
+/** Render CLI Agent edit dialog — same structure as create dialog but for editing. */
+function renderEditCliAgentDialog(props: AgentsProps) {
+  const { cliCreateForm, cliEditBusy, cliEditError } = props;
+  const nameIsValidId = AGENT_ID_PATTERN.test(cliCreateForm.name);
+  const agentIdValue = cliCreateForm.agentId || (nameIsValidId ? cliCreateForm.name : "");
+  // Resolve default workspace from config (agents.defaults.workspace)
+  const cfgAny = props.configForm as { agents?: { defaults?: { workspace?: string } } } | null;
+  const defaultWorkspace = cfgAny?.agents?.defaults?.workspace || "";
+  const effectiveWorkspace = cliCreateForm.workspace || defaultWorkspace;
+  const canSubmit =
+    cliCreateForm.name.trim().length > 0 &&
+    cliCreateForm.command.trim().length > 0 &&
+    effectiveWorkspace.trim().length > 0 &&
+    agentIdValue.trim().length > 0 &&
+    AGENT_ID_PATTERN.test(agentIdValue.trim());
+  const cliTypes: Array<{ value: CliType; label: string }> = [
+    { value: "claude-code", label: "Claude Code" },
+    { value: "opencode", label: "OpenCode" },
+    { value: "codebuddy", label: "CodeBuddy" },
+    { value: "qwen", label: "Qwen" },
+    { value: "custom", label: "Custom" },
+  ];
+  return html`
+    <div class="dialog-overlay" @click=${(e: Event) => {
+      e.stopPropagation();
+      props.onHideCliEditDialog();
+    }}>
+      <div class="dialog-card dialog-card--wide" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="card-title">编辑 CLI Agent</div>
+        <div class="card-sub">修改 CLI Agent 配置。</div>
+        ${cliEditError ? html`<div class="callout danger" style="margin-top: 8px;">${cliEditError}</div>` : nothing}
+        <div class="dialog-form" style="max-height: 60vh; overflow-y: auto;">
+          <!-- CLI Type -->
+          <label class="field">
+            <span>CLI 类型 <span class="required">*</span></span>
+            <select
+              .value=${cliCreateForm.cliType}
+              ?disabled=${cliEditBusy}
+              @change=${(e: Event) => props.onCliTypeChange((e.target as HTMLSelectElement).value as CliType)}
+            >
+              ${cliTypes.map(
+                (t) =>
+                  html`<option value=${t.value} ?selected=${t.value === cliCreateForm.cliType}>${t.label}</option>`,
+              )}
+            </select>
+          </label>
+
+          <!-- Agent Name -->
+          <label class="field">
+            <span>Agent 名称 <span class="required">*</span></span>
+            <input
+              type="text"
+              .value=${cliCreateForm.name}
+              placeholder="e.g. claude-code"
+              ?disabled=${cliEditBusy}
+              @input=${(e: Event) => props.onCliCreateFormChange("name", (e.target as HTMLInputElement).value)}
+            />
+            <span class="field-hint">用于 @mention 的标识符</span>
+          </label>
+
+          <!-- Agent ID -->
+          <label class="field">
+            <span>Agent ID <span class="required"\>*</span></span>
+            <input
+              type="text"
+              .value=${agentIdValue}
+              placeholder="e.g. claude_code"
+              disabled
+              @input=${(e: Event) => props.onCliCreateFormChange("agentId", (e.target as HTMLInputElement).value)}
+            />
+            ${
+              !nameIsValidId && cliCreateForm.name.trim().length > 0
+                ? html`
+                    <span class="field-hint" style="color: var(--warning)"
+                      >⚠️ Agent 名称包含特殊字符，请手动指定 Agent ID（仅限字母、数字、下划线）</span
+                    >
+                  `
+                : html`
+                    <span class="field-hint">编辑模式下不可更改 Agent ID</span>
+                  `
+            }
+          </label>
+
+          <!-- Command -->
+          <label class="field">
+            <span>启动命令 <span class="required">*</span></span>
+            <input
+              type="text"
+              .value=${cliCreateForm.command}
+              placeholder="e.g. claude"
+              ?disabled=${cliEditBusy}
+              @input=${(e: Event) => props.onCliCreateFormChange("command", (e.target as HTMLInputElement).value)}
+            />
+            <span class="field-hint">CLI 可执行文件路径或命令名</span>
+          </label>
+
+          <!-- Emoji -->
+          <label class="field">
+            <span>图标</span>
+            <input
+              type="text"
+              .value=${cliCreateForm.emoji}
+              placeholder="🔧"
+              style="max-width: 120px;"
+              ?disabled=${cliEditBusy}
+              @input=${(e: Event) => props.onCliCreateFormChange("emoji", (e.target as HTMLInputElement).value)}
+            />
+          </label>
+
+          <!-- Args -->
+          <label class="field">
+            <span>启动参数</span>
+            <input
+              type="text"
+              .value=${cliCreateForm.args}
+              placeholder="e.g. --verbose --no-confirm"
+              ?disabled=${cliEditBusy}
+              @input=${(e: Event) => props.onCliCreateFormChange("args", (e.target as HTMLInputElement).value)}
+            />
+            <span class="field-hint">额外的命令行参数（空格分隔）</span>
+          </label>
+
+          <!-- Workspace -->
+          <label class="field">
+            <span>工作空间 <span class="required">*</span></span>
+            <input
+              type="text"
+              .value=${effectiveWorkspace}
+              placeholder="e.g. /home/user/project"
+              ?disabled=${cliEditBusy}
+              @input=${(e: Event) => props.onCliCreateFormChange("workspace", (e.target as HTMLInputElement).value)}
+            />
+            <span class="field-hint">CLI 启动时的工作目录（也是 Agent 工作空间）${!cliCreateForm.workspace && defaultWorkspace ? "（已自动填入默认值）" : ""}</span>
+          </label>
+
+          <!-- Environment Variables -->
+          <div class="field">
+            <span>环境变量</span>
+            <div class="env-vars-list">
+              ${cliCreateForm.env.map(
+                (envVar, index) => html`
+                  <div class="row env-var-row" style="gap: 8px; margin-bottom: 4px;">
+                    <input
+                      type="text"
+                      .value=${envVar.key}
+                      placeholder="KEY"
+                      style="flex: 1;"
+                      ?disabled=${cliEditBusy}
+                      @input=${(e: Event) => props.onCliEnvChange(index, "key", (e.target as HTMLInputElement).value)}
+                    />
+                    <span style="color: var(--muted); line-height: 32px;">=</span>
+                    <input
+                      type="text"
+                      .value=${envVar.value}
+                      placeholder="value"
+                      style="flex: 2;"
+                      ?disabled=${cliEditBusy}
+                      @input=${(e: Event) => props.onCliEnvChange(index, "value", (e.target as HTMLInputElement).value)}
+                    />
+                    <button
+                      class="btn btn--sm danger"
+                      ?disabled=${cliEditBusy}
+                      @click=${() => props.onCliEnvRemove(index)}
+                    >✕</button>
+                  </div>
+                `,
+              )}
+              <button
+                class="btn btn--sm"
+                ?disabled=${cliEditBusy}
+                @click=${props.onCliEnvAdd}
+                style="margin-top: 4px;"
+              >+ 添加环境变量</button>
+            </div>
+          </div>
+
+          <!-- Timeout -->
+          <div class="row" style="gap: 12px;">
+            <label class="field" style="flex: 1;">
+              <span>单次回复超时</span>
+              <div class="row" style="gap: 6px; align-items: center;">
+                <input
+                  type="number"
+                  .value=${String(cliCreateForm.timeout)}
+                  min="30"
+                  max="1800"
+                  style="flex: 1;"
+                  ?disabled=${cliEditBusy}
+                  @input=${(e: Event) => props.onCliCreateFormChange("timeout", Number((e.target as HTMLInputElement).value))}
+                />
+                <span class="muted">秒</span>
+              </div>
+            </label>
+            <label class="field" style="flex: 1;">
+              <span>空闲回收时间</span>
+              <div class="row" style="gap: 6px; align-items: center;">
+                <input
+                  type="number"
+                  .value=${String(cliCreateForm.idleTimeout)}
+                  min="60"
+                  max="3600"
+                  style="flex: 1;"
+                  ?disabled=${cliEditBusy}
+                  @input=${(e: Event) => props.onCliCreateFormChange("idleTimeout", Number((e.target as HTMLInputElement).value))}
+                />
+                <span class="muted">秒</span>
+              </div>
+            </label>
+          </div>
+        </div>
+        <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 16px;">
+          <button class="btn btn--sm" ?disabled=${cliEditBusy} @click=${props.onHideCliEditDialog}>
+            取消
+          </button>
+          <button
+            class="btn btn--sm primary"
+            ?disabled=${!canSubmit || cliEditBusy}
+            @click=${props.onUpdateCliAgent}
+          >
+            ${cliEditBusy ? "保存中…" : "保存修改"}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderDeleteConfirmOverlay(props: AgentsProps) {
   const agentId = props.showDeleteConfirm;
   if (!agentId) {
     return nothing;
   }
   return html`
-    <div class="dialog-overlay" @click=${props.onHideDeleteConfirm}>
+    <div class="dialog-overlay" @click=${(e: Event) => {
+      e.stopPropagation();
+      props.onHideDeleteConfirm();
+    }}>
       <div class="dialog-card" @click=${(e: Event) => e.stopPropagation()}>
         <div class="card-title">Delete Agent</div>
         <div class="card-sub">

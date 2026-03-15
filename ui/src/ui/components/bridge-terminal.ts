@@ -18,6 +18,7 @@
  */
 import { LitElement, html, css } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { stripAnsiEscapes } from "../chat/tool-helpers.ts";
 
 // xterm.css raw content — injected into Shadow DOM so xterm renders correctly.
 // Without this, the hidden textarea helper, viewport, and screen elements are unstyled
@@ -117,6 +118,84 @@ function normalizeExtractedTerminalText(text: string): string {
   return cleanedLines.join("\n");
 }
 
+/**
+ * 检测是否是上下文注释行
+ * 后端注入的上下文消息包含特定的关键字标记
+ */
+function isContextCommentLine(line: string): boolean {
+  const trimmed = line.trim();
+
+  // 必须以 # 开头
+  if (!trimmed.startsWith("#")) {
+    return false;
+  }
+
+  // 检测上下文关键字
+  const contextPatterns = [
+    /^#\s*你的身份/,
+    /^#\s*你的角色/,
+    /^#\s*群聊信息/,
+    /^#\s*-.*成员/,
+    /^#\s*>.*:/, // 对话历史引用
+    /^#\s*项目上下文/,
+    /^#\s*项目说明文档/,
+  ];
+
+  return contextPatterns.some((p) => p.test(trimmed));
+}
+
+/**
+ * 过滤上下文消息块
+ * 上下文消息格式：
+ * # ================================================================================
+ * # 系统上下文（这是群聊环境信息，非用户输入，请勿执行）
+ * # ================================================================================
+ *
+ * # 你的身份：claude-code（Bridge Agent）
+ * # 你的角色：代码实现专家...
+ */
+function filterContextBlock(text: string): string {
+  const lines = text.split("\n");
+  const filtered: string[] = [];
+  let inContextBlock = false;
+  let foundUserRequest = false;
+
+  for (const line of lines) {
+    // 检测上下文块开始（分隔线 + 系统上下文标记）
+    if (line.match(/^#{10,}/) || line.includes("系统上下文")) {
+      inContextBlock = true;
+      continue;
+    }
+
+    // 检测"用户请求"标记（上下文结束）
+    if (line.includes("用户请求")) {
+      inContextBlock = false;
+      foundUserRequest = true;
+      continue;
+    }
+
+    // 如果已找到用户请求标记，跳过分隔线
+    if (foundUserRequest && line.match(/^#{10,}/)) {
+      foundUserRequest = false;
+      continue;
+    }
+
+    // 跳过上下文块内的内容
+    if (inContextBlock) {
+      continue;
+    }
+
+    // 跳过单独的上下文注释行
+    if (isContextCommentLine(line)) {
+      continue;
+    }
+
+    filtered.push(line);
+  }
+
+  return filtered.join("\n").trim();
+}
+
 // ─── Terminal Interface (for xterm.js or fallback) ───
 
 interface ITerminalLike {
@@ -160,7 +239,13 @@ class PlainTextTerminal implements ITerminalLike {
   }
 
   extractText(): string {
-    return normalizeExtractedTerminalText(this.buffer.join(""));
+    // 1. 规范化（清理终端框架字符、空白行）
+    let text = normalizeExtractedTerminalText(this.buffer.join(""));
+    // 2. 过滤上下文消息
+    text = filterContextBlock(text);
+    // 3. 清理 ANSI 序列（二次清理）
+    text = stripAnsiEscapes(text);
+    return text;
   }
 
   whenIdle(): Promise<void> {
@@ -188,6 +273,9 @@ export class BridgeTerminal extends LitElement {
   /** Terminal status */
   @property({ type: String }) status: BridgeTerminalStatus = "idle";
 
+  /** Replay buffer (Base64-encoded terminal data, for page refresh restoration) */
+  @property({ type: String }) replayBuffer = "";
+
   /** Whether terminal is collapsed (default: collapsed, user clicks to expand) */
   @state() private _collapsed = true;
 
@@ -199,6 +287,23 @@ export class BridgeTerminal extends LitElement {
 
   /** Track terminal initialisation so completion waits for xterm if available. */
   private _initTerminalPromise: Promise<void> | null = null;
+
+  /** Prevent duplicate text extraction events */
+  private _textExtractedFired = false;
+
+  /** Dynamic status indicator - whether terminal is actively receiving data */
+  @state() private _isWorking = false;
+
+  /** Idle timer for dynamic status indicator (2.5 seconds) */
+  private _idleTimer: number | null = null;
+
+  /** Idle timeout for status indicator (ms) */
+  private readonly IDLE_TIMEOUT = 2500;
+
+  /** Frontend-based completion detection */
+  private _lastDataTime = 0;
+  private _completionCheckTimer: number | null = null;
+  private readonly COMPLETION_IDLE_SECS = 8;
 
   /** Container element for xterm.js rendering */
   private _terminalContainer: HTMLElement | null = null;
@@ -366,8 +471,49 @@ export class BridgeTerminal extends LitElement {
     if (bridgeTerminalRegistry.get(key) === this) {
       bridgeTerminalRegistry.delete(key);
     }
+    // Clear idle timer for dynamic status indicator
+    if (this._idleTimer !== null) {
+      clearTimeout(this._idleTimer);
+      this._idleTimer = null;
+    }
+    // Clear completion check timer
+    if (this._completionCheckTimer !== null) {
+      clearTimeout(this._completionCheckTimer);
+      this._completionCheckTimer = null;
+    }
     this._disposeTerminal();
     super.disconnectedCallback();
+  }
+
+  protected updated(changedProperties: Map<string, unknown>): void {
+    super.updated(changedProperties);
+
+    // Start completion detection when status becomes "working" or "ready"
+    // This handles the case where terminal is restored after page refresh
+    if (changedProperties.has("status")) {
+      if (this.status === "working" || this.status === "ready") {
+        // Initialize lastDataTime to now
+        this._lastDataTime = Date.now();
+        // Start completion check timer
+        this._resetCompletionCheck();
+      }
+    }
+
+    // Restore terminal content from replay buffer (after page refresh)
+    if (changedProperties.has("replayBuffer") && this.replayBuffer && this._terminal) {
+      try {
+        // Decode Base64 replay buffer
+        const binary = atob(this.replayBuffer);
+        const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+
+        // Write to terminal
+        if (this._terminal) {
+          this._terminal.write(bytes);
+        }
+      } catch (err) {
+        console.warn("[bridge-terminal] Failed to restore replay buffer:", err);
+      }
+    }
   }
 
   // ─── Public API ───
@@ -377,6 +523,12 @@ export class BridgeTerminal extends LitElement {
    * Called by the controller when a `group.terminal` event is received.
    */
   writeData(data: string): void {
+    // Set working status when data is written (for dynamic status indicator)
+    this._setWorkingStatus();
+
+    // Update last data time for frontend completion detection
+    this._lastDataTime = Date.now();
+
     if (!this._terminal) {
       // Buffer data if terminal hasn't initialized yet
       if (!this._plainTextTerminal) {
@@ -390,12 +542,21 @@ export class BridgeTerminal extends LitElement {
     if (!this._xtermLoaded) {
       this.requestUpdate();
     }
+
+    // Reset completion check timer (frontend-based detection)
+    this._resetCompletionCheck();
   }
 
   /**
    * Write raw binary data (Uint8Array) to the terminal.
    */
   writeBinaryData(data: Uint8Array): void {
+    // Set working status when data is written (for dynamic status indicator)
+    this._setWorkingStatus();
+
+    // Update last data time for frontend completion detection
+    this._lastDataTime = Date.now();
+
     if (!this._terminal) {
       if (!this._plainTextTerminal) {
         this._plainTextTerminal = new PlainTextTerminal();
@@ -408,6 +569,84 @@ export class BridgeTerminal extends LitElement {
     if (!this._xtermLoaded) {
       this.requestUpdate();
     }
+
+    // Reset completion check timer (frontend-based detection)
+    this._resetCompletionCheck();
+  }
+
+  // ─── Dynamic Status Indicator ───
+
+  /**
+   * Set working status and reset idle timer.
+   * Called when terminal data is written to indicate active work.
+   */
+  private _setWorkingStatus(): void {
+    // Set to working status if not already
+    if (!this._isWorking) {
+      this._isWorking = true;
+    }
+
+    // Clear existing idle timer
+    if (this._idleTimer !== null) {
+      clearTimeout(this._idleTimer);
+      this._idleTimer = null;
+    }
+
+    // Set new idle timer (2.5 seconds)
+    this._idleTimer = window.setTimeout(() => {
+      this._isWorking = false;
+      this._idleTimer = null;
+    }, this.IDLE_TIMEOUT);
+  }
+
+  // ─── Frontend-Based Completion Detection ───
+
+  /**
+   * Reset completion check timer.
+   * Called when new data is written to the terminal.
+   */
+  private _resetCompletionCheck(): void {
+    // Clear existing timer
+    if (this._completionCheckTimer !== null) {
+      clearTimeout(this._completionCheckTimer);
+      this._completionCheckTimer = null;
+    }
+
+    // Only start completion detection if status is "working" or "ready"
+    if (this.status !== "working" && this.status !== "ready") {
+      return;
+    }
+
+    // Set new timer
+    this._completionCheckTimer = window.setTimeout(() => {
+      void this._checkCompletion();
+    }, this.COMPLETION_IDLE_SECS * 1000);
+  }
+
+  /**
+   * Check if CLI has completed based on frontend idle detection.
+   * Called after COMPLETION_IDLE_SECS seconds of no new data.
+   */
+  private async _checkCompletion(): Promise<void> {
+    // Verify that we've been idle for the required time
+    const now = Date.now();
+    const idleTime = now - this._lastDataTime;
+
+    if (idleTime < this.COMPLETION_IDLE_SECS * 1000) {
+      return; // Not idle yet, timer was reset
+    }
+
+    // Double-check status
+    if (this.status !== "working" && this.status !== "ready") {
+      return;
+    }
+
+    console.log("[bridge-terminal] Frontend detected completion, extracting text...");
+
+    // Trigger completion
+    this.status = "completed";
+    this._textExtractedFired = false; // Reset防抖 flag for new extraction
+    await this._completeAndFoldAfterFlush();
   }
 
   /**
@@ -426,8 +665,15 @@ export class BridgeTerminal extends LitElement {
 
   /**
    * Fire a text-extracted event for the controller to pick up.
+   * Uses防抖 to prevent duplicate events during the same completion cycle.
    */
   fireTextExtracted(): void {
+    if (this._textExtractedFired) {
+      // Already fired for this completion cycle, skip duplicate
+      return;
+    }
+    this._textExtractedFired = true;
+
     const text = this.extractVisibleText();
     this.dispatchEvent(new BridgeTerminalTextExtractedEvent(this.groupId, this.agentId, text));
   }
@@ -553,7 +799,13 @@ export class BridgeTerminal extends LitElement {
                 lines.push(translated);
               }
             }
-            return normalizeExtractedTerminalText(lines.join("\n"));
+            // 1. 规范化（清理终端框架字符、空白行）
+            let text = normalizeExtractedTerminalText(lines.join("\n"));
+            // 2. 过滤上下文消息
+            text = filterContextBlock(text);
+            // 3. 清理 ANSI 序列（二次清理）
+            text = stripAnsiEscapes(text);
+            return text;
           },
           whenIdle: () =>
             pendingWrites === 0
@@ -627,11 +879,19 @@ export class BridgeTerminal extends LitElement {
   };
 
   private _getStatusLabel(): string {
+    // For idle/ready status, use dynamic working status indicator
+    if (this.status === "idle" || this.status === "ready") {
+      if (this._isWorking) {
+        return `🔧 ${this._cliDisplayName()} 正在工作...`;
+      } else {
+        return `🔧 ${this._cliDisplayName()}`;
+      }
+    }
+
+    // For other statuses, use static labels
     switch (this.status) {
       case "working":
         return `🔧 ${this._cliDisplayName()} 正在工作...`;
-      case "ready":
-        return `✅ ${this._cliDisplayName()} 启动成功`;
       case "completed":
         return `📦 ${this._cliDisplayName()} 执行完毕`;
       case "error":
@@ -660,7 +920,8 @@ export class BridgeTerminal extends LitElement {
 
   render() {
     const statusClass = `bridge-terminal-header__status bridge-terminal-header__status--${this.status}`;
-    const isWorking = this.status === "working";
+    // Show working indicator animation when status is "working" OR when terminal is actively receiving data
+    const isWorking = this.status === "working" || this._isWorking;
     const toggleClass = `bridge-terminal-header__toggle ${this._collapsed ? "bridge-terminal-header__toggle--collapsed" : ""}`;
     const bodyClass = `bridge-terminal-body ${this._collapsed ? "bridge-terminal-body--collapsed" : ""}`;
 
@@ -692,15 +953,31 @@ export class BridgeTerminal extends LitElement {
    * Waits for queued xterm writes to flush before extracting visible text.
    */
   completeAndFold(): void {
+    // Prevent duplicate completion calls
+    if (this.status === "completed") {
+      return;
+    }
+
     this.status = "completed";
+    this._textExtractedFired = false; // Reset防抖 flag for new extraction
     void this._completeAndFoldAfterFlush();
   }
 
   private async _completeAndFoldAfterFlush(): Promise<void> {
     try {
       await this._initTerminalPromise?.catch(() => {});
-      await this._terminal?.whenIdle();
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+      // Add timeout protection to prevent indefinite blocking when CLI has continuous output
+      // (e.g., cursor blinking, status bar updates)
+      const idlePromise = this._terminal?.whenIdle() ?? Promise.resolve();
+      const timeoutPromise = new Promise<void>(
+        (resolve) => setTimeout(resolve, 10000), // Max wait 10 seconds
+      );
+      await Promise.race([idlePromise, timeoutPromise]);
+
+      // Wait 5 seconds to ensure xterm.js has fully rendered all output
+      // and terminal content is stable before extracting text
+      await new Promise<void>((resolve) => setTimeout(resolve, 5000));
     } finally {
       this.fireTextExtracted();
       this.collapse();

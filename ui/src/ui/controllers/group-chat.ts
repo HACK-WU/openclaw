@@ -59,6 +59,10 @@ export type GroupSessionMeta = {
     maxCharacters?: number;
     includeSystemMessages?: boolean;
   };
+  /** Active terminal statuses for Bridge Agents (for page refresh restoration) */
+  bridgeTerminalStatuses?: Record<string, string>;
+  /** Terminal replay buffers for Bridge Agents (Base64-encoded, for content restoration) */
+  bridgeTerminalReplayBuffers?: Record<string, string>;
 };
 
 // Tool message for real-time display
@@ -163,6 +167,8 @@ export type GroupChatState = {
     string,
     "idle" | "working" | "ready" | "completed" | "error" | "disconnected"
   >;
+  /** Terminal replay buffers (Base64-encoded, for page refresh restoration) */
+  bridgeTerminalReplayBuffers?: Map<string, string>;
 };
 
 export type GroupCreateDialogState = {
@@ -1105,6 +1111,29 @@ export async function loadGroupInfo(host: GroupHost, groupId: string): Promise<v
     cacheGroupMeta(meta);
     if (host.activeGroupId === groupId) {
       host.activeGroupMeta = meta;
+
+      // Restore terminal statuses and replay buffers from backend (for page refresh)
+      if (meta.bridgeTerminalStatuses) {
+        const statuses = new Map<
+          string,
+          "idle" | "working" | "ready" | "completed" | "error" | "disconnected"
+        >();
+        for (const [agentId, status] of Object.entries(meta.bridgeTerminalStatuses)) {
+          // Map backend status strings to frontend status types
+          const mappedStatus = mapPtyStatusToTerminalStatus(status);
+          statuses.set(agentId, mappedStatus);
+        }
+        host.bridgeTerminalStatuses = statuses;
+      }
+
+      // Restore terminal replay buffers (for content restoration after page refresh)
+      if (meta.bridgeTerminalReplayBuffers) {
+        const replayBuffers = new Map<string, string>();
+        for (const [agentId, buffer] of Object.entries(meta.bridgeTerminalReplayBuffers)) {
+          replayBuffers.set(agentId, buffer);
+        }
+        host.bridgeTerminalReplayBuffers = replayBuffers;
+      }
     }
   } catch (err) {
     host.groupError = `Failed to load group: ${String(err)}`;

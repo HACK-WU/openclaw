@@ -10,7 +10,7 @@
 
 // ─── CLI Type Presets ───
 
-export type CliType = "claude-code" | "opencode" | "codebuddy" | "custom";
+export type CliType = "claude-code" | "opencode" | "codebuddy" | "qwen" | "custom";
 
 // ─── Bridge Configuration ───
 
@@ -71,6 +71,10 @@ export type BridgePtyState = {
   lastTranscriptIndex: number;
   /** Whether this is the first interaction (full context) or subsequent (incremental). */
   isFirstInteraction: boolean;
+  /** Number of interactions since PTY creation (first interaction not counted). */
+  interactionCount: number;
+  /** Interaction count at the last role reminder (for interval-based reminders). */
+  lastRoleReminderAt: number;
 };
 
 // ─── Bridge-Assistant Trigger State ───
@@ -128,6 +132,8 @@ export type ContextConfig = {
   maxCharacters?: number;
   /** Whether to include system messages in context. Default false. */
   includeSystemMessages?: boolean;
+  /** Role reminder interval (send role reminder every N interactions). Default 5. */
+  roleReminderInterval?: number;
 };
 
 // ─── Audit Log Entry ───
@@ -174,3 +180,5 @@ export const MAX_SINGLE_MESSAGE_CHARS = 2_000;
 export const DEFAULT_CONTEXT_MAX_MESSAGES = 30;
 /** Default max characters in context. */
 export const DEFAULT_CONTEXT_MAX_CHARACTERS = 50_000;
+/** Default role reminder interval (send role reminder every N interactions). */
+export const DEFAULT_ROLE_REMINDER_INTERVAL = 5;

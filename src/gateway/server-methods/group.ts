@@ -11,6 +11,8 @@ import { triggerAgentReasoning } from "../../group-chat/agent-trigger.js";
 import { canTriggerAgent, createChainState } from "../../group-chat/anti-loop.js";
 import {
   cleanupGroupBridgeAgents,
+  getGroupActivePtys,
+  getPtyReplayBuffer,
   killBridgePty,
   recordFrontendExtractedText,
   resizePty,
@@ -147,9 +149,30 @@ const handleGroupInfo: GatewayRequestHandler = ({ params, respond }) => {
     respond(false, undefined, { message: "Group not found", code: 404 });
     return;
   }
+
+  // Get active PTY states for terminal restoration after page refresh
+  const activePtys = getGroupActivePtys(groupId);
+  const bridgeTerminalStatuses: Record<string, string> = {};
+  const bridgeTerminalReplayBuffers: Record<string, string> = {};
+
+  for (const [agentId, status] of activePtys.entries()) {
+    bridgeTerminalStatuses[agentId] = status;
+
+    // Get replay buffer for each active PTY (to restore terminal content after page refresh)
+    const replayBuffer = getPtyReplayBuffer(groupId, agentId);
+    if (replayBuffer) {
+      bridgeTerminalReplayBuffers[agentId] = replayBuffer;
+    }
+  }
+
   // Map groupName to name for frontend compatibility
   const { groupName, ...rest } = meta;
-  respond(true, { ...rest, name: groupName ?? "" });
+  respond(true, {
+    ...rest,
+    name: groupName ?? "",
+    bridgeTerminalStatuses, // Include active terminal states
+    bridgeTerminalReplayBuffers, // Include terminal replay buffers for content restoration
+  });
 };
 
 const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, context }) => {

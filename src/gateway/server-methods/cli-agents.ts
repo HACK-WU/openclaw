@@ -32,7 +32,7 @@ const log = getLogger("cli-agents:handler");
 
 // ─── Validation Helpers ───
 
-const VALID_CLI_TYPES = new Set<string>(["claude-code", "opencode", "codebuddy", "custom"]);
+const VALID_CLI_TYPES = new Set<string>(["claude-code", "opencode", "codebuddy", "qwen", "custom"]);
 
 function isValidCliType(value: unknown): value is CliType {
   return typeof value === "string" && VALID_CLI_TYPES.has(value);
@@ -126,7 +126,7 @@ const handleCliAgentsCreate: GatewayRequestHandler = async ({ params, respond })
 
   if (!isValidCliType(cliTypeRaw)) {
     respond(false, undefined, {
-      message: `Invalid cliType "${String(cliTypeRaw)}". Must be one of: claude-code, opencode, codebuddy, custom`,
+      message: `Invalid cliType "${String(cliTypeRaw)}". Must be one of: claude-code, opencode, codebuddy, qwen, custom`,
       code: 400,
     });
     return;

@@ -171,6 +171,11 @@ export type AppViewState = {
   agentCliCreateBusy: boolean;
   agentCliCreateError: string | null;
   agentShowAddMenu: boolean;
+  // CLI Agent edit state
+  agentShowCliEditDialog: boolean;
+  agentCliEditAgentId: string | null;
+  agentCliEditBusy: boolean;
+  agentCliEditError: string | null;
   // CLI Agents list state (independent from general agents)
   cliAgentsList: import("./views/agents.ts").CliAgentsListResult | null;
   cliAgentsLoading: boolean;

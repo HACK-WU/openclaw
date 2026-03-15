@@ -13,6 +13,7 @@ export const CliTypeSchema = Type.Union([
   Type.Literal("claude-code"),
   Type.Literal("opencode"),
   Type.Literal("codebuddy"),
+  Type.Literal("qwen"),
   Type.Literal("custom"),
 ]);
 

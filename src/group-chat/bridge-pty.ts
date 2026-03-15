@@ -237,6 +237,8 @@ export async function createBridgePty(params: {
     idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
     lastTranscriptIndex: 0,
     isFirstInteraction: true,
+    interactionCount: 0,
+    lastRoleReminderAt: 0,
   };
 
   const ringBuffer = new RingBuffer(TERMINAL_RING_BUFFER_SIZE);
@@ -354,6 +356,21 @@ export function isPtyRunning(groupId: string, agentId: string): boolean {
 }
 
 /**
+ * Get all active PTY states for a group.
+ * Returns a map of agentId → PTY status.
+ * Used to restore terminal state after page refresh.
+ */
+export function getGroupActivePtys(groupId: string): Map<string, BridgePtyStatus> {
+  const result = new Map<string, BridgePtyStatus>();
+  for (const [key, managed] of ptyInstances.entries()) {
+    if (key.startsWith(`${groupId}:`)) {
+      result.set(managed.agentId, managed.state.status);
+    }
+  }
+  return result;
+}
+
+/**
  * Get the ring buffer contents (for reconnection replay).
  * Returns Base64-encoded terminal data.
  */
@@ -407,13 +424,14 @@ export function recordFrontendExtractedText(groupId: string, agentId: string, te
 }
 
 /**
- * Wait briefly for the frontend's xterm-rendered extraction to arrive.
+ * Wait for the frontend's xterm-rendered extraction to arrive.
  * Falls back to null when no active frontend responds in time.
+ * Timeout is set to 3 seconds to account for rendering latency and network delays.
  */
 export function waitForFrontendExtractedText(
   groupId: string,
   agentId: string,
-  timeoutMs = 1_500,
+  timeoutMs = 3_000,
 ): Promise<string | null> {
   const key = ptyKey(groupId, agentId);
   const existing = frontendExtractedTexts.get(key);
@@ -514,28 +532,23 @@ export function cancelCompletionDetection(groupId: string, agentId: string): voi
 }
 
 /**
- * Get all active PTY instances for a given group.
- */
-export function getGroupActivePtys(
-  groupId: string,
-): Array<{ agentId: string; state: BridgePtyState }> {
-  const result: Array<{ agentId: string; state: BridgePtyState }> = [];
-  for (const managed of ptyInstances.values()) {
-    if (managed.groupId === groupId) {
-      result.push({ agentId: managed.agentId, state: managed.state });
-    }
-  }
-  return result;
-}
-
-/**
  * Update the last transcript index for incremental context.
+ * Also increments interaction count and optionally updates lastRoleReminderAt.
  */
-export function updateLastTranscriptIndex(groupId: string, agentId: string, index: number): void {
+export function updateLastTranscriptIndex(
+  groupId: string,
+  agentId: string,
+  index: number,
+  options?: { roleReminderSent?: boolean },
+): void {
   const managed = ptyInstances.get(ptyKey(groupId, agentId));
   if (managed) {
     managed.state.lastTranscriptIndex = index;
     managed.state.isFirstInteraction = false;
+    managed.state.interactionCount++;
+    if (options?.roleReminderSent) {
+      managed.state.lastRoleReminderAt = managed.state.interactionCount;
+    }
   }
 }
 

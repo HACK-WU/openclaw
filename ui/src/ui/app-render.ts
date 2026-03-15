@@ -28,6 +28,9 @@ import {
   testCliAgent,
   stopCliAgentTest,
   sendTestInput,
+  showCliEditDialog,
+  hideCliEditDialog,
+  updateCliAgent,
 } from "./controllers/agents.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
@@ -776,6 +779,11 @@ export function renderApp(state: AppViewState) {
                 cliCreateBusy: state.agentCliCreateBusy,
                 cliCreateError: state.agentCliCreateError,
                 showAddMenu: state.agentShowAddMenu,
+                // CLI Agent edit state
+                showCliEditDialog: state.agentShowCliEditDialog,
+                cliEditAgentId: state.agentCliEditAgentId,
+                cliEditBusy: state.agentCliEditBusy,
+                cliEditError: state.agentCliEditError,
                 // CLI Agents data (independent)
                 cliAgentsList: state.cliAgentsList,
                 cliAgentsLoading: state.cliAgentsLoading,
@@ -1138,6 +1146,7 @@ export function renderApp(state: AppViewState) {
                       "claude-code": { name: "claude-code", command: "claude", emoji: "🤖" },
                       opencode: { name: "opencode", command: "opencode", emoji: "🔧" },
                       codebuddy: { name: "codebuddy", command: "codebuddy", emoji: "🛠️" },
+                      qwen: { name: "qwen", command: "qwen", emoji: "🐉" },
                       custom: { name: "", command: "", emoji: "🔧" },
                     };
                   const preset = presets[cliType];
@@ -1213,6 +1222,19 @@ export function renderApp(state: AppViewState) {
                 },
                 onCliTestSendInput: (agentId: string, input: string) => {
                   void sendTestInput(state, agentId, input);
+                },
+                // CLI Agent edit callbacks
+                onShowCliEditDialog: (agentId: string) => {
+                  showCliEditDialog(state, agentId);
+                },
+                onHideCliEditDialog: () => {
+                  state.agentShowCliEditDialog = false;
+                },
+                onUpdateCliAgent: async () => {
+                  const ok = await updateCliAgent(state);
+                  if (ok) {
+                    hideCliEditDialog(state);
+                  }
                 },
                 // CLI Agent delete callback
                 onDeleteCliAgent: async (agentId: string) => {
@@ -1552,6 +1574,7 @@ export function renderApp(state: AppViewState) {
                 groupDisbandDialog: state.groupDisbandDialog,
                 groupInfoPanelOpen: state.groupInfoPanelOpen,
                 bridgeTerminalStatuses: state.bridgeTerminalStatuses,
+                bridgeTerminalReplayBuffers: state.bridgeTerminalReplayBuffers,
                 agentsList: [
                   ...(state.agentsList?.agents ?? []).map((a) => ({
                     id: a.id,
