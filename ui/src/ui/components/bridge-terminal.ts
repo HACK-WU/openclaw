@@ -148,6 +148,13 @@ function isContextCommentLine(line: string): boolean {
 const CTX_END_MARKER = "[OPENCLAW_CTX_END]";
 
 /**
+ * Visible separator line appended after the user's request text (before Enter).
+ * Everything above (and including) the last occurrence of this line is stripped
+ * during text extraction so the final output contains only the CLI's response.
+ */
+const INPUT_END_MARKER = "──── End of Input ────";
+
+/**
  * 过滤上下文消息块
  *
  * 策略：从后往前查找最后一个包含 `[OPENCLAW_CTX_END]` 标记的行，
@@ -160,7 +167,27 @@ const CTX_END_MARKER = "[OPENCLAW_CTX_END]";
 function filterContextBlock(text: string): string {
   const lines = text.split("\n");
 
-  // ─── 优先策略：从后往前查找 [OPENCLAW_CTX_END] 标记 ───
+  // ─── 最高优先：从后往前查找 "──── End of Input ────" 标记 ───
+  // This marker is appended after the user's visible request text.
+  // Everything above it (context + user input echo) should be stripped.
+  let lastInputEndIndex = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].includes(INPUT_END_MARKER)) {
+      lastInputEndIndex = i;
+      break;
+    }
+  }
+
+  if (lastInputEndIndex !== -1) {
+    // Skip the marker line and any trailing empty lines
+    let startIndex = lastInputEndIndex + 1;
+    while (startIndex < lines.length && lines[startIndex].trim() === "") {
+      startIndex++;
+    }
+    return lines.slice(startIndex).join("\n").trim();
+  }
+
+  // ─── 次优先：从后往前查找 [OPENCLAW_CTX_END] 标记 ───
   let lastMarkerIndex = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
     if (lines[i].includes(CTX_END_MARKER)) {
@@ -633,11 +660,17 @@ export class BridgeTerminal extends LitElement {
    * Called by the controller when a `group.terminal` event is received.
    */
   writeData(data: string): void {
-    // Set working status when data is written (for dynamic status indicator)
-    this._setWorkingStatus();
+    // After completion, stray PTY data (cursor blinks, heartbeats) should
+    // still be written to the terminal for display, but should NOT restart
+    // completion detection or flip the status indicator back to working.
+    const isCompleted = this.status === "completed";
 
-    // Update last data time for frontend completion detection
-    this._lastDataTime = Date.now();
+    if (!isCompleted) {
+      // Set working status when data is written (for dynamic status indicator)
+      this._setWorkingStatus();
+      // Update last data time for frontend completion detection
+      this._lastDataTime = Date.now();
+    }
 
     if (!this._terminal) {
       // Buffer data if terminal hasn't initialized yet
@@ -653,19 +686,24 @@ export class BridgeTerminal extends LitElement {
       this.requestUpdate();
     }
 
-    // Reset completion check timer (frontend-based detection)
-    this._resetCompletionCheck();
+    // Reset completion check timer (frontend-based detection) — skip if already completed
+    if (!isCompleted) {
+      this._resetCompletionCheck();
+    }
   }
 
   /**
    * Write raw binary data (Uint8Array) to the terminal.
    */
   writeBinaryData(data: Uint8Array): void {
-    // Set working status when data is written (for dynamic status indicator)
-    this._setWorkingStatus();
+    const isCompleted = this.status === "completed";
 
-    // Update last data time for frontend completion detection
-    this._lastDataTime = Date.now();
+    if (!isCompleted) {
+      // Set working status when data is written (for dynamic status indicator)
+      this._setWorkingStatus();
+      // Update last data time for frontend completion detection
+      this._lastDataTime = Date.now();
+    }
 
     if (!this._terminal) {
       if (!this._plainTextTerminal) {
@@ -680,8 +718,10 @@ export class BridgeTerminal extends LitElement {
       this.requestUpdate();
     }
 
-    // Reset completion check timer (frontend-based detection)
-    this._resetCompletionCheck();
+    // Reset completion check timer (frontend-based detection) — skip if already completed
+    if (!isCompleted) {
+      this._resetCompletionCheck();
+    }
   }
 
   // ─── Dynamic Status Indicator ───

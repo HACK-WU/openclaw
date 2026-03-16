@@ -24,6 +24,8 @@ export type GroupMember = {
     env?: Record<string, string>;
     idleTimeout?: number;
     avatar?: string;
+    /** Regex pattern to trim CLI prompt area from extracted text. */
+    tailTrimMarker?: string;
   };
 };
 
@@ -1837,9 +1839,12 @@ export function handleGroupTerminalEvent(
     }
   }
 
-  // Update status to working if not already set
-  const statuses = new Map(host.bridgeTerminalStatuses);
-  if (statuses.get(payload.agentId) !== "working") {
+  // Update status to working — but NOT if already completed.
+  // After completion, stray PTY data (cursor blinks, heartbeats) should
+  // not flip the status back to working until the next explicit trigger.
+  const currentStatus = host.bridgeTerminalStatuses?.get(payload.agentId);
+  if (currentStatus !== "working" && currentStatus !== "completed") {
+    const statuses = new Map(host.bridgeTerminalStatuses);
     statuses.set(payload.agentId, "working");
     host.bridgeTerminalStatuses = statuses;
   }

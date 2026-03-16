@@ -210,7 +210,11 @@ export async function triggerBridgeAgent(
     setInputPhase(groupId, agentId, false);
 
     // 3b. Type the actual request visibly, then submit it with Enter.
-    const writtenRequest = writeToPty(groupId, agentId, requestContent);
+    //     Append a visible separator line so the frontend can distinguish
+    //     user input from CLI output during text extraction.
+    const INPUT_END_MARKER = "──── End of Input ────";
+    const requestWithMarker = `${requestContent}\n${INPUT_END_MARKER}`;
+    const writtenRequest = writeToPty(groupId, agentId, requestWithMarker);
     if (!writtenRequest) {
       run.status = "error";
       run.completedAt = Date.now();
