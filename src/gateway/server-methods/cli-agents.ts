@@ -164,6 +164,7 @@ const handleCliAgentsCreate: GatewayRequestHandler = async ({ params, respond })
     env: optionalRecord(params, "env"),
     timeout: optionalTimeout(params, "timeout"),
     emoji: optionalString(params, "emoji"),
+    tailTrimMarker: optionalString(params, "tailTrimMarker"),
   };
 
   // Write to bridge.json + create workspace files
@@ -222,6 +223,9 @@ const handleCliAgentsUpdate: GatewayRequestHandler = async ({ params, respond })
       : {}),
     ...(optionalString(params, "emoji") !== undefined
       ? { emoji: optionalString(params, "emoji") }
+      : {}),
+    ...(optionalString(params, "tailTrimMarker") !== undefined
+      ? { tailTrimMarker: optionalString(params, "tailTrimMarker") }
       : {}),
   };
 

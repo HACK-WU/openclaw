@@ -33,6 +33,12 @@ export type BridgeConfig = {
   timeout?: number;
   /** Agent avatar identifier (auto-filled from CLI type, overridable). */
   avatar?: string;
+  /**
+   * Regex pattern to detect the CLI prompt area at the end of terminal output.
+   * When matched, the line and everything below (plus leading chrome lines) are trimmed.
+   * Example for CodeBuddy: "↵\\s*send"
+   */
+  tailTrimMarker?: string;
 };
 
 // ─── PTY Process State ───
@@ -164,8 +170,6 @@ export const DEFAULT_PTY_ROWS = 30;
 export const DEFAULT_REPLY_TIMEOUT_MS = 300_000;
 /** Default idle reclaim timeout (10 minutes). */
 export const DEFAULT_IDLE_TIMEOUT_MS = 600_000;
-/** Default idle detection for completion (seconds of no output). */
-export const DEFAULT_COMPLETION_IDLE_SECS = 8;
 /** Maximum restarts before giving up. */
 export const DEFAULT_MAX_RESTARTS = 3;
 /** Cooldown between assistant triggers (ms). */

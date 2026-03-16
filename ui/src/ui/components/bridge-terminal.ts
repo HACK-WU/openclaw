@@ -84,7 +84,7 @@ function isTerminalChromeLine(line: string): boolean {
   if (!trimmed) {
     return false;
   }
-  return /^[─━│┃┌┐└┘├┤┬┴┼═║╔╗╚╝╠╣╦╩╬\-\s]+$/.test(trimmed) || /^[█▉▊▋▌▍▎▏▄▖▗▘▝▐]+$/.test(trimmed);
+  return /^[─━│┃┌┐└┘├┤┬┴┼═║╔╗╚╝╠╣╦╩╬=\-\s]+$/.test(trimmed) || /^[█▉▊▋▌▍▎▏▄▖▗▘▝▐]+$/.test(trimmed);
 }
 
 function normalizeExtractedTerminalText(text: string): string {
@@ -144,48 +144,66 @@ function isContextCommentLine(line: string): boolean {
   return contextPatterns.some((p) => p.test(trimmed));
 }
 
+/** Unique marker embedded in the last context separator line by bridge-trigger.ts. */
+const CTX_END_MARKER = "[OPENCLAW_CTX_END]";
+
 /**
  * 过滤上下文消息块
- * 上下文消息格式：
- * # ================================================================================
- * # 系统上下文（这是群聊环境信息，非用户输入，请勿执行）
- * # ================================================================================
  *
- * # 你的身份：claude-code（Bridge Agent）
- * # 你的角色：代码实现专家...
+ * 策略：从后往前查找最后一个包含 `[OPENCLAW_CTX_END]` 标记的行，
+ * 只保留该标记之后的内容（跳过紧随的空行）。
+ * 这样无论上下文块格式怎么变、有没有"用户请求"标记，都能精确定位。
+ *
+ * 如果没有找到标记（旧版后端），回退到基于 `#=` 分隔线 + "用户请求"
+ * 的状态机扫描（兼容模式）。
  */
 function filterContextBlock(text: string): string {
   const lines = text.split("\n");
+
+  // ─── 优先策略：从后往前查找 [OPENCLAW_CTX_END] 标记 ───
+  let lastMarkerIndex = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].includes(CTX_END_MARKER)) {
+      lastMarkerIndex = i;
+      break;
+    }
+  }
+
+  if (lastMarkerIndex !== -1) {
+    // 跳过标记行之后的空行
+    let startIndex = lastMarkerIndex + 1;
+    while (startIndex < lines.length && lines[startIndex].trim() === "") {
+      startIndex++;
+    }
+    return lines.slice(startIndex).join("\n").trim();
+  }
+
+  // ─── 兼容回退：旧版状态机扫描（从前往后） ───
   const filtered: string[] = [];
   let inContextBlock = false;
   let foundUserRequest = false;
 
   for (const line of lines) {
-    // 检测上下文块开始（分隔线 + 系统上下文标记）
-    if (line.match(/^#{10,}/) || line.includes("系统上下文")) {
+    if (line.match(/^[#=]{10,}/) || line.includes("系统上下文")) {
       inContextBlock = true;
       continue;
     }
 
-    // 检测"用户请求"标记（上下文结束）
     if (line.includes("用户请求")) {
       inContextBlock = false;
       foundUserRequest = true;
       continue;
     }
 
-    // 如果已找到用户请求标记，跳过分隔线
-    if (foundUserRequest && line.match(/^#{10,}/)) {
+    if (foundUserRequest && line.match(/^[#=]{10,}/)) {
       foundUserRequest = false;
       continue;
     }
 
-    // 跳过上下文块内的内容
     if (inContextBlock) {
       continue;
     }
 
-    // 跳过单独的上下文注释行
     if (isContextCommentLine(line)) {
       continue;
     }
@@ -194,6 +212,80 @@ function filterContextBlock(text: string): string {
   }
 
   return filtered.join("\n").trim();
+}
+
+/**
+ * Trim the CLI "waiting for input" prompt area from the end of extracted text.
+ *
+ * Strategy: search from the last line upward for the `tailTrimMarker` regex.
+ * Once found, continue upward to skip any chrome lines (─═ etc.) that form
+ * the prompt's top border. Everything from that point onward is removed.
+ *
+ * Example (CodeBuddy):
+ *   ─────────────────────────────────────────────────
+ *   > 帮我写一个Python小程序                 ↵ send   ← marker matches here
+ *   ─────────────────────────────────────────────────
+ *   ⏵⏵ bypass permissions on (shift+tab to cycle)
+ *   ? for shortcuts
+ *
+ * All of the above gets trimmed.
+ */
+function trimTailPrompt(text: string, markerPattern: string): string {
+  if (!markerPattern) {
+    return text;
+  }
+
+  let marker: RegExp;
+  try {
+    marker = new RegExp(markerPattern);
+  } catch {
+    // Invalid regex — skip trimming
+    return text;
+  }
+
+  const lines = text.split("\n");
+
+  // 1. Strip trailing empty lines first
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+    lines.pop();
+  }
+
+  // 2. Search from the last line upward for the marker
+  let markerLineIndex = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (marker.test(lines[i])) {
+      markerLineIndex = i;
+      break;
+    }
+    // Don't search too far back — limit to last 15 lines
+    if (lines.length - 1 - i > 15) {
+      break;
+    }
+  }
+
+  if (markerLineIndex === -1) {
+    return text; // Marker not found — no trimming
+  }
+
+  // 3. From the marker line, continue upward to skip chrome lines (prompt border)
+  let cutIndex = markerLineIndex;
+  for (let i = markerLineIndex - 1; i >= 0; i--) {
+    if (isTerminalChromeLine(lines[i]) || lines[i].trim() === "") {
+      cutIndex = i;
+    } else {
+      break; // Hit a non-chrome, non-empty line — stop
+    }
+  }
+
+  // 4. Truncate: keep everything before cutIndex
+  const result = lines.slice(0, cutIndex);
+
+  // Clean trailing empty lines from the result
+  while (result.length > 0 && result[result.length - 1].trim() === "") {
+    result.pop();
+  }
+
+  return result.join("\n");
 }
 
 // ─── Terminal Interface (for xterm.js or fallback) ───
@@ -275,6 +367,13 @@ export class BridgeTerminal extends LitElement {
 
   /** Replay buffer (Base64-encoded terminal data, for page refresh restoration) */
   @property({ type: String }) replayBuffer = "";
+
+  /**
+   * Regex pattern to detect CLI prompt area at the end of terminal output.
+   * When matched (searched from last line upward), the line and everything
+   * below it (plus leading chrome lines) are trimmed from extracted text.
+   */
+  @property({ type: String }) tailTrimMarker = "";
 
   /** Whether terminal is collapsed (default: collapsed, user clicks to expand) */
   @state() private _collapsed = true;
@@ -491,7 +590,18 @@ export class BridgeTerminal extends LitElement {
     // Start completion detection when status becomes "working" or "ready"
     // This handles the case where terminal is restored after page refresh
     if (changedProperties.has("status")) {
+      const prevStatus = changedProperties.get("status") as string | undefined;
+
       if (this.status === "working" || this.status === "ready") {
+        // When transitioning from a finished state (completed/error) to working,
+        // clear the terminal buffer to prevent unbounded accumulation across
+        // multiple interaction cycles.
+        if (prevStatus === "completed" || prevStatus === "error") {
+          this._terminal?.clear();
+          this._plainTextTerminal?.clear();
+          this._textExtractedFired = false;
+        }
+
         // Initialize lastDataTime to now
         this._lastDataTime = Date.now();
         // Start completion check timer
@@ -654,13 +764,17 @@ export class BridgeTerminal extends LitElement {
    * Used for creating the plain-text transcript message.
    */
   extractVisibleText(): string {
+    let text = "";
     if (this._terminal) {
-      return this._terminal.extractText();
+      text = this._terminal.extractText();
+    } else if (this._plainTextTerminal) {
+      text = this._plainTextTerminal.extractText();
     }
-    if (this._plainTextTerminal) {
-      return this._plainTextTerminal.extractText();
+    // Apply tail trim if configured (remove CLI prompt area from end)
+    if (this.tailTrimMarker && text) {
+      text = trimTailPrompt(text, this.tailTrimMarker);
     }
-    return "";
+    return text;
   }
 
   /**
@@ -967,17 +1081,11 @@ export class BridgeTerminal extends LitElement {
     try {
       await this._initTerminalPromise?.catch(() => {});
 
-      // Add timeout protection to prevent indefinite blocking when CLI has continuous output
-      // (e.g., cursor blinking, status bar updates)
+      // Wait for xterm.js write queue to drain (usually instant since
+      // we already idled for 8s, but guard with a 2s timeout just in case).
       const idlePromise = this._terminal?.whenIdle() ?? Promise.resolve();
-      const timeoutPromise = new Promise<void>(
-        (resolve) => setTimeout(resolve, 10000), // Max wait 10 seconds
-      );
+      const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 2000));
       await Promise.race([idlePromise, timeoutPromise]);
-
-      // Wait 5 seconds to ensure xterm.js has fully rendered all output
-      // and terminal content is stable before extracting text
-      await new Promise<void>((resolve) => setTimeout(resolve, 5000));
     } finally {
       this.fireTextExtracted();
       this.collapse();

@@ -30,6 +30,7 @@ export const CliAgentEntrySchema = Type.Object(
     cwd: Type.Optional(Type.String()),
     env: Type.Optional(Type.Record(Type.String(), Type.String())),
     timeout: Type.Optional(Type.Integer({ minimum: 1000 })),
+    tailTrimMarker: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
@@ -58,6 +59,7 @@ export const CliAgentsCreateParamsSchema = Type.Object(
     env: Type.Optional(Type.Record(Type.String(), Type.String())),
     timeout: Type.Optional(Type.Integer({ minimum: 1000 })),
     emoji: Type.Optional(Type.String()),
+    tailTrimMarker: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
@@ -83,6 +85,7 @@ export const CliAgentsUpdateParamsSchema = Type.Object(
     env: Type.Optional(Type.Record(Type.String(), Type.String())),
     timeout: Type.Optional(Type.Integer({ minimum: 1000 })),
     emoji: Type.Optional(Type.String()),
+    tailTrimMarker: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );

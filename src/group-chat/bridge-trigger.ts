@@ -24,14 +24,12 @@ import {
   getPtyState,
   isPtyRunning,
   setInputPhase,
-  startCompletionDetection,
   updateLastTranscriptIndex,
   waitForFrontendExtractedText,
   writeToPty,
 } from "./bridge-pty.js";
 import type { BridgeConfig } from "./bridge-types.js";
 import {
-  DEFAULT_COMPLETION_IDLE_SECS,
   DEFAULT_CONTEXT_MAX_CHARACTERS,
   DEFAULT_CONTEXT_MAX_MESSAGES,
   DEFAULT_REPLY_TIMEOUT_MS,
@@ -109,14 +107,10 @@ export async function triggerBridgeAgent(
         agentId,
         config: bridgeConfig,
         effectiveCwd,
-        completionIdleSecs: DEFAULT_COMPLETION_IDLE_SECS,
         onRawData: (data) => {
           outputReceived = true;
           // Channel 1: broadcast raw terminal data to all connected clients
           broadcastTerminalData(broadcast, groupId, agentId, data);
-        },
-        onCompletion: () => {
-          // Completion detected — handled by the await below
         },
         onExit: (code, _sig) => {
           broadcastTerminalStatus(
@@ -247,11 +241,10 @@ export async function triggerBridgeAgent(
       return { run, chainState };
     }
 
-    // 4. Start completion detection and wait for completion or timeout.
+    // 4. Wait for frontend completion detection + text extraction.
     //    Clear any stale frontend extraction first so we only consume the
     //    xterm-rendered text from this run.
     clearFrontendExtractedText(groupId, agentId);
-    startCompletionDetection(groupId, agentId);
 
     const timeout = bridgeConfig.timeout ?? DEFAULT_REPLY_TIMEOUT_MS;
     const replyText = await waitForCompletion({
@@ -495,9 +488,9 @@ function buildCliContextMessage(params: {
   const requestContent = extractVisibleRequestContent(triggerMsg);
 
   sections.push(
-    "# ================================================================================",
+    "# ========================== [OPENCLAW_CTX_END] ==========================",
     "# 用户请求（下一次可见输入是实际需要处理的内容）",
-    "# ================================================================================",
+    "# ========================== [OPENCLAW_CTX_END] ==========================",
     "",
   );
 
@@ -601,8 +594,15 @@ function truncateSingleMessage(content: string): string {
 // ─── Completion Detection ───
 
 /**
- * Wait for CLI completion (idle timeout) or abort signal or global timeout.
- * Returns extracted plain text from terminal output.
+ * Wait for frontend to push extracted text, or abort/timeout.
+ *
+ * The frontend is the sole authority for completion detection:
+ * 8s idle on xterm.js data → extract buffer text → push back via WebSocket.
+ *
+ * This function simply waits for that push, with fallbacks for:
+ * - PTY process exit (crash/termination)
+ * - Abort signal
+ * - Global timeout
  */
 async function waitForCompletion(params: {
   groupId: string;
@@ -623,7 +623,7 @@ async function waitForCompletion(params: {
       signal.removeEventListener("abort", onAbort);
     };
 
-    const finishImmediate = (text: string) => {
+    const finish = (text: string) => {
       if (resolved) {
         return;
       }
@@ -632,67 +632,53 @@ async function waitForCompletion(params: {
       resolve(text);
     };
 
-    const finishFromTerminal = () => {
-      if (resolved) {
-        return;
+    // 1. Main path: wait for frontend-pushed extracted text.
+    //    The frontend detects 8s idle → extracts xterm buffer → sends via WebSocket.
+    //    Use the same timeout as the global timeout so the waiter doesn't expire early.
+    void waitForFrontendExtractedText(groupId, agentId, timeoutMs).then((text) => {
+      if (text !== null) {
+        broadcastTerminalStatus(broadcast, groupId, agentId, "completed", "CLI response completed");
+        finish(text.trim());
       }
-      resolved = true;
-      cleanup();
-      void resolveCompletedTerminalText({ groupId, agentId, broadcast }).then(resolve);
-    };
+      // If null (timeout), the global timer or abort will handle it
+    });
 
-    // Global timeout
+    // 2. Global timeout fallback
     const globalTimer = setTimeout(() => {
-      finishFromTerminal();
+      broadcastTerminalStatus(broadcast, groupId, agentId, "completed", "CLI response timeout");
+      finish("");
     }, timeoutMs);
     globalTimer.unref();
 
-    // Abort signal
+    // 3. Abort signal
     const onAbort = () => {
-      finishImmediate("");
+      finish("");
     };
     signal.addEventListener("abort", onAbort, { once: true });
 
-    // Poll for completion detection (the PTY manager's onCompletion callback
-    // will fire when idle, but we also need to check periodically)
+    // 4. PTY exit detection (process crashed/terminated)
     const pollInterval = setInterval(() => {
       if (resolved) {
         clearInterval(pollInterval);
         return;
       }
-
-      // Check if PTY is still running
       if (!isPtyRunning(groupId, agentId)) {
-        finishFromTerminal();
+        clearInterval(pollInterval);
+        broadcastTerminalStatus(broadcast, groupId, agentId, "completed", "CLI process exited");
+        // Give frontend 2s to push whatever it has extracted so far
+        void waitForFrontendExtractedText(groupId, agentId, 2_000).then((text) => {
+          finish((text ?? "").trim());
+        });
       }
     }, 2_000);
     pollInterval.unref();
 
-    // The actual completion is triggered by the PTY manager's onCompletion callback.
-    // We poll as a backup and for abort/timeout handling.
-    // A more sophisticated approach would use an event emitter, but polling
-    // with 2s intervals is acceptable for this use case.
-
-    // Check for immediate completion (PTY may have already finished)
+    // Check for immediate completion (PTY may have already exited)
     if (!isPtyRunning(groupId, agentId)) {
-      finishFromTerminal();
+      broadcastTerminalStatus(broadcast, groupId, agentId, "completed", "CLI process exited");
+      void waitForFrontendExtractedText(groupId, agentId, 2_000).then((text) => {
+        finish((text ?? "").trim());
+      });
     }
   });
-}
-
-async function resolveCompletedTerminalText(params: {
-  groupId: string;
-  agentId: string;
-  broadcast: GatewayBroadcastFn;
-}): Promise<string> {
-  const { groupId, agentId, broadcast } = params;
-
-  broadcastTerminalStatus(broadcast, groupId, agentId, "completed", "CLI response completed");
-
-  // Only use frontend-extracted text, no fallback to backend PTY buffer
-  const frontendText = await waitForFrontendExtractedText(groupId, agentId);
-
-  // frontendText is null only when frontend is not available
-  // In that case, return empty string (no output)
-  return (frontendText ?? "").trim();
 }

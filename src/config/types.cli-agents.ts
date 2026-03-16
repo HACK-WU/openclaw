@@ -30,6 +30,13 @@ export type CliAgentEntry = {
   env?: Record<string, string>;
   /** Single-reply timeout in milliseconds. Default: 300_000 (5 min). */
   timeout?: number;
+  /**
+   * Regex pattern to detect the CLI prompt area at the end of terminal output.
+   * When the extracted text matches this pattern (searched from the last line upward),
+   * the matching line and everything below it (plus any leading chrome lines) are trimmed.
+   * Example for CodeBuddy: "↵\\s*send"
+   */
+  tailTrimMarker?: string;
 };
 
 /**

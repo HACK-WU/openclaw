@@ -314,6 +314,7 @@ export class OpenClawApp extends LitElement {
     env: [],
     timeout: 300,
     idleTimeout: 600,
+    tailTrimMarker: "",
   };
   @state() agentCliCreateBusy = false;
   @state() agentCliCreateError: string | null = null;

@@ -74,6 +74,7 @@ function resolveBridgeForMember(member: {
     env: cliEntry.env,
     timeout: cliEntry.timeout,
     avatar: cliEntry.emoji,
+    tailTrimMarker: cliEntry.tailTrimMarker,
   };
 }
 

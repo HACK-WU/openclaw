@@ -821,6 +821,7 @@ function renderActiveBridgeTerminals(meta: GroupSessionMeta, props: GroupChatVie
               .cliType=${m.bridge?.cliType ?? "custom"}
               .status=${status}
               .replayBuffer=${props.bridgeTerminalReplayBuffers?.get(m.agentId)}
+              .tailTrimMarker=${m.bridge?.tailTrimMarker ?? ""}
             ></bridge-terminal>
             <div class="chat-group-footer">
               <span class="chat-sender-name">${senderName}</span>

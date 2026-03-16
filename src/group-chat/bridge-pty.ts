@@ -130,10 +130,6 @@ type ManagedPty = {
   exitDisposable: PtyDisposable | null;
   /** Idle reclaim timer. */
   idleTimer: ReturnType<typeof setTimeout> | null;
-  /** Completion detection timer (no-output idle). */
-  completionTimer: ReturnType<typeof setTimeout> | null;
-  /** Completion idle seconds threshold. */
-  completionIdleSecs: number;
   /**
    * When true, PTY output is still recorded (ringBuffer, recentTextLines)
    * but the onRawData callback is NOT invoked, so the frontend does not
@@ -142,8 +138,6 @@ type ManagedPty = {
   inputPhase: boolean;
   /** Callback: raw PTY data for group.terminal broadcast. */
   onRawData?: (data: string) => void;
-  /** Callback: completion detected (idle timeout with no output). */
-  onCompletion?: () => void;
   /** Callback: process exited. */
   onExit?: (code: number | null, signal: number | null) => void;
 };
@@ -186,9 +180,7 @@ export async function createBridgePty(params: {
   agentId: string;
   config: BridgeConfig;
   effectiveCwd?: string;
-  completionIdleSecs?: number;
   onRawData?: (data: string) => void;
-  onCompletion?: () => void;
   onExit?: (code: number | null, signal: number | null) => void;
 }): Promise<BridgePtyState> {
   const key = ptyKey(params.groupId, params.agentId);
@@ -255,11 +247,8 @@ export async function createBridgePty(params: {
     dataDisposable: null,
     exitDisposable: null,
     idleTimer: null,
-    completionTimer: null,
-    completionIdleSecs: params.completionIdleSecs ?? 8,
     inputPhase: false,
     onRawData: params.onRawData,
-    onCompletion: params.onCompletion,
     onExit: params.onExit,
   };
 
@@ -295,8 +284,6 @@ export function writeToPty(groupId: string, agentId: string, data: string): bool
   try {
     managed.handle.write(data);
     managed.state.lastInputAt = Date.now();
-    // Reset completion timer on input — new output expected
-    resetCompletionTimer(managed);
     resetIdleTimer(managed);
     return true;
   } catch (err) {
@@ -511,27 +498,6 @@ export async function cleanupGroupBridgeAgents(
 }
 
 /**
- * Reset the completion timer.
- * Call this after writing to stdin to start watching for completion.
- */
-export function startCompletionDetection(groupId: string, agentId: string): void {
-  const managed = ptyInstances.get(ptyKey(groupId, agentId));
-  if (managed) {
-    resetCompletionTimer(managed);
-  }
-}
-
-/**
- * Cancel completion detection (e.g. when aborting).
- */
-export function cancelCompletionDetection(groupId: string, agentId: string): void {
-  const managed = ptyInstances.get(ptyKey(groupId, agentId));
-  if (managed) {
-    clearCompletionTimer(managed);
-  }
-}
-
-/**
  * Update the last transcript index for incremental context.
  * Also increments interaction count and optionally updates lastRoleReminderAt.
  */
@@ -576,9 +542,6 @@ function handlePtyData(managed: ManagedPty, data: string): void {
     managed.recentTextLines = managed.recentTextLines.slice(-managed.maxRecentLines);
   }
 
-  // Reset completion timer — new output means CLI is still working
-  resetCompletionTimer(managed);
-
   // Reset idle reclaim timer — activity detected
   resetIdleTimer(managed);
 
@@ -605,7 +568,6 @@ function handlePtyExit(managed: ManagedPty, event: PtyExitEvent): void {
 
   // Clear timers
   clearIdleTimer(managed);
-  clearCompletionTimer(managed);
 
   // Dispose listeners
   try {
@@ -635,7 +597,6 @@ async function destroyPtyInstance(managed: ManagedPty, reason: string): Promise<
 
   // Clear timers first
   clearIdleTimer(managed);
-  clearCompletionTimer(managed);
 
   // Attempt graceful termination
   try {
@@ -696,8 +657,6 @@ function resetIdleTimer(managed: ManagedPty): void {
     });
     managed.state.status = "idle";
     // Don't destroy — just mark as idle. The next @mention will re-activate.
-    // But clear expensive resources.
-    clearCompletionTimer(managed);
   }, managed.state.idleTimeoutMs);
   managed.idleTimer.unref();
 }
@@ -706,22 +665,6 @@ function clearIdleTimer(managed: ManagedPty): void {
   if (managed.idleTimer) {
     clearTimeout(managed.idleTimer);
     managed.idleTimer = null;
-  }
-}
-
-function resetCompletionTimer(managed: ManagedPty): void {
-  clearCompletionTimer(managed);
-  managed.completionTimer = setTimeout(() => {
-    // No output for completionIdleSecs → completion detected
-    managed.onCompletion?.();
-  }, managed.completionIdleSecs * 1000);
-  managed.completionTimer.unref();
-}
-
-function clearCompletionTimer(managed: ManagedPty): void {
-  if (managed.completionTimer) {
-    clearTimeout(managed.completionTimer);
-    managed.completionTimer = null;
   }
 }
 

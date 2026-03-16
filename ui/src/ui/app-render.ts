@@ -1129,6 +1129,7 @@ export function renderApp(state: AppViewState) {
                     env: [],
                     timeout: 300,
                     idleTimeout: 600,
+                    tailTrimMarker: "",
                   };
                   state.agentCliCreateError = null;
                   state.agentShowCliCreateDialog = true;
@@ -1141,14 +1142,31 @@ export function renderApp(state: AppViewState) {
                   state.agentCliCreateForm = { ...state.agentCliCreateForm, [field]: value };
                 },
                 onCliTypeChange: (cliType: CliType) => {
-                  const presets: Record<CliType, { name: string; command: string; emoji: string }> =
-                    {
-                      "claude-code": { name: "claude-code", command: "claude", emoji: "🤖" },
-                      opencode: { name: "opencode", command: "opencode", emoji: "🔧" },
-                      codebuddy: { name: "codebuddy", command: "codebuddy", emoji: "🛠️" },
-                      qwen: { name: "qwen", command: "qwen", emoji: "🐉" },
-                      custom: { name: "", command: "", emoji: "🔧" },
-                    };
+                  const presets: Record<
+                    CliType,
+                    { name: string; command: string; emoji: string; tailTrimMarker: string }
+                  > = {
+                    "claude-code": {
+                      name: "claude-code",
+                      command: "claude",
+                      emoji: "🤖",
+                      tailTrimMarker: "↵\\s*send",
+                    },
+                    opencode: {
+                      name: "opencode",
+                      command: "opencode",
+                      emoji: "🔧",
+                      tailTrimMarker: "",
+                    },
+                    codebuddy: {
+                      name: "codebuddy",
+                      command: "codebuddy",
+                      emoji: "🛠️",
+                      tailTrimMarker: "↵\\s*send",
+                    },
+                    qwen: { name: "qwen", command: "qwen", emoji: "🐉", tailTrimMarker: "" },
+                    custom: { name: "", command: "", emoji: "🔧", tailTrimMarker: "" },
+                  };
                   const preset = presets[cliType];
                   state.agentCliCreateForm = {
                     ...state.agentCliCreateForm,
@@ -1156,6 +1174,7 @@ export function renderApp(state: AppViewState) {
                     name: preset.name,
                     command: preset.command,
                     emoji: preset.emoji,
+                    tailTrimMarker: preset.tailTrimMarker,
                   };
                 },
                 onCliEnvAdd: () => {

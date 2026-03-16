@@ -2933,7 +2933,7 @@
 }
 
 .dialog-card--wide {
-  width: min(560px, calc(100% - 32px));
+  width: min(640px, calc(100% - 32px));
 }
 
 /* ─── Add Menu Dropdown ─── */

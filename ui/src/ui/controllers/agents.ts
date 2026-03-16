@@ -245,6 +245,7 @@ export async function createCliAgent(
       ...(Object.keys(envObj).length > 0 ? { env: envObj } : {}),
       timeout: params.timeout * 1000, // convert seconds to ms
       emoji: params.emoji || "🔧",
+      tailTrimMarker: params.tailTrimMarker || undefined,
     });
 
     if (res?.ok) {
@@ -376,6 +377,7 @@ export function showCliEditDialog(state: AgentsState, agentId: string): void {
     env: agent.env ? Object.entries(agent.env).map(([key, value]) => ({ key, value })) : [],
     timeout: agent.timeout ? Math.round(agent.timeout / 1000) : 300,
     idleTimeout: 600, // Default value
+    tailTrimMarker: agent.tailTrimMarker || "",
   };
 
   state.agentCliEditAgentId = agentId;
@@ -427,6 +429,7 @@ export async function updateCliAgent(state: AgentsState): Promise<boolean> {
       env: Object.keys(envObj).length > 0 ? envObj : undefined,
       timeout: cliCreateForm.timeout * 1000,
       emoji: cliCreateForm.emoji || "🔧",
+      tailTrimMarker: cliCreateForm.tailTrimMarker || undefined,
     });
 
     await loadCliAgents(state);

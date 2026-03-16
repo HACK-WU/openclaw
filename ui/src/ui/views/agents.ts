@@ -42,6 +42,7 @@ export type CliAgentsListResult = {
     cwd?: string;
     env?: Record<string, string>;
     timeout?: number;
+    tailTrimMarker?: string;
   }>;
 };
 
@@ -79,15 +80,29 @@ export type CliAgentCreateForm = {
   env: Array<{ key: string; value: string }>;
   timeout: number;
   idleTimeout: number;
+  /** Regex pattern to detect CLI prompt area at the end of terminal output for trimming. */
+  tailTrimMarker: string;
+  /** User-supplied text for tail trim preview testing (UI-only, not persisted). */
+  tailTrimTestText?: string;
+  /** Whether the tail trim test preview is visible. */
+  tailTrimTestVisible?: boolean;
 };
 
 /** CLI type presets for auto-filling form fields. */
-const _CLI_PRESETS: Record<CliType, { name: string; command: string; emoji: string }> = {
-  "claude-code": { name: "claude-code", command: "claude", emoji: "🤖" },
-  opencode: { name: "opencode", command: "opencode", emoji: "🔧" },
-  codebuddy: { name: "codebuddy", command: "codebuddy", emoji: "🛠️" },
-  qwen: { name: "qwen", command: "qwen", emoji: "🐉" },
-  custom: { name: "", command: "", emoji: "🔧" },
+const _CLI_PRESETS: Record<
+  CliType,
+  { name: string; command: string; emoji: string; tailTrimMarker: string }
+> = {
+  "claude-code": {
+    name: "claude-code",
+    command: "claude",
+    emoji: "🤖",
+    tailTrimMarker: "↵\\s*send",
+  },
+  opencode: { name: "opencode", command: "opencode", emoji: "🔧", tailTrimMarker: "" },
+  codebuddy: { name: "codebuddy", command: "codebuddy", emoji: "🛠️", tailTrimMarker: "↵\\s*send" },
+  qwen: { name: "qwen", command: "qwen", emoji: "🐉", tailTrimMarker: "" },
+  custom: { name: "", command: "", emoji: "🔧", tailTrimMarker: "" },
 };
 
 export type AgentsProps = {
@@ -298,6 +313,10 @@ function renderBridgeConfigSection(
           <div class="agent-kv">
             <div class="label">Environment Variables</div>
             <div>${bridge.env && typeof bridge.env === "object" ? `${Object.keys(bridge.env).length} configured` : "none"}</div>
+          </div>
+          <div class="agent-kv">
+            <div class="label">Tail Trim Marker</div>
+            <div class="mono">${typeof bridge.tailTrimMarker === "string" && bridge.tailTrimMarker ? bridge.tailTrimMarker : "none"}</div>
           </div>
         `
           : html`
@@ -747,6 +766,16 @@ function renderCliAgentOverview(agent: CliAgentsListResult["agents"][number]) {
         <div class="agent-kv">
           <div class="label">Configured</div>
           <div>${envCount > 0 ? `${envCount} variables (values masked)` : "none"}</div>
+        </div>
+      </div>
+
+      <div class="agents-overview-grid" style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px;">
+        <div class="agent-kv" style="grid-column: 1 / -1;">
+          <div class="label" style="font-weight: 600; font-size: 13px;">Output Processing</div>
+        </div>
+        <div class="agent-kv">
+          <div class="label">Tail Trim Marker</div>
+          <div class="mono">${agent.tailTrimMarker || "(none)"}</div>
         </div>
       </div>
     </section>
@@ -1401,6 +1430,163 @@ function renderCreateAgentDialog(props: AgentsProps) {
   `;
 }
 
+// ─── Tail Trim Marker Test Preview ───
+
+const TAIL_TRIM_SAMPLE_TEXT = `Hello! I'm codebuddy, the code implementation specialist in this group.
+
+What can I help you with today?
+
+Write a simple Python or HTML project ↵ send
+⏵⏵ bypass permissions on (shift+tab to cycle)
+─────────────────────────────────────────────
+> 帮我写一个Python小程序                 ↵ send
+─────────────────────────────────────────────
+? for shortcuts`;
+
+/**
+ * Chrome line detection (same logic as bridge-terminal.ts).
+ * Duplicated here to avoid cross-module dependency for a UI-only preview.
+ */
+function isChromeLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return false;
+  }
+  return /^[─━│┃┌┐└┘├┤┬┴┼═║╔╗╚╝╠╣╦╩╬=\-\s]+$/.test(trimmed);
+}
+
+/**
+ * Compute the tail-trim preview result for a given text and marker pattern.
+ * Returns the lines array with each line's keep/trim status, or an error.
+ */
+function computeTailTrimPreview(
+  text: string,
+  markerPattern: string,
+): { lines: string[]; cutIndex: number } | { error: string } {
+  let marker: RegExp;
+  try {
+    marker = new RegExp(markerPattern);
+  } catch {
+    return { error: "⚠️ 正则表达式无效" };
+  }
+
+  const lines = text.split("\n");
+
+  // Find marker line (search from end)
+  let markerLineIndex = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (marker.test(lines[i])) {
+      markerLineIndex = i;
+      break;
+    }
+  }
+
+  if (markerLineIndex === -1) {
+    return { error: "ℹ️ 在测试文本中未匹配到该正则" };
+  }
+
+  // Extend upward over chrome lines
+  let cutIndex = markerLineIndex;
+  for (let i = markerLineIndex - 1; i >= 0; i--) {
+    if (isChromeLine(lines[i]) || lines[i].trim() === "") {
+      cutIndex = i;
+    } else {
+      break;
+    }
+  }
+
+  return { lines, cutIndex };
+}
+
+/**
+ * Render the tail-trim preview result (colored lines).
+ */
+function renderTrimPreviewResult(lines: string[], cutIndex: number) {
+  return html`
+    <div style="margin-top: 6px; background: #1e1e2e; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 11px; line-height: 1.4; overflow-x: auto; max-height: 240px; overflow-y: auto;">
+      <div style="color: #a6adc8; margin-bottom: 4px; font-size: 10px;">预览（绿色=保留，红色=裁剪）：</div>
+      ${lines.map(
+        (line, i) => html`
+          <div style="color: ${i >= cutIndex ? "#f38ba8" : "#a6e3a1"}; white-space: pre; ${i === cutIndex ? "border-top: 1px dashed #585b70; padding-top: 2px;" : ""}">
+            ${i >= cutIndex ? "✕ " : "✓ "}${line || " "}
+          </div>
+        `,
+      )}
+    </div>
+  `;
+}
+
+/**
+ * Render the tail trim marker test section with:
+ * - A textarea for pasting custom test text
+ * - A "test" button to trigger the preview
+ * - The preview result (colored lines showing keep/trim)
+ */
+function renderTailTrimTest(
+  markerPattern: string,
+  testText: string | undefined,
+  testVisible: boolean | undefined,
+  onTestTextChange: (text: string) => void,
+  onTestVisibleChange: (visible: boolean) => void,
+) {
+  // Validate the regex first
+  let regexValid = true;
+  try {
+    new RegExp(markerPattern);
+  } catch {
+    regexValid = false;
+  }
+
+  if (!regexValid) {
+    return html`
+      <div class="callout danger" style="margin-top: 4px; font-size: 12px">⚠️ 正则表达式无效</div>
+    `;
+  }
+
+  // Use custom text if provided, otherwise the sample
+  const effectiveText = testText?.trim() ? testText : TAIL_TRIM_SAMPLE_TEXT;
+  const isCustom = Boolean(testText?.trim());
+
+  // Compute preview result when visible
+  const previewResult = testVisible ? computeTailTrimPreview(effectiveText, markerPattern) : null;
+
+  return html`
+    <div style="margin-top: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+        <span style="font-size: 12px; color: var(--muted);">截断测试</span>
+        <button
+          class="btn btn--sm"
+          type="button"
+          style="font-size: 11px; padding: 2px 10px;"
+          @click=${() => onTestVisibleChange(!testVisible)}
+        >${testVisible ? "收起" : "测试截断效果"}</button>
+      </div>
+      ${
+        testVisible
+          ? html`
+          <textarea
+            style="width: 100%; min-height: 100px; max-height: 200px; font-family: monospace; font-size: 11px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; box-sizing: border-box;"
+            placeholder=${TAIL_TRIM_SAMPLE_TEXT}
+            .value=${testText ?? ""}
+            @input=${(e: Event) => onTestTextChange((e.target as HTMLTextAreaElement).value)}
+          ></textarea>
+          <div style="font-size: 10px; color: var(--muted); margin-top: 2px; margin-bottom: 4px;">
+            ${isCustom ? "使用自定义文本" : "使用默认示例文本（粘贴自定义文本到上方输入框可替换）"}
+          </div>
+          ${
+            previewResult
+              ? "error" in previewResult
+                ? html`<div class="callout" style="margin-top: 4px; font-size: 12px;">${previewResult.error}</div>`
+                : renderTrimPreviewResult(previewResult.lines, previewResult.cutIndex)
+              : nothing
+          }
+        `
+          : nothing
+      }
+    </div>
+  `;
+}
+
 function renderCreateCliAgentDialog(props: AgentsProps) {
   const { cliCreateForm, cliCreateBusy, cliCreateError } = props;
   const nameIsValidId = AGENT_ID_PATTERN.test(cliCreateForm.name);
@@ -1609,6 +1795,31 @@ function renderCreateCliAgentDialog(props: AgentsProps) {
               </div>
             </label>
           </div>
+
+          <!-- Tail Trim Marker -->
+          <label class="field">
+            <span>输出尾部裁剪标记</span>
+            <input
+              type="text"
+              .value=${cliCreateForm.tailTrimMarker}
+              placeholder="e.g. ↵\\s*send"
+              ?disabled=${cliCreateBusy}
+              @input=${(e: Event) => props.onCliCreateFormChange("tailTrimMarker", (e.target as HTMLInputElement).value)}
+            />
+            <span class="field-hint">正则表达式，用于识别 CLI 工具运行完毕后的固定提示区域（如输入框），匹配到的行及其下方内容将从提取的文本中去除。留空则不裁剪。</span>
+            ${
+              cliCreateForm.tailTrimMarker
+                ? renderTailTrimTest(
+                    cliCreateForm.tailTrimMarker,
+                    cliCreateForm.tailTrimTestText,
+                    cliCreateForm.tailTrimTestVisible,
+                    (text: string) => props.onCliCreateFormChange("tailTrimTestText", text),
+                    (visible: boolean) =>
+                      props.onCliCreateFormChange("tailTrimTestVisible", visible),
+                  )
+                : nothing
+            }
+          </label>
         </div>
         <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 16px;">
           <button class="btn btn--sm" ?disabled=${cliCreateBusy} @click=${props.onHideCliCreateDialog}>
@@ -1836,6 +2047,31 @@ function renderEditCliAgentDialog(props: AgentsProps) {
               </div>
             </label>
           </div>
+
+          <!-- Tail Trim Marker -->
+          <label class="field">
+            <span>输出尾部裁剪标记</span>
+            <input
+              type="text"
+              .value=${cliCreateForm.tailTrimMarker}
+              placeholder="e.g. ↵\\s*send"
+              ?disabled=${cliEditBusy}
+              @input=${(e: Event) => props.onCliCreateFormChange("tailTrimMarker", (e.target as HTMLInputElement).value)}
+            />
+            <span class="field-hint">正则表达式，用于识别 CLI 工具运行完毕后的固定提示区域（如输入框），匹配到的行及其下方内容将从提取的文本中去除。留空则不裁剪。</span>
+            ${
+              cliCreateForm.tailTrimMarker
+                ? renderTailTrimTest(
+                    cliCreateForm.tailTrimMarker,
+                    cliCreateForm.tailTrimTestText,
+                    cliCreateForm.tailTrimTestVisible,
+                    (text: string) => props.onCliCreateFormChange("tailTrimTestText", text),
+                    (visible: boolean) =>
+                      props.onCliCreateFormChange("tailTrimTestVisible", visible),
+                  )
+                : nothing
+            }
+          </label>
         </div>
         <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 16px;">
           <button class="btn btn--sm" ?disabled=${cliEditBusy} @click=${props.onHideCliEditDialog}>
