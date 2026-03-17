@@ -100,6 +100,14 @@ class TypewriterDirective extends AsyncDirective {
     } else if (prevTarget.startsWith(text)) {
       // Truncation: keep what we can.
       this._revealed = Math.min(this._revealed, text.length);
+    } else if (this._mode === "line") {
+      // Line mode (terminal/CLI output): in-place line overwrites are normal
+      // (e.g. \r carriage return updating a progress bar on line 1). Rewinding
+      // the revealed cursor to the common prefix would cause the entire bubble
+      // to re-animate from scratch, producing a jarring flicker. Instead, snap
+      // the revealed cursor to the full new text length so the update appears
+      // instantly — the terminal already handles the visual animation.
+      this._revealed = text.length;
     } else {
       // Rewrite: keep only the common prefix.
       const prefix = commonPrefixLength(prevTarget, text);
