@@ -288,6 +288,16 @@ export const en: Record<string, string> = {
   "chat.group.maxConsecutive": "Max Consecutive",
   "chat.group.maxConsecutiveHint":
     "Maximum number of consecutive responses a single agent can make before yielding to others.",
+  "chat.group.projectDirectory": "Project Directory (optional)",
+  "chat.group.projectDirectoryHint":
+    "CLI Agents will start in this directory. Locked after creation.",
+  "chat.group.projectDocs": "Project Docs (optional)",
+  "chat.group.projectDocsHint": "Comma-separated file paths injected into agent context.",
+  "chat.group.error.directoryNotFound": "Directory does not exist",
+  "chat.group.error.fileNotFound": "File(s) not found: {files}",
+  "chat.group.role.assistant": "Assistant",
+  "chat.group.role.member": "Member",
+  "chat.group.role.cliAssistant": "CLI Assistant",
 
   // Errors
   "error.notFound": "Not found",

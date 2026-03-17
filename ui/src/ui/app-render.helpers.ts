@@ -951,6 +951,7 @@ export function renderNavGroupChats(state: AppViewState) {
               state.groupCreateDialog = {
                 name: "",
                 selectedAgents: [],
+                pendingRoles: {},
                 messageMode: "unicast",
                 projectDirectory: "",
                 projectDocs: "",

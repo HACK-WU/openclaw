@@ -274,6 +274,15 @@ export const zhTW: Record<string, string> = {
   "chat.group.maxRoundsHint": "單次群聊對話中的最大輪數。每輪允許智能體各回覆一次。",
   "chat.group.maxConsecutive": "最大連續回覆",
   "chat.group.maxConsecutiveHint": "單個智能體在讓出對話權之前可連續回覆的最大次數。",
+  "chat.group.projectDirectory": "專案目錄（可選）",
+  "chat.group.projectDirectoryHint": "CLI 智能體將在此目錄下啟動。建立後不可更改。",
+  "chat.group.projectDocs": "專案文檔（可選）",
+  "chat.group.projectDocsHint": "注入到智能體上下文的檔案路徑，逗號分隔。",
+  "chat.group.error.directoryNotFound": "目錄不存在",
+  "chat.group.error.fileNotFound": "檔案不存在：{files}",
+  "chat.group.role.assistant": "助手",
+  "chat.group.role.member": "成員",
+  "chat.group.role.cliAssistant": "CLI 助手",
 
   // Errors
   "error.notFound": "未找到",

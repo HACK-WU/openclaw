@@ -1065,6 +1065,37 @@
   white-space: nowrap;
 }
 
+/* Role select dropdown - always visible */
+.group-create__role-select {
+  margin-left: auto;
+  width: auto;
+  min-width: 120px;
+  font-size: 12px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+/* Unselected state - slightly dimmed but still interactive */
+.group-create__role-select--unselected {
+  opacity: 0.6;
+}
+
+.group-create__role-select--unselected:hover {
+  opacity: 0.8;
+}
+
+/* Validation error state */
+.group-create__field--error .field {
+  border-color: var(--color-error, #f38ba8);
+}
+
+.group-create__error {
+  display: block;
+  color: var(--color-error, #f38ba8);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
 .group-create-dialog__actions {
   margin-top: 4px;
 }

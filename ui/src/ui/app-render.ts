@@ -1641,6 +1641,7 @@ export function renderApp(state: AppViewState) {
                   state.groupCreateDialog = {
                     name: "",
                     selectedAgents: [],
+                    pendingRoles: {},
                     messageMode: "unicast",
                     projectDirectory: "",
                     projectDocs: "",
@@ -1678,6 +1679,14 @@ export function renderApp(state: AppViewState) {
                       );
                     })();
                   }
+                },
+                onValidatePaths: async (paths, type) => {
+                  const { validatePaths } = await import("./controllers/group-chat.ts");
+                  return validatePaths(
+                    state as unknown as Parameters<typeof validatePaths>[0],
+                    paths,
+                    type,
+                  );
                 },
                 onRefresh: () =>
                   void loadGroupList(state as unknown as Parameters<typeof loadGroupList>[0]),

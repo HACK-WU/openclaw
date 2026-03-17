@@ -194,6 +194,11 @@ export type GroupChatViewProps = {
   onConfirmDisbandGroup: () => void;
   // Export transcript
   onExportTranscript: () => void;
+  // Path validation
+  onValidatePaths?: (
+    paths: string[],
+    type: "directory" | "file",
+  ) => Promise<Array<{ path: string; exists: boolean; error?: string }>>;
   onTerminalResize?: (groupId: string, agentId: string, cols: number, rows: number) => void;
   onTerminalStreamUpdate?: (groupId: string, agentId: string, text: string) => void;
   onTerminalStreamEnd?: (groupId: string, agentId: string, extractedText: string) => void;
@@ -1389,6 +1394,109 @@ function renderDisbandGroupDialog(props: GroupChatViewProps) {
 
 // ─── Create Dialog ───
 
+/**
+ * Validate project directory path.
+ * Checks if the directory exists via backend RPC.
+ */
+async function validateProjectDirectory(
+  props: GroupChatViewProps,
+  dialog: NonNullable<GroupChatViewProps["groupCreateDialog"]>,
+): Promise<void> {
+  const dirPath = dialog.projectDirectory.trim();
+  if (!dirPath) {
+    // Empty = optional, no error
+    dialog.directoryError = undefined;
+    return;
+  }
+
+  if (!props.onValidatePaths) {
+    // No validator available, clear error
+    dialog.directoryError = undefined;
+    return;
+  }
+
+  try {
+    const results = await props.onValidatePaths([dirPath], "directory");
+    const result = results[0];
+    if (!result) {
+      dialog.directoryError = undefined;
+      return;
+    }
+
+    if (!result.exists) {
+      dialog.directoryError = t("chat.group.error.directoryNotFound");
+    } else if (result.error) {
+      dialog.directoryError = result.error;
+    } else {
+      dialog.directoryError = undefined;
+    }
+  } catch (err) {
+    dialog.directoryError = String(err);
+  }
+}
+
+/**
+ * Validate project docs paths.
+ * Checks if each file exists via backend RPC.
+ */
+async function validateProjectDocs(
+  props: GroupChatViewProps,
+  dialog: NonNullable<GroupChatViewProps["groupCreateDialog"]>,
+): Promise<void> {
+  const docsValue = dialog.projectDocs.trim();
+  if (!docsValue) {
+    // Empty = optional, no error
+    dialog.docsError = undefined;
+    return;
+  }
+
+  const paths = docsValue
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (paths.length === 0) {
+    dialog.docsError = undefined;
+    return;
+  }
+
+  if (!props.onValidatePaths) {
+    // No validator available, clear error
+    dialog.docsError = undefined;
+    return;
+  }
+
+  try {
+    const results = await props.onValidatePaths(paths, "file");
+    const missingFiles: string[] = [];
+    const errorFiles: string[] = [];
+
+    for (const result of results) {
+      if (!result.exists) {
+        missingFiles.push(result.path);
+      } else if (result.error) {
+        errorFiles.push(`${result.path}: ${result.error}`);
+      }
+    }
+
+    if (missingFiles.length > 0) {
+      dialog.docsError = t("chat.group.error.fileNotFound", { files: missingFiles.join(", ") });
+    } else if (errorFiles.length > 0) {
+      dialog.docsError = errorFiles.join("; ");
+    } else {
+      dialog.docsError = undefined;
+    }
+  } catch (err) {
+    dialog.docsError = String(err);
+  }
+}
+
+/** Check if dialog has any validation errors */
+function hasValidationErrors(
+  dialog: NonNullable<GroupChatViewProps["groupCreateDialog"]>,
+): boolean {
+  return !!(dialog.directoryError || dialog.docsError);
+}
+
 function renderCreateGroupDialog(props: GroupChatViewProps) {
   const dialog = props.groupCreateDialog;
   if (!dialog) {
@@ -1420,6 +1528,11 @@ function renderCreateGroupDialog(props: GroupChatViewProps) {
             <div class="group-create__agents">
               ${props.agentsList.map((agent) => {
                 const selected = dialog.selectedAgents.find((s) => s.agentId === agent.id);
+                // Get or compute default role: first checked = assistant, others = member
+                const pendingRole = dialog.pendingRoles[agent.id];
+                const defaultRole = dialog.selectedAgents.length === 0 ? "assistant" : "member";
+                const currentRole = selected?.role ?? pendingRole ?? defaultRole;
+
                 return html`
                     <label class="group-create__agent-option">
                       <input
@@ -1428,12 +1541,24 @@ function renderCreateGroupDialog(props: GroupChatViewProps) {
                         @change=${(e: Event) => {
                           const checked = (e.target as HTMLInputElement).checked;
                           if (checked) {
-                            const isFirst = dialog.selectedAgents.length === 0;
+                            // Use the current role from dropdown (if set) or compute default
+                            const role =
+                              dialog.pendingRoles[agent.id] ??
+                              (dialog.selectedAgents.length === 0 ? "assistant" : "member");
                             dialog.selectedAgents = [
                               ...dialog.selectedAgents,
-                              { agentId: agent.id, role: isFirst ? "assistant" : "member" },
+                              { agentId: agent.id, role },
                             ];
+                            // Clear pending role since it's now selected
+                            delete dialog.pendingRoles[agent.id];
                           } else {
+                            // Save current role to pending before removing
+                            const existing = dialog.selectedAgents.find(
+                              (s) => s.agentId === agent.id,
+                            );
+                            if (existing) {
+                              dialog.pendingRoles[agent.id] = existing.role;
+                            }
                             dialog.selectedAgents = dialog.selectedAgents.filter(
                               (s) => s.agentId !== agent.id,
                             );
@@ -1442,31 +1567,33 @@ function renderCreateGroupDialog(props: GroupChatViewProps) {
                       />
                       <span class="group-create__agent-emoji">${agent.identity?.emoji ?? "🤖"}</span>
                       <span class="group-create__agent-name">${agent.identity?.name ?? agent.id}</span>
-                      ${
-                        selected
-                          ? html`
-                          <select
-                            class="field group-create__role-select"
-                            style="margin-left: auto; width: auto; min-width: 120px; font-size: 12px; padding: 2px 6px;"
-                            .value=${selected.role}
-                            @click=${(e: Event) => e.stopPropagation()}
-                            @change=${(e: Event) => {
-                              const role = (e.target as HTMLSelectElement).value as
-                                | "assistant"
-                                | "member"
-                                | "bridge-assistant";
-                              dialog.selectedAgents = dialog.selectedAgents.map((s) =>
-                                s.agentId === agent.id ? { ...s, role } : s,
-                              );
-                            }}
-                          >
-                            <option value="assistant" ?selected=${selected.role === "assistant"}>assistant</option>
-                            <option value="member" ?selected=${selected.role === "member"}>member</option>
-                            <option value="bridge-assistant" ?selected=${selected.role === "bridge-assistant"}>bridge-assistant</option>
-                          </select>
-                        `
-                          : nothing
-                      }
+                      <!-- Role dropdown always visible -->
+                      <select
+                        class="field group-create__role-select ${selected ? "" : "group-create__role-select--unselected"}"
+                        style="margin-left: auto; width: auto; min-width: 120px; font-size: 12px; padding: 2px 6px;"
+                        .value=${currentRole}
+                        @click=${(e: Event) => e.stopPropagation()}
+                        @change=${(e: Event) => {
+                          const role = (e.target as HTMLSelectElement).value as
+                            | "assistant"
+                            | "member"
+                            | "bridge-assistant";
+
+                          if (selected) {
+                            // Already selected: update immediately
+                            dialog.selectedAgents = dialog.selectedAgents.map((s) =>
+                              s.agentId === agent.id ? { ...s, role } : s,
+                            );
+                          } else {
+                            // Not selected: save to pending roles
+                            dialog.pendingRoles[agent.id] = role;
+                          }
+                        }}
+                      >
+                        <option value="assistant" ?selected=${currentRole === "assistant"}>${t("chat.group.role.assistant")}</option>
+                        <option value="member" ?selected=${currentRole === "member"}>${t("chat.group.role.member")}</option>
+                        <option value="bridge-assistant" ?selected=${currentRole === "bridge-assistant"}>${t("chat.group.role.cliAssistant")}</option>
+                      </select>
                     </label>
                   `;
               })}
@@ -1488,35 +1615,59 @@ function renderCreateGroupDialog(props: GroupChatViewProps) {
             </select>
           </div>
           <!-- Project Configuration (optional) -->
-          <div class="form-field group-create__field">
-            <label class="group-create__label">Project Directory (optional)</label>
+          <div class="form-field group-create__field ${dialog.directoryError ? "group-create__field--error" : ""}">
+            <label class="group-create__label">${t("chat.group.projectDirectory")}</label>
             <input
               type="text"
               class="field group-create__input"
               placeholder="/home/user/my-project"
               .value=${dialog.projectDirectory}
+              @keydown=${(e: KeyboardEvent) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  // Trigger validation on Enter
+                  void validateProjectDirectory(props, dialog);
+                }
+              }}
+              @blur=${() => {
+                // Trigger validation on blur
+                void validateProjectDirectory(props, dialog);
+              }}
               @input=${(e: Event) => {
                 dialog.projectDirectory = (e.target as HTMLInputElement).value;
+                // Clear error when user types
+                dialog.directoryError = undefined;
               }}
             />
-            <span class="group-create__hint" style="font-size: 11px; color: var(--muted); margin-top: 2px;">
-              CLI Agents will start in this directory. Locked after creation.
-            </span>
+            <span class="group-create__hint">${t("chat.group.projectDirectoryHint")}</span>
+            ${dialog.directoryError ? html`<span class="group-create__error">${dialog.directoryError}</span>` : nothing}
           </div>
-          <div class="form-field group-create__field">
-            <label class="group-create__label">Project Docs (optional)</label>
+          <div class="form-field group-create__field ${dialog.docsError ? "group-create__field--error" : ""}">
+            <label class="group-create__label">${t("chat.group.projectDocs")}</label>
             <input
               type="text"
               class="field group-create__input"
               placeholder="README.md, docs/architecture.md"
               .value=${dialog.projectDocs}
+              @keydown=${(e: KeyboardEvent) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  // Trigger validation on Enter
+                  void validateProjectDocs(props, dialog);
+                }
+              }}
+              @blur=${() => {
+                // Trigger validation on blur
+                void validateProjectDocs(props, dialog);
+              }}
               @input=${(e: Event) => {
                 dialog.projectDocs = (e.target as HTMLInputElement).value;
+                // Clear error when user types
+                dialog.docsError = undefined;
               }}
             />
-            <span class="group-create__hint" style="font-size: 11px; color: var(--muted); margin-top: 2px;">
-              Comma-separated file paths injected into agent context.
-            </span>
+            <span class="group-create__hint">${t("chat.group.projectDocsHint")}</span>
+            ${dialog.docsError ? html`<span class="group-create__error">${dialog.docsError}</span>` : nothing}
           </div>
           ${dialog.error ? html`<div class="modal-error">${dialog.error}</div>` : nothing}
         </div>
@@ -1530,7 +1681,7 @@ function renderCreateGroupDialog(props: GroupChatViewProps) {
           </button>
           <button
             class="btn btn--primary"
-            ?disabled=${dialog.isBusy || dialog.selectedAgents.length < 1}
+            ?disabled=${dialog.isBusy || dialog.selectedAgents.length < 1 || hasValidationErrors(dialog)}
             @click=${() => {
               const project: { directory?: string; docs?: string[] } = {};
               if (dialog.projectDirectory.trim()) {

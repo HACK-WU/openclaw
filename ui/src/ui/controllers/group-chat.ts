@@ -176,11 +176,19 @@ export type GroupChatState = {
 export type GroupCreateDialogState = {
   name: string;
   selectedAgents: Array<{ agentId: string; role: "assistant" | "member" | "bridge-assistant" }>;
+  /** Pending role selections for unchecked agents (agentId → role). */
+  pendingRoles: Record<string, "assistant" | "member" | "bridge-assistant">;
   messageMode: "unicast" | "broadcast";
   /** Project directory for CLI Agents (optional). */
   projectDirectory: string;
   /** Project documentation paths (optional). */
   projectDocs: string;
+  /** Directory validation error message. */
+  directoryError?: string;
+  /** Docs validation error message. */
+  docsError?: string;
+  /** Whether validation is in progress. */
+  isValidating?: boolean;
   isBusy: boolean;
   error: string | null;
 };
@@ -1234,6 +1242,29 @@ export async function abortGroupChat(host: GroupHost, groupId: string): Promise<
     await host.client.request("group.abort", { groupId });
   } catch {
     // best-effort
+  }
+}
+
+/**
+ * Validate paths (directories or files) via backend RPC.
+ * Used by the create dialog to verify user input.
+ */
+export async function validatePaths(
+  host: GroupHost,
+  paths: string[],
+  type: "directory" | "file",
+): Promise<Array<{ path: string; exists: boolean; error?: string }>> {
+  if (!host.client || !host.connected || paths.length === 0) {
+    return paths.map((p) => ({ path: p, exists: false, error: "Not connected" }));
+  }
+
+  try {
+    const result = await host.client.request<{
+      results: Array<{ path: string; exists: boolean; error?: string }>;
+    }>("group.validatePath", { paths, type });
+    return result?.results ?? [];
+  } catch (err) {
+    return paths.map((p) => ({ path: p, exists: false, error: String(err) }));
   }
 }
 

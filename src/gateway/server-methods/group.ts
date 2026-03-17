@@ -837,6 +837,65 @@ const handleGroupTerminalTextExtracted: GatewayRequestHandler = ({ params, respo
   respond(true, { ok: true });
 };
 
+// ─── Path Validation ───
+
+/**
+ * Validate paths (directory or files) for project configuration.
+ * Used by the group create dialog to verify user input before submission.
+ */
+const handleGroupValidatePath: GatewayRequestHandler = async ({ params, respond }) => {
+  const paths = params.paths as string[] | undefined;
+  const type = params.type as "directory" | "file" | undefined;
+
+  if (!Array.isArray(paths) || paths.length === 0) {
+    respond(true, { results: [] });
+    return;
+  }
+
+  const { pathExists } = await import("../../utils.js");
+  const { stat } = await import("node:fs/promises");
+
+  const results: Array<{
+    path: string;
+    exists: boolean;
+    isDirectory?: boolean;
+    isFile?: boolean;
+    error?: string;
+  }> = [];
+
+  for (const p of paths) {
+    if (!p || typeof p !== "string") {
+      results.push({ path: String(p), exists: false, error: "Invalid path" });
+      continue;
+    }
+
+    try {
+      const exists = await pathExists(p);
+      if (!exists) {
+        results.push({ path: p, exists: false });
+        continue;
+      }
+
+      const stats = await stat(p);
+      const isDirectory = stats.isDirectory();
+      const isFile = stats.isFile();
+
+      // Type-specific validation
+      if (type === "directory" && !isDirectory) {
+        results.push({ path: p, exists: true, isDirectory, isFile, error: "Not a directory" });
+      } else if (type === "file" && !isFile) {
+        results.push({ path: p, exists: true, isDirectory, isFile, error: "Not a file" });
+      } else {
+        results.push({ path: p, exists: true, isDirectory, isFile });
+      }
+    } catch (err) {
+      results.push({ path: p, exists: false, error: String(err) });
+    }
+  }
+
+  respond(true, { results });
+};
+
 // ─── Export handler map ───
 
 export const groupHandlers: GatewayRequestHandlers = {
@@ -861,4 +920,6 @@ export const groupHandlers: GatewayRequestHandlers = {
   "group.setContextConfig": handleGroupSetContextConfig,
   "group.setProjectDocs": handleGroupSetProjectDocs,
   "group.terminalTextExtracted": handleGroupTerminalTextExtracted,
+  // Path validation
+  "group.validatePath": handleGroupValidatePath,
 };

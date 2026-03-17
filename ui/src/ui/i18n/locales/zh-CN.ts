@@ -261,6 +261,15 @@ export const zhCN: Record<string, string> = {
   "chat.group.maxRoundsHint": "单次群聊对话中的最大轮数。每轮允许智能体各回复一次。",
   "chat.group.maxConsecutive": "最大连续回复",
   "chat.group.maxConsecutiveHint": "单个智能体在让出对话权之前可连续回复的最大次数。",
+  "chat.group.projectDirectory": "项目目录（可选）",
+  "chat.group.projectDirectoryHint": "CLI 智能体将在此目录下启动。创建后不可更改。",
+  "chat.group.projectDocs": "项目文档（可选）",
+  "chat.group.projectDocsHint": "注入到智能体上下文的文件路径，逗号分隔。",
+  "chat.group.error.directoryNotFound": "目录不存在",
+  "chat.group.error.fileNotFound": "文件不存在：{files}",
+  "chat.group.role.assistant": "助手",
+  "chat.group.role.member": "成员",
+  "chat.group.role.cliAssistant": "CLI 助手",
 
   // Errors
   "error.notFound": "未找到",
