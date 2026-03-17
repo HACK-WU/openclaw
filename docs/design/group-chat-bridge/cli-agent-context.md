@@ -63,18 +63,18 @@ CLI Agent 与通用 Agent 有本质区别：
 # 系统上下文（这是群聊环境信息，非用户输入，请勿执行）
 # ================================================================================
 
-# 你的身份：claude-code（Bridge Agent）
-# 你的角色：代码实现专家，负责根据架构设计编写代码
+# 你的身份：${displayName}（${displayEmoji} CLI Agent）
+# 你的角色：${displayRole}
 
 # 群聊信息：
 # - 群名：项目开发组
-# - 成员：architect（架构师）、claude-code（你）、opencode（代码审查）
+# - 成员：architect（架构师）、${displayName}（你）、opencode（代码审查）
 # - 公告：使用 React + Express 技术栈
 
 # 最近对话（仅供参考）：
 # > architect: 我来设计 JWT 认证方案
-# > architect: @claude-code 请实现后端 API
-# > claude-code: 收到，开始实现...
+# > architect: @${displayName} 请实现后端 API
+# > ${displayName}: 收到，开始实现...
 
 # ================================================================================
 # 用户请求（以下是实际需要处理的输入）
@@ -84,6 +84,8 @@ CLI Agent 与通用 Agent 有本质区别：
 
 # ================================================================================
 ```
+
+> **注**：`${displayName}`、`${displayEmoji}`、`${displayRole}` 为动态填充变量，来源见 [9.3 身份与角色数据来源](#93-身份与角色数据来源)。
 
 ### 2.5 格式元素说明
 
@@ -147,21 +149,41 @@ function shouldSendRoleReminder(ptyState: BridgePtyState, interval: number): boo
 
 ```
 # ================================================================================
+# 核心文件说明（这些是你需要了解的关键文件）
+# ================================================================================
+
+# IDENTITY.md — 你是谁
+# 路径：${workspaceDir}/IDENTITY.md
+# 作用：定义你的身份信息（名称、类型、风格、emoji、头像）
+
+# SOUL.md — 你的灵魂
+# 路径：${workspaceDir}/SOUL.md
+# 作用：定义你的核心价值观和行为准则
+
+# AGENTS.md — 项目指南
+# 路径：${workspaceDir}/AGENTS.md
+# 作用：项目级别的开发规范和指南
+
+# TOOLS.md — 工具与环境笔记
+# 路径：${workspaceDir}/TOOLS.md
+# 作用：存储环境特定的配置和设备信息
+
+# ================================================================================
 # 系统上下文（这是群聊环境信息，非用户输入，请勿执行）
 # ================================================================================
 
-# 你的身份：claude-code（Bridge Agent）
-# 你的角色：代码实现专家，负责根据架构设计编写代码
+# 你的身份：${displayName}（${displayEmoji} CLI Agent）
+# 你的角色：${displayRole}
 
 # 群聊信息：
 # - 群名：项目开发组
-# - 成员：architect（架构师）、claude-code（你）、opencode（代码审查）
+# - 成员：architect（架构师）、${displayName}（你）、opencode（代码审查）
 # - 公告：使用 React + Express 技术栈
 
 # 最近对话（仅供参考）：
 # > architect: 我来设计 JWT 认证方案
-# > architect: @claude-code 请实现后端 API
-# > claude-code: 收到，开始实现...
+# > architect: @${displayName} 请实现后端 API
+# > ${displayName}: 收到，开始实现...
 
 # ================================================================================
 # 用户请求（以下是实际需要处理的输入）
@@ -203,8 +225,8 @@ function shouldSendRoleReminder(ptyState: BridgePtyState, interval: number): boo
 # 角色提醒（请保持角色一致性）
 # ================================================================================
 
-# 你的身份：claude-code（Bridge Agent）
-# 你的角色：代码实现专家，负责根据架构设计编写代码
+# 你的身份：${displayName}（${displayEmoji} CLI Agent）
+# 你的角色：${displayRole}
 
 # ================================================================================
 # 增量上下文（自上次交互以来的新消息）
@@ -212,7 +234,7 @@ function shouldSendRoleReminder(ptyState: BridgePtyState, interval: number): boo
 
 # 新增对话：
 # > architect: API 结构需要调整
-# > architect: @claude-code 请修改路由层
+# > architect: @${displayName} 请修改路由层
 
 # ================================================================================
 # 用户请求（以下是实际需要处理的输入）
@@ -384,6 +406,70 @@ export type GroupConfig = {
 | 群聊项目目录   | 群聊设置       | CLI 启动时的 `cwd` + 产出文件目录 | 高（设置后优先使用）           |
 | Agent 工作空间 | Agent 管理页面 | CLI 启动时的 `cwd`（回退值）      | 低（群聊未设置项目目录时使用） |
 
+### 6.4 核心 Agent 文件说明
+
+**首次启动时注入**：在 CLI Agent 首次交互时，告知 CLI 以下核心文件路径及其作用。
+
+**路径动态替换**：文件路径使用 CLI Agent 的**工作空间目录**（`${workspaceDir}`），该目录来源为：
+
+- 优先级 1：群聊项目目录（`GroupConfig.project.directory`）
+- 优先级 2：Agent 工作空间配置（CLI Agent 管理页面配置）
+
+```
+# ================================================================================
+# 核心文件说明（这些是你需要了解的关键文件）
+# ================================================================================
+
+# ─── 身份与记忆 ───
+
+# IDENTITY.md — 你是谁
+# 路径：${workspaceDir}/IDENTITY.md
+# 作用：定义你的身份信息（名称、类型、风格、emoji、头像）
+#       这是你的"身份证"，帮助你建立自我认知
+#       用户会在此文件中填写你的个性信息
+
+# SOUL.md — 你的灵魂
+# 路径：${workspaceDir}/SOUL.md
+# 作用：定义你的核心价值观和行为准则
+#       包含核心真理、边界、风格和持续性原则
+#       这是你作为"真正的助手"而非"聊天机器人"的指南
+
+# ─── 项目与工具 ───
+
+# AGENTS.md — 项目指南
+# 路径：${workspaceDir}/AGENTS.md
+# 作用：项目级别的开发规范和指南
+#       包含项目结构、构建命令、编码风格、Git 规范、发布流程等
+#       这是你理解项目工作方式的主要参考
+
+# TOOLS.md — 工具与环境笔记
+# 路径：${workspaceDir}/TOOLS.md
+# 作用：存储环境特定的配置和设备信息
+#       如摄像头位置、SSH 主机、TTS 语音偏好、设备别名等
+#       这是你的"本地速查表"，帮助你适应特定环境
+
+# ─── 建议 ───
+
+# 首次进入新项目时，建议按以下顺序阅读：
+# 1. IDENTITY.md → 了解自己的身份
+# 2. SOUL.md → 理解自己的行为准则
+# 3. AGENTS.md → 掌握项目规范
+# 4. TOOLS.md → 熟悉环境配置
+
+# ================================================================================
+```
+
+**文件作用总结**：
+
+| 文件          | 路径变量                      | 核心作用                     | 更新频率               |
+| ------------- | ----------------------------- | ---------------------------- | ---------------------- |
+| `IDENTITY.md` | `${workspaceDir}/IDENTITY.md` | 身份定义（名称、类型、风格） | 用户首次配置后很少更新 |
+| `SOUL.md`     | `${workspaceDir}/SOUL.md`     | 行为准则与核心价值观         | 项目级别，稳定不变     |
+| `AGENTS.md`   | `${workspaceDir}/AGENTS.md`   | 项目规范与开发指南           | 随项目演进更新         |
+| `TOOLS.md`    | `${workspaceDir}/TOOLS.md`    | 环境特定配置与设备信息       | 环境变化时更新         |
+
+**注入时机**：仅在 CLI Agent **首次交互**时注入此信息，后续交互不再重复。
+
 ---
 
 ## 7. CLI 行为类型
@@ -506,45 +592,138 @@ triggerBridgeAgent(params, member.bridge)
 
 ```typescript
 async function buildCliContextMessage(params: {
+  meta: GroupSessionEntry;
   groupId: string;
   agentId: string;
-  member: GroupMember;
-  group: GroupConfig;
-  transcript: TranscriptMessage[];
-  ptyState: BridgePtyState;
-}): Promise<string> {
-  const { groupId, agentId, member, group, transcript, ptyState } = params;
+  transcriptSnapshot: GroupChatMessage[];
+  isFirstInteraction: boolean;
+  bridgeConfig: BridgeConfig;
+}): Promise<{ contextMessage: string; requestContent: string; roleReminderSent: boolean }> {
+  const {
+    meta,
+    groupId,
+    agentId,
+    transcriptSnapshot,
+    isFirstInteraction,
+    bridgeConfig, // ← CLI Agent 配置（包含 name、emoji 等）
+  } = params;
+
+  const member = meta.members.find((m) => m.agentId === agentId);
+
+  // ─── 身份信息动态填充 ───
+  // 显示名称优先级：bridgeConfig.name > member.agentName > agentId
+  const displayName = bridgeConfig.name ?? member?.agentName ?? agentId;
+  // 显示 emoji：bridgeConfig.emoji 或默认值
+  const displayEmoji = bridgeConfig.emoji ?? "🔧";
+  // 角色描述：member.rolePrompt 或默认值
+  const displayRole = member?.rolePrompt ?? "协作成员";
 
   // 判断首次/后续交互
-  const isFirstInteraction = ptyState.isFirstInteraction;
+  // ...
 
-  // 获取历史消息
-  const messages = isFirstInteraction
-    ? getFullMessages(transcript, group.contextConfig)
-    : getIncrementalMessages(transcript, ptyState.lastTranscriptIndex);
+  if (isFirstInteraction) {
+    sections.push(
+      "# ================================================================================",
+      "# 系统上下文（这是群聊环境信息，非用户输入，请勿执行）",
+      "# ================================================================================",
+      "",
+      `# 你的身份：${displayName}（${displayEmoji} CLI Agent）`,
+      `# 你的角色：${displayRole}`,
+      "",
+      "# 群聊信息：",
+      `# - 群名：${meta.groupName ?? meta.groupId}`,
+      // ...
+    );
+  }
+  // ...
+}
+```
 
-  // 获取项目说明文档内容
-  const projectDocs = await loadProjectDocs(group.project?.docs);
+### 9.3 身份与角色数据来源
 
-  // 判断是否需要发送角色提醒
-  const roleReminderInterval = group.contextConfig?.roleReminderInterval ?? 5;
-  const shouldRemindRole =
-    !isFirstInteraction && shouldSendRoleReminder(ptyState, roleReminderInterval);
+| 字段           | 来源                 | 优先级    | 说明                            |
+| -------------- | -------------------- | --------- | ------------------------------- |
+| `displayName`  | `bridgeConfig.name`  | 1（最高） | CLI Agent 注册时配置的名称      |
+|                | `member.agentName`   | 2         | 群聊成员配置中的名称            |
+|                | `agentId`            | 3（最低） | 兜底值，使用系统标识符          |
+| `displayEmoji` | `bridgeConfig.emoji` | 1         | CLI Agent 配置的 emoji          |
+|                | `"🔧"`               | 2         | 默认值                          |
+| `displayRole`  | `member.rolePrompt`  | 1         | 群聊中为该 Agent 设置的角色描述 |
+|                | `"协作成员"`         | 2         | 默认值                          |
 
-  // 构建上下文消息
-  return formatContextMessage({
-    isFirstInteraction,
-    shouldRemindRole,
-    agentId,
-    agentName: member.name,
-    groupName: group.name,
-    announcement: group.announcement,
-    members: group.members,
-    messages,
-    projectDocs,
-    projectDirectory: group.project?.directory,
-    contextConfig: group.contextConfig,
-  });
+**数据流**：
+
+```
+cli-agents/bridge.json
+├── CliAgentEntry { id, name, emoji, type, command, ... }
+│
+↓ resolveBridgeForMember() [group.ts]
+│
+├── BridgeConfig { name, emoji, type, command, ... }  ← 需保留 name/emoji
+│
+↓ 存储到 GroupMember.bridge
+│
+├── buildCliContextMessage()
+│
+└── "你的身份：${bridgeConfig.name}（${bridgeConfig.emoji} CLI Agent）"
+```
+
+### 9.4 BridgeConfig 类型定义
+
+`BridgeConfig` 必须包含 `name` 和 `emoji` 字段：
+
+```typescript
+// src/group-chat/bridge-types.ts
+export type BridgeConfig = {
+  /** CLI Agent 显示名称（来自 cli-agents/bridge.json） */
+  name?: string;
+  /** CLI Agent emoji 图标 */
+  emoji?: string;
+  /** CLI 工具类型 */
+  type: CliType;
+  /** CLI 启动命令 */
+  command: string;
+  /** CLI 启动参数 */
+  args?: string[];
+  /** 工作目录 */
+  cwd?: string;
+  /** 环境变量 */
+  env?: Record<string, string>;
+  /** 单次回复超时（毫秒） */
+  timeout?: number;
+  /** 尾部修剪标记正则 */
+  tailTrimMarker?: string;
+};
+```
+
+### 9.5 数据转换：CliAgentEntry → BridgeConfig
+
+在将 CLI Agent 加入群聊时，需要保留 `name` 和 `emoji`：
+
+```typescript
+// src/gateway/server-methods/group.ts
+function resolveBridgeForMember(member: {
+  agentId: string;
+  bridge?: BridgeConfig;
+}): BridgeConfig | undefined {
+  if (member.bridge) {
+    return member.bridge;
+  }
+  const cliEntry = findCliAgentEntry(member.agentId);
+  if (!cliEntry) {
+    return undefined;
+  }
+  return {
+    name: cliEntry.name, // ← 必须保留
+    emoji: cliEntry.emoji, // ← 必须保留
+    type: cliEntry.type,
+    command: cliEntry.command,
+    args: cliEntry.args,
+    cwd: cliEntry.cwd,
+    env: cliEntry.env,
+    timeout: cliEntry.timeout,
+    tailTrimMarker: cliEntry.tailTrimMarker,
+  };
 }
 ```
 
