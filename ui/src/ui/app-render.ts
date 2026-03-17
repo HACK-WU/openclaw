@@ -91,7 +91,8 @@ import {
   closeDisbandGroupDialog,
   confirmDisbandGroup,
   sendTerminalResize,
-  sendTerminalTextExtracted,
+  handleBridgeTerminalStreamUpdate,
+  clearBridgeTerminalStream,
 } from "./controllers/group-chat.ts";
 import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
@@ -1688,13 +1689,26 @@ export function renderApp(state: AppViewState) {
                     cols,
                     rows,
                   ),
-                onTerminalTextExtracted: (groupId, agentId, text) =>
-                  void sendTerminalTextExtracted(
-                    state as unknown as Parameters<typeof sendTerminalTextExtracted>[0],
-                    groupId,
-                    agentId,
-                    text,
-                  ),
+                onTerminalStreamUpdate: (groupId, agentId, text) =>
+                  handleBridgeTerminalStreamUpdate(state, groupId, agentId, text),
+                onTerminalStreamEnd: (groupId, agentId, extractedText) => {
+                  clearBridgeTerminalStream(state, agentId);
+                  // Push extracted text to backend for transcript persistence.
+                  // This allows the backend to write a proper group.message and
+                  // persist it so the content survives page refresh.
+                  if (extractedText?.trim()) {
+                    void (async () => {
+                      const { sendTerminalTextExtracted } =
+                        await import("./controllers/group-chat.ts");
+                      await sendTerminalTextExtracted(
+                        state as unknown as Parameters<typeof sendTerminalTextExtracted>[0],
+                        groupId,
+                        agentId,
+                        extractedText,
+                      );
+                    })();
+                  }
+                },
                 // Group settings callbacks
                 onUpdateGroupName: (name) => {
                   if (state.activeGroupId) {

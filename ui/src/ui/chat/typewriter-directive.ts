@@ -4,6 +4,13 @@ import { directive, type ElementPart, type PartInfo, PartType } from "lit/direct
 import { renderMarkdownUncached } from "../markdown.ts";
 
 /**
+ * Reveal mode for the typewriter effect.
+ * - "char": reveal character-by-character (default, for LLM streaming text)
+ * - "line": reveal line-by-line (for terminal/CLI output)
+ */
+export type TypewriterMode = "char" | "line";
+
+/**
  * Minimum interval between character reveals (ms).
  * Lower = faster typing, Higher = slower more visible typing.
  * 16ms ≈ 60 chars/sec (smooth but visible, matches 60fps)
@@ -11,7 +18,7 @@ import { renderMarkdownUncached } from "../markdown.ts";
 const TYPEWRITER_INTERVAL_MS = 16;
 
 /**
- * Characters to reveal per tick.
+ * Characters to reveal per tick (char mode).
  * Keep at 1 for most natural, visible character-by-character effect.
  * Can increase to 2-3 for slightly faster but still smooth animation.
  * Increased to 2 to reduce animation time while maintaining visual effect.
@@ -39,6 +46,12 @@ const CATCH_UP_MULTIPLIER = 4;
  */
 const MD_RENDER_INTERVAL_MS = 80;
 
+/**
+ * Interval between line reveals in "line" mode (ms).
+ * Slightly slower than char mode to create a visible "line-by-line" feel.
+ */
+const LINE_REVEAL_INTERVAL_MS = 60;
+
 function commonPrefixLength(a: string, b: string): number {
   const limit = Math.min(a.length, b.length);
   for (let i = 0; i < limit; i++) {
@@ -62,6 +75,8 @@ class TypewriterDirective extends AsyncDirective {
   private _lastMdRender = 0;
   // Last rendered HTML string to avoid redundant DOM updates
   private _lastRenderedHtml = "";
+  // Reveal mode: "char" (character-by-character) or "line" (line-by-line)
+  private _mode: TypewriterMode = "char";
 
   constructor(partInfo: PartInfo) {
     super(partInfo);
@@ -70,10 +85,11 @@ class TypewriterDirective extends AsyncDirective {
     }
   }
 
-  override update(part: ElementPart, [text]: [string]) {
+  override update(part: ElementPart, [text, mode]: [string, TypewriterMode?]) {
     this._element = part.element;
     const prevTarget = this._target;
     this._target = text;
+    this._mode = mode ?? "char";
 
     // Streaming updates usually append text. However, we can occasionally see
     // truncation or minor rewrites (e.g. model revisions or transport oddities).
@@ -120,17 +136,18 @@ class TypewriterDirective extends AsyncDirective {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  override render(_text: string) {
+  override render(_text: string, _mode?: TypewriterMode) {
     return noChange;
   }
 
   private _scheduleTick() {
+    const interval = this._mode === "line" ? LINE_REVEAL_INTERVAL_MS : TYPEWRITER_INTERVAL_MS;
     // Use setTimeout for consistent interval timing, then align DOM
     // writes with the next animation frame to avoid mid-frame flicker.
     this._timer = window.setTimeout(() => {
       this._timer = null;
       this._tick();
-    }, TYPEWRITER_INTERVAL_MS);
+    }, interval);
   }
 
   private _cancelTick() {
@@ -145,12 +162,24 @@ class TypewriterDirective extends AsyncDirective {
       return;
     }
 
-    const remaining = this._target.length - this._revealed;
-    // Determine how many characters to reveal this tick
-    const speed =
-      remaining > CATCH_UP_THRESHOLD ? CHARS_PER_TICK * CATCH_UP_MULTIPLIER : CHARS_PER_TICK;
+    if (this._mode === "line") {
+      // Line-by-line mode: reveal up to the end of the next line.
+      const nextNewline = this._target.indexOf("\n", this._revealed);
+      if (nextNewline !== -1) {
+        // Reveal up to and including the newline
+        this._revealed = nextNewline + 1;
+      } else {
+        // No more newlines — reveal everything remaining
+        this._revealed = this._target.length;
+      }
+    } else {
+      // Character-by-character mode (original behavior)
+      const remaining = this._target.length - this._revealed;
+      const speed =
+        remaining > CATCH_UP_THRESHOLD ? CHARS_PER_TICK * CATCH_UP_MULTIPLIER : CHARS_PER_TICK;
+      this._revealed = Math.min(this._revealed + speed, this._target.length);
+    }
 
-    this._revealed = Math.min(this._revealed + speed, this._target.length);
     this._flush(false);
 
     // Continue if there's more to reveal
@@ -196,12 +225,17 @@ class TypewriterDirective extends AsyncDirective {
 }
 
 /**
- * A Lit directive that reveals text character-by-character at a constant rate,
- * creating a smooth typewriter effect for streaming chat output.
+ * A Lit directive that reveals text with a typewriter effect for streaming
+ * chat output.
+ *
+ * Supports two modes:
+ * - `"char"` (default): character-by-character reveal for LLM streaming text
+ * - `"line"`: line-by-line reveal for terminal/CLI output
  *
  * Usage (element binding):
  * ```ts
- * html`<div ${typewriter(text)}></div>`
+ * html`<div ${typewriter(text)}></div>`             // char mode (default)
+ * html`<div ${typewriter(text, "line")}></div>`     // line mode
  * ```
  *
  * The directive directly manipulates the element's innerHTML for performance,

@@ -312,7 +312,7 @@ export type AppViewState = {
     groupListOpen: boolean;
     activeGroupMeta: GroupSessionMeta | null;
     groupMessages: GroupChatMessage[];
-    groupStreams: Map<string, { runId: string; text: string; startedAt: number }>;
+    groupStreams: Map<string, { runId: string; text: string; startedAt: number; frozen?: boolean }>;
     groupPendingAgents: Set<string>;
     groupToolMessages: Map<string, import("./controllers/group-chat.js").GroupToolMessage[]>;
     groupIndex: GroupIndexEntry[];

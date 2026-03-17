@@ -14,7 +14,8 @@ import { extractToolCards, classifyToolCards } from "../chat/tool-cards.ts";
 import { typewriter } from "../chat/typewriter-directive.ts";
 import {
   BridgeTerminalResizeEvent,
-  BridgeTerminalTextExtractedEvent,
+  BridgeTerminalStreamEndEvent,
+  BridgeTerminalStreamUpdateEvent,
 } from "../components/bridge-terminal.ts";
 import type {
   GroupChatMessage,
@@ -194,7 +195,8 @@ export type GroupChatViewProps = {
   // Export transcript
   onExportTranscript: () => void;
   onTerminalResize?: (groupId: string, agentId: string, cols: number, rows: number) => void;
-  onTerminalTextExtracted?: (groupId: string, agentId: string, text: string) => void;
+  onTerminalStreamUpdate?: (groupId: string, agentId: string, text: string) => void;
+  onTerminalStreamEnd?: (groupId: string, agentId: string, extractedText: string) => void;
   // Announcement editor
   announcementEditor: { open: boolean; draft: string; preview: boolean };
   onOpenAnnouncementEditor: () => void;
@@ -351,13 +353,13 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
           resizeEvent.rows,
         );
       }}
-      @bridge-terminal-text-extracted=${(event: Event) => {
-        const extractedEvent = event as BridgeTerminalTextExtractedEvent;
-        props.onTerminalTextExtracted?.(
-          extractedEvent.groupId,
-          extractedEvent.agentId,
-          extractedEvent.text,
-        );
+      @bridge-terminal-stream-update=${(event: Event) => {
+        const streamEvent = event as BridgeTerminalStreamUpdateEvent;
+        props.onTerminalStreamUpdate?.(streamEvent.groupId, streamEvent.agentId, streamEvent.text);
+      }}
+      @bridge-terminal-stream-end=${(event: Event) => {
+        const endEvent = event as BridgeTerminalStreamEndEvent;
+        props.onTerminalStreamEnd?.(endEvent.groupId, endEvent.agentId, endEvent.extractedText);
       }}
     >
       <div class="group-chat-room__header">
@@ -428,6 +430,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
             ${Array.from(groupStreams.entries()).map(([agentId, stream]) => {
               const toolKey = `${agentId}:${stream.runId}`;
               const tools = toolMessages.get(toolKey);
+              const isBridgeStream = stream.runId.startsWith("__bridge__");
               return renderGroupStreamBubble(
                 agentId,
                 stream,
@@ -436,6 +439,8 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                 tools,
                 props.showThinking,
                 props.onOpenSidebar,
+                isBridgeStream,
+                stream.frozen,
               );
             })}
 
@@ -698,12 +703,14 @@ function renderGroupMessage(
 
 function renderGroupStreamBubble(
   agentId: string,
-  stream: { runId: string; text: string; startedAt: number },
+  stream: { runId: string; text: string; startedAt: number; frozen?: boolean },
   meta: GroupSessionMeta,
   agentsList: GroupChatViewProps["agentsList"],
   toolMessages?: GroupToolMessage[],
   showThinking = false,
   onOpenSidebar?: (content: string) => void,
+  isBridgeStream = false,
+  frozen = false,
 ) {
   const sender: { type: "agent"; agentId: string } = { type: "agent", agentId };
   const senderName = resolveSenderName(sender, meta, agentsList);
@@ -756,22 +763,34 @@ function renderGroupStreamBubble(
   }
 
   return html`
-    <div class="chat-group assistant streaming">
+    <div class="chat-group assistant ${frozen ? "" : "streaming"}">
       <div class="chat-avatar assistant">${senderEmoji}</div>
       <div class="chat-group-messages">
-        <div class="chat-bubble streaming">
+        <div class="chat-bubble ${frozen ? "" : "streaming"}">
           ${streamThinkingHtml}
-          ${displayText?.trim() ? html`<div class="chat-text chat-text-streaming" ${typewriter(displayText)}></div>` : nothing}
+          ${
+            displayText?.trim()
+              ? frozen
+                ? html`<div class="chat-text">${unsafeHTML(toSanitizedMarkdownHtml(displayText))}</div>`
+                : html`<div class="chat-text chat-text-streaming" ${typewriter(displayText, isBridgeStream ? "line" : "char")}></div>`
+              : nothing
+          }
         </div>
         ${toolCards}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${senderName}</span>
-          <span class="group-stream-indicator">
-            <span class="group-stream-indicator__label">${t("chat.group.generating")}</span>
-            <span class="group-stream-indicator__dots">
-              <span></span><span></span><span></span>
-            </span>
-          </span>
+          ${
+            frozen
+              ? nothing
+              : html`
+              <span class="group-stream-indicator">
+                <span class="group-stream-indicator__label">${t("chat.group.generating")}</span>
+                <span class="group-stream-indicator__dots">
+                  <span></span><span></span><span></span>
+                </span>
+              </span>
+            `
+          }
           <span class="chat-group-timestamp">${timestamp}</span>
         </div>
       </div>

@@ -36,17 +36,36 @@ export type BridgeTerminalStatus =
   | "disconnected";
 
 /**
- * Event fired when xterm.js buffer text is extracted for transcript.
- * The parent controller captures this and sends it back to the backend.
+ * Event fired periodically while the terminal is active (working/ready),
+ * carrying the latest visible text from the xterm.js buffer.
+ * The controller uses this to drive a streaming chat bubble that mirrors
+ * terminal output in real time — including in-place line overwrites.
  */
-export class BridgeTerminalTextExtractedEvent extends Event {
-  static readonly eventName = "bridge-terminal-text-extracted";
+export class BridgeTerminalStreamUpdateEvent extends Event {
+  static readonly eventName = "bridge-terminal-stream-update";
   constructor(
     public readonly groupId: string,
     public readonly agentId: string,
     public readonly text: string,
   ) {
-    super(BridgeTerminalTextExtractedEvent.eventName, { bubbles: true, composed: true });
+    super(BridgeTerminalStreamUpdateEvent.eventName, { bubbles: true, composed: true });
+  }
+}
+
+/**
+ * Event fired when the bridge terminal's streaming output ends (either by
+ * backend status or frontend idle detection). The controller uses this to
+ * clean up the streaming chat bubble and push the extracted text to the
+ * backend for transcript persistence.
+ */
+export class BridgeTerminalStreamEndEvent extends Event {
+  static readonly eventName = "bridge-terminal-stream-end";
+  constructor(
+    public readonly groupId: string,
+    public readonly agentId: string,
+    public readonly extractedText: string = "",
+  ) {
+    super(BridgeTerminalStreamEndEvent.eventName, { bubbles: true, composed: true });
   }
 }
 
@@ -414,9 +433,6 @@ export class BridgeTerminal extends LitElement {
   /** Track terminal initialisation so completion waits for xterm if available. */
   private _initTerminalPromise: Promise<void> | null = null;
 
-  /** Prevent duplicate text extraction events */
-  private _textExtractedFired = false;
-
   /** Dynamic status indicator - whether terminal is actively receiving data */
   @state() private _isWorking = false;
 
@@ -444,6 +460,20 @@ export class BridgeTerminal extends LitElement {
 
   /** Plain text fallback instance (used when xterm is not available) */
   private _plainTextTerminal: PlainTextTerminal | null = null;
+
+  // ─── Streaming text extraction (real-time chat bubble) ───
+
+  /** Timer for throttled stream-update events (fires every ~200ms while active). */
+  private _streamExtractTimer: number | null = null;
+
+  /** Interval between stream-update extractions (ms). */
+  private readonly STREAM_EXTRACT_INTERVAL = 200;
+
+  /** Last emitted stream text — used to avoid redundant events when nothing changed. */
+  private _lastStreamText = "";
+
+  /** Whether we have ever emitted a stream update during this working cycle. */
+  private _streamUpdateEmitted = false;
 
   static styles = css`
     :host {
@@ -607,6 +637,8 @@ export class BridgeTerminal extends LitElement {
       clearTimeout(this._completionCheckTimer);
       this._completionCheckTimer = null;
     }
+    // Clear stream extraction timer
+    this._resetStreamState();
     this._disposeTerminal();
     super.disconnectedCallback();
   }
@@ -626,7 +658,7 @@ export class BridgeTerminal extends LitElement {
         if (prevStatus === "completed" || prevStatus === "error") {
           this._terminal?.clear();
           this._plainTextTerminal?.clear();
-          this._textExtractedFired = false;
+          this._resetStreamState();
         }
 
         // Initialize lastDataTime to now
@@ -646,6 +678,20 @@ export class BridgeTerminal extends LitElement {
         // Write to terminal
         if (this._terminal) {
           this._terminal.write(bytes);
+        }
+
+        // If the terminal is already completed (page refresh of a finished session),
+        // emit a stream update so the controller can create a frozen bubble.
+        // Use a short delay to let xterm process the write buffer first.
+        if (this.status === "completed") {
+          setTimeout(() => {
+            const text = this.extractVisibleText();
+            if (text.trim()) {
+              this.dispatchEvent(
+                new BridgeTerminalStreamUpdateEvent(this.groupId, this.agentId, text),
+              );
+            }
+          }, 100);
         }
       } catch (err) {
         console.warn("[bridge-terminal] Failed to restore replay buffer:", err);
@@ -686,6 +732,11 @@ export class BridgeTerminal extends LitElement {
       this.requestUpdate();
     }
 
+    // Schedule stream text extraction for real-time chat bubble
+    if (!isCompleted) {
+      this._scheduleStreamExtract();
+    }
+
     // Reset completion check timer (frontend-based detection) — skip if already completed
     if (!isCompleted) {
       this._resetCompletionCheck();
@@ -718,10 +769,60 @@ export class BridgeTerminal extends LitElement {
       this.requestUpdate();
     }
 
+    // Schedule stream text extraction for real-time chat bubble
+    if (!isCompleted) {
+      this._scheduleStreamExtract();
+    }
+
     // Reset completion check timer (frontend-based detection) — skip if already completed
     if (!isCompleted) {
       this._resetCompletionCheck();
     }
+  }
+
+  // ─── Streaming Text Extraction (Real-time Chat Bubble) ───
+
+  /**
+   * Schedule a throttled extraction of visible text for the streaming chat bubble.
+   * Uses a fixed-interval timer: the first call starts it, subsequent calls
+   * within the interval are coalesced. The extraction reads the xterm.js buffer
+   * (which already handles \r, cursor moves, overwrites) so in-place updates
+   * in the terminal are automatically reflected as text changes.
+   */
+  private _scheduleStreamExtract(): void {
+    if (this._streamExtractTimer !== null) {
+      return; // Timer already scheduled
+    }
+    this._streamExtractTimer = window.setTimeout(() => {
+      this._streamExtractTimer = null;
+      this._emitStreamUpdate();
+    }, this.STREAM_EXTRACT_INTERVAL);
+  }
+
+  /**
+   * Extract visible text from the terminal buffer and fire a stream-update event.
+   * Only fires if the text has changed since the last emission.
+   */
+  private _emitStreamUpdate(): void {
+    const text = this.extractVisibleText();
+    if (text === this._lastStreamText) {
+      return; // No change — skip
+    }
+    this._lastStreamText = text;
+    this._streamUpdateEmitted = true;
+    this.dispatchEvent(new BridgeTerminalStreamUpdateEvent(this.groupId, this.agentId, text));
+  }
+
+  /**
+   * Clear streaming state. Called when the terminal transitions to a new working cycle.
+   */
+  private _resetStreamState(): void {
+    if (this._streamExtractTimer !== null) {
+      clearTimeout(this._streamExtractTimer);
+      this._streamExtractTimer = null;
+    }
+    this._lastStreamText = "";
+    this._streamUpdateEmitted = false;
   }
 
   // ─── Dynamic Status Indicator ───
@@ -769,15 +870,18 @@ export class BridgeTerminal extends LitElement {
 
     // Set new timer
     this._completionCheckTimer = window.setTimeout(() => {
-      void this._checkCompletion();
+      this._checkCompletion();
     }, this.COMPLETION_IDLE_SECS * 1000);
   }
 
   /**
    * Check if CLI has completed based on frontend idle detection.
    * Called after COMPLETION_IDLE_SECS seconds of no new data.
+   *
+   * When idle timeout fires, we stop the streaming chat bubble (freeze it
+   * at its current content) and mark the terminal as completed.
    */
-  private async _checkCompletion(): Promise<void> {
+  private _checkCompletion(): void {
     // Verify that we've been idle for the required time
     const now = Date.now();
     const idleTime = now - this._lastDataTime;
@@ -791,12 +895,23 @@ export class BridgeTerminal extends LitElement {
       return;
     }
 
-    console.log("[bridge-terminal] Frontend detected completion, extracting text...");
+    console.log("[bridge-terminal] Frontend idle timeout — freezing stream bubble");
 
-    // Trigger completion
+    // Extract text before resetting stream state — this is the final output
+    // that needs to be sent to the backend for transcript persistence.
+    const extractedText = this.extractVisibleText();
+
+    // Stop streaming: notify controller to freeze the chat bubble,
+    // push extracted text to backend, then clean up local stream state.
+    if (this._streamUpdateEmitted) {
+      this.dispatchEvent(
+        new BridgeTerminalStreamEndEvent(this.groupId, this.agentId, extractedText),
+      );
+    }
+    this._resetStreamState();
+
+    // Mark as completed (the frozen bubble remains as the final output)
     this.status = "completed";
-    this._textExtractedFired = false; // Reset防抖 flag for new extraction
-    await this._completeAndFoldAfterFlush();
   }
 
   /**
@@ -818,18 +933,12 @@ export class BridgeTerminal extends LitElement {
   }
 
   /**
-   * Fire a text-extracted event for the controller to pick up.
-   * Uses防抖 to prevent duplicate events during the same completion cycle.
+   * Whether this terminal has emitted any stream-update events during
+   * the current working cycle. Used by the controller to decide whether
+   * to clean up the streaming chat bubble on completion.
    */
-  fireTextExtracted(): void {
-    if (this._textExtractedFired) {
-      // Already fired for this completion cycle, skip duplicate
-      return;
-    }
-    this._textExtractedFired = true;
-
-    const text = this.extractVisibleText();
-    this.dispatchEvent(new BridgeTerminalTextExtractedEvent(this.groupId, this.agentId, text));
+  get hasStreamedOutput(): boolean {
+    return this._streamUpdateEmitted;
   }
 
   /**
@@ -1103,8 +1212,9 @@ export class BridgeTerminal extends LitElement {
   }
 
   /**
-   * Called when the terminal should complete and fold.
-   * Waits for queued xterm writes to flush before extracting visible text.
+   * Called when the backend signals that the bridge agent has completed.
+   * Cleans up streaming state and marks the terminal as completed.
+   * (The streaming chat bubble is cleared by the controller directly.)
    */
   completeAndFold(): void {
     // Prevent duplicate completion calls
@@ -1112,24 +1222,11 @@ export class BridgeTerminal extends LitElement {
       return;
     }
 
+    // Clean up streaming state (the controller handles clearing the stream
+    // bubble directly when it receives the backend completion signal).
+    this._resetStreamState();
+
     this.status = "completed";
-    this._textExtractedFired = false; // Reset防抖 flag for new extraction
-    void this._completeAndFoldAfterFlush();
-  }
-
-  private async _completeAndFoldAfterFlush(): Promise<void> {
-    try {
-      await this._initTerminalPromise?.catch(() => {});
-
-      // Wait for xterm.js write queue to drain (usually instant since
-      // we already idled for 8s, but guard with a 2s timeout just in case).
-      const idlePromise = this._terminal?.whenIdle() ?? Promise.resolve();
-      const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 2000));
-      await Promise.race([idlePromise, timeoutPromise]);
-    } finally {
-      this.fireTextExtracted();
-      this.collapse();
-    }
   }
 }
 

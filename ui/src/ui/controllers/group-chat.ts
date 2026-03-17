@@ -140,7 +140,7 @@ export type GroupChatState = {
   /** Group chat messages */
   groupMessages: GroupChatMessage[];
   /** Active agent streams (agentId → current text) */
-  groupStreams: Map<string, { runId: string; text: string; startedAt: number }>;
+  groupStreams: Map<string, { runId: string; text: string; startedAt: number; frozen?: boolean }>;
   /** Agents that are pending response (waiting for first stream delta) */
   groupPendingAgents: Set<string>;
   /** Tool messages for real-time display (key: "agentId:runId" → messages) */
@@ -1484,6 +1484,18 @@ export function handleGroupMessageEvent(
     } else {
       host.groupMessages = [...host.groupMessages, payload];
     }
+
+    // When a formal message arrives from an agent, remove any frozen stream
+    // bubble for that agent — the persistent message supersedes the temporary
+    // stream bubble.
+    if (payload.sender.type === "agent" && "agentId" in payload.sender) {
+      const frozenStream = host.groupStreams.get(payload.sender.agentId);
+      if (frozenStream?.frozen) {
+        const next = new Map(host.groupStreams);
+        next.delete(payload.sender.agentId);
+        host.groupStreams = next;
+      }
+    }
   }
 
   if (payload.sender.type !== "agent") {
@@ -1577,7 +1589,12 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     }
 
     for (const [oldKey] of streamBuffers) {
-      const [oldAgentId, oldRunId] = oldKey.split(":");
+      const idx = oldKey.indexOf(":");
+      if (idx <= 0) {
+        continue;
+      }
+      const oldAgentId = oldKey.slice(0, idx);
+      const oldRunId = oldKey.slice(idx + 1);
       if (oldAgentId === payload.agentId && oldRunId !== payload.runId) {
         streamBuffers.delete(oldKey);
       }
@@ -1634,12 +1651,26 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
 function syncGroupStreams(host: GroupChatState): void {
   const next = new Map(host.groupStreams);
   for (const [key, text] of streamBuffers) {
-    const [agentId, runId] = key.split(":");
-    if (!agentId || !runId) {
+    // Split only on the *first* colon so that runIds containing colons
+    // (e.g. bridge terminal's "__bridge__agentId:timestamp") are preserved
+    // intact.  The old `key.split(":")` destructure silently truncated
+    // such runIds, causing clearBridgeTerminalStream's runId comparison
+    // to fail and the streaming bubble to linger after completion.
+    const colonIdx = key.indexOf(":");
+    if (colonIdx <= 0) {
+      continue;
+    }
+    const agentId = key.slice(0, colonIdx);
+    const runId = key.slice(colonIdx + 1);
+    if (!runId) {
       continue;
     }
 
     const existing = next.get(agentId);
+    // Never overwrite a frozen stream — it is finalized and must stay as-is.
+    if (existing?.frozen) {
+      continue;
+    }
     // Only update if this is the same run or newer (runId is unique, so we always update)
     next.set(agentId, {
       runId,
@@ -1880,11 +1911,39 @@ export function handleGroupTerminalStatusEvent(
     host.groupPendingAgents = nextPending;
   }
 
-  // When status becomes "completed", trigger text extraction and fold
+  // When status becomes "completed", clean up streaming bubble and
+  // mark the terminal as completed. Also push extracted text to backend
+  // in case the frontend idle detection hasn't fired yet.
   if (mappedStatus === "completed") {
+    clearBridgeTerminalStream(host, payload.agentId);
     const terminal = getBridgeTerminal(payload.groupId, payload.agentId);
     if (terminal) {
+      // Extract text before completing — the backend may still be waiting
+      // for frontend-extracted text (e.g. PTY exit detection happened before
+      // the frontend's idle timer fired).
+      const extractedText = terminal.extractVisibleText();
+      if (extractedText?.trim() && "client" in host) {
+        void sendTerminalTextExtracted(
+          host as GroupHost,
+          payload.groupId,
+          payload.agentId,
+          extractedText,
+        );
+      }
       terminal.completeAndFold();
+    }
+  }
+
+  // When a new working cycle starts, reset the bridge stream runId so
+  // the next round gets a fresh synthetic runId, and clear any frozen
+  // stream from the previous cycle so the new live stream can take over.
+  if (mappedStatus === "working") {
+    activeBridgeStreamRuns.delete(payload.agentId);
+    const currentStream = host.groupStreams.get(payload.agentId);
+    if (currentStream?.frozen) {
+      const next = new Map(host.groupStreams);
+      next.delete(payload.agentId);
+      host.groupStreams = next;
     }
   }
 }
@@ -1931,7 +1990,16 @@ export async function sendTerminalResize(
 }
 
 /**
- * Send extracted terminal text back to the backend.
+ * Push extracted terminal text to the backend for transcript persistence.
+ *
+ * When the frontend detects that the bridge terminal has become idle (no new
+ * data for COMPLETION_IDLE_SECS), it extracts the visible text from the xterm
+ * buffer and sends it to the backend via this RPC. The backend uses this text
+ * to create a proper GroupMessage entry in the transcript, which is then
+ * broadcast as `group.message` and persisted in `transcript.jsonl`.
+ *
+ * This is the critical step that makes bridge terminal output survive page
+ * refresh — without it, the backend has no text to write to the transcript.
  */
 export async function sendTerminalTextExtracted(
   host: GroupHost,
@@ -1945,6 +2013,154 @@ export async function sendTerminalTextExtracted(
   try {
     await host.client.request("group.terminalTextExtracted", { groupId, agentId, text });
   } catch (err) {
-    console.warn("[group-chat] terminal text extracted send failed:", err);
+    console.warn("[group-chat] terminal text extracted push failed:", err);
+  }
+}
+
+// ─── Bridge Terminal Streaming (Real-time Chat Bubble) ───
+
+/** Synthetic runId prefix for bridge terminal streams (not backend-allocated). */
+const BRIDGE_STREAM_RUN_PREFIX = "__bridge__";
+
+/** Map of active bridge stream runIds by agentId. */
+const activeBridgeStreamRuns = new Map<string, string>();
+
+/**
+ * Get or create a synthetic runId for a bridge agent's current streaming session.
+ * The runId is stable for the duration of a working cycle and is reset when
+ * the terminal transitions back to working (new cycle).
+ */
+function getBridgeStreamRunId(agentId: string): string {
+  let runId = activeBridgeStreamRuns.get(agentId);
+  if (!runId) {
+    runId = `${BRIDGE_STREAM_RUN_PREFIX}${agentId}:${Date.now()}`;
+    activeBridgeStreamRuns.set(agentId, runId);
+  }
+  return runId;
+}
+
+/**
+ * Handle real-time stream updates from a Bridge Terminal component.
+ * Injects the visible text (from xterm.js buffer) into the same streaming
+ * pipeline used by LLM agents (`streamBuffers` → `groupStreams`).
+ *
+ * Because xterm.js handles \r, cursor moves, and overwrites internally,
+ * the extracted text already reflects in-place updates. The typewriter
+ * directive's `commonPrefixLength()` logic handles text rewrites gracefully,
+ * giving the chat bubble the same "in-place update" behavior.
+ */
+export function handleBridgeTerminalStreamUpdate(
+  host: GroupChatState,
+  groupId: string,
+  agentId: string,
+  text: string,
+): void {
+  if (groupId !== host.activeGroupId) {
+    return;
+  }
+
+  // When the terminal has already completed/errored, do not feed the normal
+  // streaming pipeline (which would restart the "generating" animation).
+  // However, if the stream update arrives for a completed terminal AND there
+  // is no existing frozen stream for this agent, inject a frozen entry
+  // directly. This handles the page-refresh recovery path: the bridge-terminal
+  // component replays its buffer and emits a stream update *after* the
+  // terminal status was already restored as "completed".
+  const terminalStatus = host.bridgeTerminalStatuses?.get(agentId);
+  if (
+    terminalStatus === "completed" ||
+    terminalStatus === "error" ||
+    terminalStatus === "disconnected"
+  ) {
+    const existing = host.groupStreams.get(agentId);
+    if (!existing && text.trim()) {
+      // Inject a frozen stream entry for the completed terminal
+      const runId = `${BRIDGE_STREAM_RUN_PREFIX}${agentId}:restored`;
+      const next = new Map(host.groupStreams);
+      next.set(agentId, {
+        runId,
+        text,
+        startedAt: Date.now(),
+        frozen: true,
+      });
+      host.groupStreams = next;
+    }
+    return;
+  }
+
+  const runId = getBridgeStreamRunId(agentId);
+  const streamKey = `${agentId}:${runId}`;
+
+  // Remove pending indicator for this agent
+  if (host.groupPendingAgents.has(agentId)) {
+    const next = new Set(host.groupPendingAgents);
+    next.delete(agentId);
+    host.groupPendingAgents = next;
+  }
+
+  // Inject into the same stream pipeline as LLM agents.
+  // `text` is the *full* visible text (not a delta), which is exactly what
+  // `streamBuffers` expects — it's an overwrite, not an append.
+  streamBuffers.set(streamKey, text);
+
+  if (!streamSyncTimer) {
+    streamSyncTimer = window.setTimeout(() => {
+      syncGroupStreams(host);
+      streamSyncTimer = null;
+    }, 50);
+  }
+}
+
+/**
+ * Freeze the streaming chat bubble for a Bridge Agent when it completes.
+ * Called from the terminal status event handler.
+ *
+ * Instead of deleting the stream entry (which would cause the bubble to
+ * vanish entirely), we mark it as `frozen` so the view layer can render
+ * it without the "generating" indicator. The streamBuffers are cleaned
+ * up to prevent further updates, but the groupStreams entry is preserved.
+ *
+ * This is defensive: even if `activeBridgeStreamRuns` has no record for
+ * this agent, we still scan `streamBuffers` to remove lingering entries.
+ */
+export function clearBridgeTerminalStream(host: GroupChatState, agentId: string): void {
+  const runId = activeBridgeStreamRuns.get(agentId);
+
+  // 1. Remove the primary streamBuffer entry (exact key)
+  if (runId) {
+    streamBuffers.delete(`${agentId}:${runId}`);
+  }
+
+  // 2. Defensive sweep: remove any remaining bridge-stream buffer entries
+  //    for this agent (guards against runId mismatch / stale timers).
+  for (const key of streamBuffers.keys()) {
+    if (key.startsWith(`${agentId}:${BRIDGE_STREAM_RUN_PREFIX}`)) {
+      streamBuffers.delete(key);
+    }
+  }
+
+  // 3. Freeze the groupStreams entry instead of deleting it.
+  //    This keeps the bubble visible but stops the "generating" animation.
+  const next = new Map(host.groupStreams);
+  const currentStream = next.get(agentId);
+  if (currentStream) {
+    const isExactMatch = runId && currentStream.runId === runId;
+    const isBridgeStream = currentStream.runId.startsWith(BRIDGE_STREAM_RUN_PREFIX);
+    if ((isExactMatch || isBridgeStream) && !currentStream.frozen) {
+      next.set(agentId, { ...currentStream, frozen: true });
+    }
+  }
+  host.groupStreams = next;
+
+  // 4. Clean up the runId mapping
+  activeBridgeStreamRuns.delete(agentId);
+
+  // 5. Cancel any pending sync timer to prevent stale data from being
+  //    re-injected into groupStreams after we've cleaned up.
+  if (streamSyncTimer !== null) {
+    clearTimeout(streamSyncTimer);
+    streamSyncTimer = null;
+    // Re-sync immediately with the cleaned-up buffers
+    syncGroupStreams(host);
   }
 }

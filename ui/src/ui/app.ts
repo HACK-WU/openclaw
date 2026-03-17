@@ -201,8 +201,10 @@ export class OpenClawApp extends LitElement {
   @state() groupListOpen = false;
   @state() activeGroupMeta: GroupSessionMeta | null = null;
   @state() groupMessages: GroupChatMessage[] = [];
-  @state() groupStreams: Map<string, { runId: string; text: string; startedAt: number }> =
-    new Map();
+  @state() groupStreams: Map<
+    string,
+    { runId: string; text: string; startedAt: number; frozen?: boolean }
+  > = new Map();
   @state() groupPendingAgents: Set<string> = new Set();
   @state() groupToolMessages: Map<
     string,
