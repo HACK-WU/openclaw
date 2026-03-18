@@ -23,6 +23,7 @@ import {
   createBridgePty,
   getPtyState,
   isPtyRunning,
+  killBridgePty,
   setInputPhase,
   updateLastTranscriptIndex,
   waitForFrontendExtractedText,
@@ -250,7 +251,8 @@ export async function triggerBridgeAgent(
     //    xterm-rendered text from this run.
     clearFrontendExtractedText(groupId, agentId);
 
-    const timeout = bridgeConfig.timeout ?? DEFAULT_REPLY_TIMEOUT_MS;
+    // Use cliTimeout from group meta (Layer 1), fallback to bridge config, then default
+    const timeout = meta.cliTimeout ?? bridgeConfig.timeout ?? DEFAULT_REPLY_TIMEOUT_MS;
     const replyText = await waitForCompletion({
       groupId,
       agentId,
@@ -647,9 +649,11 @@ async function waitForCompletion(params: {
       // If null (timeout), the global timer or abort will handle it
     });
 
-    // 2. Global timeout fallback
+    // 2. Global timeout fallback — kill PTY and resolve
     const globalTimer = setTimeout(() => {
       broadcastTerminalStatus(broadcast, groupId, agentId, "completed", "CLI response timeout");
+      // Terminate the PTY process on timeout (cliTimeout)
+      void killBridgePty(groupId, agentId, "cli_timeout");
       finish("");
     }, timeoutMs);
     globalTimer.unref();
