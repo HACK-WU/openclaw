@@ -651,7 +651,7 @@ async function waitForCompletion(params: {
 
     // 2. Global timeout fallback — kill PTY and resolve
     const globalTimer = setTimeout(() => {
-      broadcastTerminalStatus(broadcast, groupId, agentId, "completed", "CLI response timeout");
+      broadcastTerminalStatus(broadcast, groupId, agentId, "timeout", "CLI response timeout");
       // Terminate the PTY process on timeout (cliTimeout)
       void killBridgePty(groupId, agentId, "cli_timeout");
       finish("");

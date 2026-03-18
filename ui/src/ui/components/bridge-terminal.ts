@@ -1224,7 +1224,7 @@ export class BridgeTerminal extends LitElement {
    * Cleans up streaming state and marks the terminal as finished.
    * (The streaming chat bubble is cleared by the controller directly.)
    */
-  completeAndFold(): void {
+  completeAndFold(status: "completed" | "timeout" = "completed"): void {
     // Prevent duplicate completion calls
     if (this.status === "completed" || this.status === "timeout") {
       return;
@@ -1234,7 +1234,7 @@ export class BridgeTerminal extends LitElement {
     // bubble directly when it receives the backend completion signal).
     this._resetStreamState();
 
-    this.status = "completed";
+    this.status = status;
   }
 }
 

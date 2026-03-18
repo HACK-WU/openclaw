@@ -22,7 +22,6 @@ import {
 import { getLogger } from "../logging.js";
 import { stripReasoningTagsFromText } from "../shared/text/reasoning-tags.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
-import { updateChainState } from "./anti-loop.js";
 import { triggerBridgeAgent } from "./bridge-trigger.js";
 import { buildGroupChatContext } from "./context-builder.js";
 import { buildGroupSessionKey } from "./group-session-key.js";
@@ -358,7 +357,7 @@ export async function triggerAgentReasoning(
         agentName: agentId,
         state: "final",
       });
-      chainState = updateChainState(chainState, agentId);
+      // chainState is no longer updated here - increment happens in group.ts
       return { run, chainState };
     }
 
@@ -426,7 +425,7 @@ export async function triggerAgentReasoning(
 
     run.status = "completed";
     run.completedAt = Date.now();
-    chainState = updateChainState(chainState, agentId);
+    // chainState is no longer updated here - increment happens in group.ts
 
     return { run, replyMessage, chainState };
   } catch (err) {

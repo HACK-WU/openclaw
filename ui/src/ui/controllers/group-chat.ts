@@ -2020,7 +2020,8 @@ export function handleGroupTerminalStatusEvent(
           extractedText,
         );
       }
-      terminal.completeAndFold();
+      // Pass the correct status to completeAndFold
+      terminal.completeAndFold(mappedStatus === "timeout" ? "timeout" : "completed");
     }
   }
 

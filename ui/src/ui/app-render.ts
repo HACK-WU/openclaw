@@ -1782,6 +1782,19 @@ export function renderApp(state: AppViewState) {
                     })();
                   }
                 },
+                onUpdateAntiLoopConfig: (config) => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { updateGroupAntiLoopConfig } =
+                        await import("./controllers/group-chat.ts");
+                      await updateGroupAntiLoopConfig(
+                        state as unknown as Parameters<typeof updateGroupAntiLoopConfig>[0],
+                        state.activeGroupId!,
+                        config,
+                      );
+                    })();
+                  }
+                },
                 onUpdateContextConfig: (config) => {
                   if (state.activeGroupId) {
                     void (async () => {

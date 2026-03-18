@@ -183,6 +183,11 @@ export type GroupChatViewProps = {
   onUpdateAnnouncement: (content: string) => void;
   onUpdateMaxRounds: (maxRounds: number) => void;
   onUpdateMaxConsecutive: (maxConsecutive: number) => void;
+  onUpdateAntiLoopConfig: (config: {
+    maxRounds?: number;
+    chainTimeout?: number;
+    cliTimeout?: number;
+  }) => void;
   onUpdateContextConfig: (config: {
     maxMessages?: number;
     maxCharacters?: number;
@@ -1135,22 +1140,50 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
             </div>
             <div class="group-info-panel__setting-item">
               <div class="group-info-panel__setting-header">
-                <span class="group-info-panel__setting-name">${t("chat.group.maxConsecutive")}</span>
-                <input
-                  type="number"
-                  class="field group-info-panel__setting-input"
-                  .value=${String(meta.maxConsecutive)}
-                  min="1"
-                  max="50"
-                  @change=${(e: Event) => {
-                    const value = parseInt((e.target as HTMLInputElement).value, 10);
-                    if (!isNaN(value) && value > 0) {
-                      props.onUpdateMaxConsecutive(value);
-                    }
-                  }}
-                />
+                <span class="group-info-panel__setting-name">${t("chat.group.chainTimeout")}</span>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input
+                    type="number"
+                    class="field group-info-panel__setting-input"
+                    style="width: 80px;"
+                    .value=${String(Math.floor((meta.chainTimeout ?? 300000) / 60000))}
+                    min="1"
+                    max="30"
+                    @change=${(e: Event) => {
+                      const minutes = parseInt((e.target as HTMLInputElement).value, 10);
+                      if (!isNaN(minutes) && minutes > 0) {
+                        props.onUpdateAntiLoopConfig({ chainTimeout: minutes * 60000 });
+                      }
+                    }}
+                  />
+                  <span style="font-size: 12px; color: var(--text-secondary);">${t("chat.group.timeoutMinutes")}</span>
+                </div>
               </div>
-              <span class="group-info-panel__setting-desc">${t("chat.group.maxConsecutiveHint")}</span>
+              <span class="group-info-panel__setting-desc">${t("chat.group.chainTimeoutHint")}</span>
+            </div>
+            <div class="group-info-panel__setting-item">
+              <div class="group-info-panel__setting-header">
+                <span class="group-info-panel__setting-name">${t("chat.group.cliTimeout")}</span>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input
+                    type="number"
+                    class="field group-info-panel__setting-input"
+                    style="width: 80px;"
+                    .value=${String(Math.floor((meta.cliTimeout ?? 120000) / 60000))}
+                    min="1"
+                    max="10"
+                    step="0.5"
+                    @change=${(e: Event) => {
+                      const minutes = parseFloat((e.target as HTMLInputElement).value);
+                      if (!isNaN(minutes) && minutes > 0) {
+                        props.onUpdateAntiLoopConfig({ cliTimeout: Math.floor(minutes * 60000) });
+                      }
+                    }}
+                  />
+                  <span style="font-size: 12px; color: var(--text-secondary);">${t("chat.group.timeoutMinutes")}</span>
+                </div>
+              </div>
+              <span class="group-info-panel__setting-desc">${t("chat.group.cliTimeoutHint")}</span>
             </div>
           </div>
         </div>

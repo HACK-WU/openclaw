@@ -8,7 +8,6 @@
 import { randomUUID } from "node:crypto";
 import { findCliAgentEntry } from "../../commands/cli-agents.config.js";
 import { triggerAgentReasoning } from "../../group-chat/agent-trigger.js";
-import { canTriggerAgent, createChainState } from "../../group-chat/anti-loop.js";
 import {
   cleanupGroupBridgeAgents,
   getGroupActivePtys,
@@ -18,6 +17,11 @@ import {
   resizePty,
 } from "../../group-chat/bridge-pty.js";
 import type { BridgeConfig, ContextConfig } from "../../group-chat/bridge-types.js";
+import {
+  initChainState,
+  atomicCheckAndIncrement,
+  getChainState,
+} from "../../group-chat/chain-state-store.js";
 import { buildGroupSessionKey } from "../../group-chat/group-session-key.js";
 import {
   archiveGroup,
@@ -41,11 +45,7 @@ import {
   getTranscriptSnapshot,
 } from "../../group-chat/transcript.js";
 import type { GroupIndexEntry as RawGroupIndexEntry } from "../../group-chat/types.js";
-import type {
-  GroupChatMessage,
-  MessageSender,
-  ConversationChainState,
-} from "../../group-chat/types.js";
+import type { GroupChatMessage, MessageSender } from "../../group-chat/types.js";
 import { getLogger } from "../../logging.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 
@@ -531,60 +531,79 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
     return;
   }
 
-  const chainState =
-    resolvedSender.type === "owner"
-      ? createChainState(savedMsg.id)
-      : ((params.__chainState as ConversationChainState) ?? createChainState(savedMsg.id));
+  // Initialize chain state when Owner sends a message (roundCount = 0)
+  // For agent-forwarded messages, use existing chain state from params
+  if (resolvedSender.type === "owner") {
+    initChainState(groupId, savedMsg.id);
+  }
 
   const abortController = new AbortController();
   registerGroupAbort(groupId, savedMsg.id, abortController);
 
   try {
     if (dispatch.mode === "broadcast") {
-      // Parallel trigger all targets
+      // Parallel trigger all targets using atomic check-and-increment
       const transcriptSnapshot = getTranscriptSnapshot(groupId);
-      const promises = dispatch.targets.map((target) => {
-        const check = canTriggerAgent(chainState, target.agentId, meta);
+      const promises = dispatch.targets.map(async (target) => {
+        // Atomic check and increment roundCount
+        const check = await atomicCheckAndIncrement(groupId, meta);
         if (!check.allowed) {
-          return null;
+          log.info(`[BROADCAST_BLOCKED] Agent ${target.agentId} blocked: ${check.reason}`);
+          return { agentId: target.agentId, blocked: true, reason: check.reason };
         }
 
+        // Execute agent reasoning
         return triggerAgentReasoning({
           groupId,
           agentId: target.agentId,
           meta,
           transcriptSnapshot,
           triggerMessage: savedMsg,
-          chainState,
+          chainState: check.newState,
           broadcast: context.broadcast,
           signal: abortController.signal,
         });
       });
 
-      await Promise.allSettled(promises.filter(Boolean));
+      const results = await Promise.allSettled(promises);
+
+      // Log blocked agents
+      for (const result of results) {
+        if (
+          result.status === "fulfilled" &&
+          result.value &&
+          "blocked" in result.value &&
+          result.value.blocked
+        ) {
+          log.info(
+            `[BROADCAST_BLOCKED] Agent ${result.value.agentId} was blocked: ${result.value.reason}`,
+          );
+        }
+      }
     } else {
       // Serial trigger for unicast/mention
-      let currentChainState = chainState;
       for (const target of dispatch.targets) {
-        const check = canTriggerAgent(currentChainState, target.agentId, meta);
+        // Atomic check and increment roundCount
+        const check = await atomicCheckAndIncrement(groupId, meta);
         if (!check.allowed) {
           await appendSystemMessage(groupId, `Conversation round limit reached (${check.reason})`);
           broadcastGroupSystem(context.broadcast, groupId, "round_limit", { reason: check.reason });
           break;
         }
 
-        const result = await triggerAgentReasoning({
+        await triggerAgentReasoning({
           groupId,
           agentId: target.agentId,
           meta,
           transcriptSnapshot: getTranscriptSnapshot(groupId),
           triggerMessage: savedMsg,
-          chainState: currentChainState,
+          chainState: check.newState,
           broadcast: context.broadcast,
           signal: abortController.signal,
         });
 
-        currentChainState = result.chainState;
+        // chainState is no longer updated by triggerAgentReasoning
+        // The increment is done by atomicCheckAndIncrement above
       }
     }
   } finally {
@@ -601,6 +620,81 @@ const handleGroupAbort: GatewayRequestHandler = ({ params, respond }) => {
   const runId = params.runId as string | undefined;
   abortGroupRun(groupId, runId);
   respond(true, { ok: true });
+};
+
+// ─── Get Chain State ───
+
+/**
+ * Get the current conversation chain state for a group.
+ * Used by frontend to sync state after page refresh.
+ */
+const handleGroupGetChainState: GatewayRequestHandler = ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  const chainState = getChainState(groupId);
+  respond(true, { chainState: chainState ?? null });
+};
+
+// ─── Set Anti-Loop Config ───
+
+const handleGroupSetAntiLoopConfig: GatewayRequestHandler = async ({
+  params,
+  respond,
+  context,
+}) => {
+  const groupId = params.groupId as string;
+  const maxRounds = params.maxRounds as number | undefined;
+  const chainTimeout = params.chainTimeout as number | undefined;
+  const cliTimeout = params.cliTimeout as number | undefined;
+
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  // Validate ranges
+  if (maxRounds !== undefined && (maxRounds < 1 || maxRounds > 100)) {
+    respond(false, undefined, { message: "maxRounds must be between 1 and 100", code: 400 });
+    return;
+  }
+  if (chainTimeout !== undefined && (chainTimeout < 60000 || chainTimeout > 1800000)) {
+    respond(false, undefined, {
+      message: "chainTimeout must be between 60000 and 1800000",
+      code: 400,
+    });
+    return;
+  }
+  if (cliTimeout !== undefined && (cliTimeout < 30000 || cliTimeout > 600000)) {
+    respond(false, undefined, {
+      message: "cliTimeout must be between 30000 and 600000",
+      code: 400,
+    });
+    return;
+  }
+
+  const updated = await updateGroupMeta(groupId, (meta) => {
+    if (maxRounds !== undefined) {
+      meta.maxRounds = maxRounds;
+    }
+    if (chainTimeout !== undefined) {
+      meta.chainTimeout = chainTimeout;
+    }
+    if (cliTimeout !== undefined) {
+      meta.cliTimeout = cliTimeout;
+    }
+    return meta;
+  });
+
+  respond(true, { ok: true });
+  broadcastGroupSystem(context.broadcast, groupId, "anti_loop_config_changed", {
+    maxRounds: updated.maxRounds,
+    chainTimeout: updated.chainTimeout,
+    cliTimeout: updated.cliTimeout,
+  });
 };
 
 // ─── Export Transcript as Markdown ───
@@ -914,6 +1008,7 @@ export const groupHandlers: GatewayRequestHandlers = {
   "group.send": handleGroupSend,
   "group.history": handleGroupHistory,
   "group.abort": handleGroupAbort,
+  "group.getChainState": handleGroupGetChainState,
   "group.exportTranscript": handleGroupExportTranscript,
   // Bridge Agent handlers
   "group.terminalResize": handleGroupTerminalResize,
@@ -922,4 +1017,5 @@ export const groupHandlers: GatewayRequestHandlers = {
   "group.terminalTextExtracted": handleGroupTerminalTextExtracted,
   // Path validation
   "group.validatePath": handleGroupValidatePath,
+  "group.setAntiLoopConfig": handleGroupSetAntiLoopConfig,
 };

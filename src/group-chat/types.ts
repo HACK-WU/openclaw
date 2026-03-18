@@ -59,7 +59,12 @@ export type GroupSessionEntry = {
   announcement?: string; // max 2000 chars
   groupSkills: string[]; // skill name references
   maxRounds: number; // default 10
-  maxConsecutive: number; // default 3
+  /** @deprecated No longer used - maxRounds controls all agent triggers globally */
+  maxConsecutive: number; // default 3 (kept for backward compatibility)
+  /** Chain timeout in ms - max duration of a conversation chain (default: 300000 = 5min) */
+  chainTimeout?: number;
+  /** CLI execution timeout in ms - max time for a single CLI command (default: 120000 = 2min) */
+  cliTimeout?: number;
   historyLimit: number; // default 50
   compaction?: GroupCompactionConfig;
   /** Thinking level for all agents in this group (default: inherit from agent config) */
@@ -143,10 +148,12 @@ export type DispatchResult = {
 // ─── Conversation Chain State (anti-loop) ───
 
 export type ConversationChainState = {
-  originMessageId: string; // Owner's original message ID
+  /** Owner's original message ID that started this chain */
+  originMessageId: string;
+  /** Number of agents that have been triggered in this chain */
   roundCount: number;
-  agentTriggerCounts: Map<string, number>; // agentId → consecutive trigger count
-  lastTriggeredAgentId?: string;
+  /** Timestamp when this chain was started (Owner sent message) */
+  startedAt: number;
 };
 
 // ─── Parallel Agent Run ───

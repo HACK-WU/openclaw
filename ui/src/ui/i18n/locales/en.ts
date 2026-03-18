@@ -288,6 +288,13 @@ export const en: Record<string, string> = {
   "chat.group.maxConsecutive": "Max Consecutive",
   "chat.group.maxConsecutiveHint":
     "Maximum number of consecutive responses a single agent can make before yielding to others.",
+  "chat.group.chainTimeout": "Chain Timeout",
+  "chat.group.chainTimeoutHint": "Maximum duration of a conversation chain from Owner's message.",
+  "chat.group.cliTimeout": "CLI Timeout",
+  "chat.group.cliTimeoutHint": "Maximum execution time for a single CLI command.",
+  "chat.group.timeoutSeconds": "seconds",
+  "chat.group.timeoutMinute": "minute",
+  "chat.group.timeoutMinutes": "minutes",
   "chat.group.projectDirectory": "Project Directory (optional)",
   "chat.group.projectDirectoryHint":
     "CLI Agents will start in this directory. Locked after creation.",

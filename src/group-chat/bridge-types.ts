@@ -48,6 +48,7 @@ export type BridgePtyStatus =
   | "running"
   | "ready"
   | "completed"
+  | "timeout"
   | "stuck"
   | "error"
   | "offline";
