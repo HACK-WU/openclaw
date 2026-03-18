@@ -44,7 +44,12 @@ export type GroupSessionMeta = {
   announcement: string;
   groupSkills: string[];
   maxRounds: number;
-  maxConsecutive: number;
+  /** @deprecated Removed from anti-loop mechanism, kept for backward compatibility */
+  maxConsecutive?: number;
+  /** Chain timeout in milliseconds (default: 300000 = 5 min, range: 60000-1800000) */
+  chainTimeout?: number;
+  /** CLI execution timeout in milliseconds (default: 120000 = 2 min, range: 30000-600000) */
+  cliTimeout?: number;
   archived: boolean;
   createdAt: number;
   updatedAt: number;
@@ -167,7 +172,7 @@ export type GroupChatState = {
   /** Active bridge terminal statuses (agentId → status) */
   bridgeTerminalStatuses?: Map<
     string,
-    "idle" | "working" | "ready" | "completed" | "error" | "disconnected"
+    "idle" | "working" | "ready" | "completed" | "timeout" | "error" | "disconnected"
   >;
   /** Terminal replay buffers (Base64-encoded, for page refresh restoration) */
   bridgeTerminalReplayBuffers?: Map<string, string>;
@@ -1126,7 +1131,7 @@ export async function loadGroupInfo(host: GroupHost, groupId: string): Promise<v
       if (meta.bridgeTerminalStatuses) {
         const statuses = new Map<
           string,
-          "idle" | "working" | "ready" | "completed" | "error" | "disconnected"
+          "idle" | "working" | "ready" | "completed" | "timeout" | "error" | "disconnected"
         >();
         for (const [agentId, status] of Object.entries(meta.bridgeTerminalStatuses)) {
           // Map backend status strings to frontend status types
@@ -1401,15 +1406,31 @@ export async function updateGroupMaxRounds(
   groupId: string,
   maxRounds: number,
 ): Promise<void> {
-  return updateGroupSettings(host, groupId, "setMaxRounds", { maxRounds });
+  return updateGroupAntiLoopConfig(host, groupId, { maxRounds });
 }
 
-export async function updateGroupMaxConsecutive(
+/**
+ * Update anti-loop configuration (maxRounds, chainTimeout, cliTimeout).
+ * All parameters are optional - only provided values will be updated.
+ */
+export async function updateGroupAntiLoopConfig(
   host: GroupHost,
   groupId: string,
-  maxConsecutive: number,
+  config: {
+    maxRounds?: number;
+    chainTimeout?: number;
+    cliTimeout?: number;
+  },
 ): Promise<void> {
-  return updateGroupSettings(host, groupId, "setMaxConsecutive", { maxConsecutive });
+  if (!host.client || !host.connected) {
+    return;
+  }
+  try {
+    await host.client.request("group.setAntiLoopConfig", { groupId, ...config });
+    await loadGroupInfo(host, groupId);
+  } catch (err) {
+    host.groupError = `Failed to update anti-loop config: ${String(err)}`;
+  }
 }
 
 export async function updateGroupContextConfig(
@@ -1735,6 +1756,23 @@ export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSyste
     return;
   }
 
+  // Handle chain timeout with prominent warning
+  if (eventName === "chain_timeout" && isActiveGroup) {
+    const systemMsg: GroupChatMessage = {
+      id: `sys-${Date.now()}`,
+      groupId: payload.groupId,
+      role: "system",
+      content: `⏱️ 对话链超时，已中断连接`,
+      sender: { type: "system" },
+      serverSeq: 0,
+      timestamp: Date.now(),
+    };
+    host.groupMessages = [...host.groupMessages, systemMsg];
+    // Clear pending agents since chain is aborted
+    host.groupPendingAgents = new Set();
+    return;
+  }
+
   if (!groupHost.client || !groupHost.connected) {
     return;
   }
@@ -1851,7 +1889,7 @@ export type GroupTerminalStatusPayload = {
 /** Map backend BridgePtyStatus → frontend BridgeTerminalStatus. */
 function mapPtyStatusToTerminalStatus(
   backendStatus: string,
-): "idle" | "working" | "ready" | "completed" | "error" | "disconnected" {
+): "idle" | "working" | "ready" | "completed" | "timeout" | "error" | "disconnected" {
   switch (backendStatus) {
     case "running":
       return "working";
@@ -1864,6 +1902,7 @@ function mapPtyStatusToTerminalStatus(
     case "idle":
     case "working":
     case "completed":
+    case "timeout":
     case "error":
     case "disconnected":
       return backendStatus;
@@ -1901,11 +1940,18 @@ export function handleGroupTerminalEvent(
     }
   }
 
-  // Update status to working — but NOT if already completed.
-  // After completion, stray PTY data (cursor blinks, heartbeats) should
-  // not flip the status back to working until the next explicit trigger.
+  // Update status to working — but NOT if already in a terminal state.
+  // After completion/timeout/error/disconnected, stray PTY data (cursor blinks,
+  // heartbeats, pre-kill buffer) should not flip the status back to working
+  // until the next explicit trigger.
   const currentStatus = host.bridgeTerminalStatuses?.get(payload.agentId);
-  if (currentStatus !== "working" && currentStatus !== "completed") {
+  if (
+    currentStatus !== "working" &&
+    currentStatus !== "completed" &&
+    currentStatus !== "timeout" &&
+    currentStatus !== "error" &&
+    currentStatus !== "disconnected"
+  ) {
     const statuses = new Map(host.bridgeTerminalStatuses);
     statuses.set(payload.agentId, "working");
     host.bridgeTerminalStatuses = statuses;
@@ -1924,16 +1970,29 @@ export function handleGroupTerminalStatusEvent(
   }
 
   const mappedStatus = mapPtyStatusToTerminalStatus(payload.status);
+
+  // Guard: once status is "timeout", it should NOT be overridden by
+  // transient events like "offline" → "disconnected" (which fires when
+  // killBridgePty terminates the process after timeout).  Only an explicit
+  // new trigger (→ "working") can re-activate the terminal.
+  const currentStatus = host.bridgeTerminalStatuses?.get(payload.agentId);
+  if (currentStatus === "timeout" && mappedStatus !== "working") {
+    return;
+  }
+
   const statuses = new Map(host.bridgeTerminalStatuses);
   statuses.set(payload.agentId, mappedStatus);
   host.bridgeTerminalStatuses = statuses;
 
   // Once a bridge terminal has started or become ready, the generic pending
   // indicator should disappear to avoid rendering the same agent twice.
+  // Also clear on terminal states (timeout, error, disconnected) to stop
+  // the "generating..." bubble when the CLI agent stops running.
   if (
     mappedStatus === "working" ||
     mappedStatus === "ready" ||
     mappedStatus === "completed" ||
+    mappedStatus === "timeout" ||
     mappedStatus === "error" ||
     mappedStatus === "disconnected"
   ) {
@@ -1942,10 +2001,10 @@ export function handleGroupTerminalStatusEvent(
     host.groupPendingAgents = nextPending;
   }
 
-  // When status becomes "completed", clean up streaming bubble and
-  // mark the terminal as completed. Also push extracted text to backend
+  // When status becomes "completed" or "timeout", clean up streaming bubble
+  // and mark the terminal as finished. Also push extracted text to backend
   // in case the frontend idle detection hasn't fired yet.
-  if (mappedStatus === "completed") {
+  if (mappedStatus === "completed" || mappedStatus === "timeout") {
     clearBridgeTerminalStream(host, payload.agentId);
     const terminal = getBridgeTerminal(payload.groupId, payload.agentId);
     if (terminal) {

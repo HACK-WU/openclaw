@@ -32,6 +32,7 @@ export type BridgeTerminalStatus =
   | "working"
   | "ready"
   | "completed"
+  | "timeout"
   | "error"
   | "disconnected";
 
@@ -528,6 +529,11 @@ export class BridgeTerminal extends LitElement {
       color: #a6e3a1;
     }
 
+    .bridge-terminal-header__status--timeout {
+      color: #ff9933;
+      font-weight: bold;
+    }
+
     .bridge-terminal-header__status--error {
       color: #f38ba8;
     }
@@ -652,10 +658,10 @@ export class BridgeTerminal extends LitElement {
       const prevStatus = changedProperties.get("status") as string | undefined;
 
       if (this.status === "working" || this.status === "ready") {
-        // When transitioning from a finished state (completed/error) to working,
+        // When transitioning from a finished state (completed/timeout/error) to working,
         // clear the terminal buffer to prevent unbounded accumulation across
         // multiple interaction cycles.
-        if (prevStatus === "completed" || prevStatus === "error") {
+        if (prevStatus === "completed" || prevStatus === "timeout" || prevStatus === "error") {
           this._terminal?.clear();
           this._plainTextTerminal?.clear();
           this._resetStreamState();
@@ -706,12 +712,12 @@ export class BridgeTerminal extends LitElement {
    * Called by the controller when a `group.terminal` event is received.
    */
   writeData(data: string): void {
-    // After completion, stray PTY data (cursor blinks, heartbeats) should
+    // After completion/timeout, stray PTY data (cursor blinks, heartbeats) should
     // still be written to the terminal for display, but should NOT restart
     // completion detection or flip the status indicator back to working.
-    const isCompleted = this.status === "completed";
+    const isFinished = this.status === "completed" || this.status === "timeout";
 
-    if (!isCompleted) {
+    if (!isFinished) {
       // Set working status when data is written (for dynamic status indicator)
       this._setWorkingStatus();
       // Update last data time for frontend completion detection
@@ -733,12 +739,12 @@ export class BridgeTerminal extends LitElement {
     }
 
     // Schedule stream text extraction for real-time chat bubble
-    if (!isCompleted) {
+    if (!isFinished) {
       this._scheduleStreamExtract();
     }
 
-    // Reset completion check timer (frontend-based detection) — skip if already completed
-    if (!isCompleted) {
+    // Reset completion check timer (frontend-based detection) — skip if already finished
+    if (!isFinished) {
       this._resetCompletionCheck();
     }
   }
@@ -747,9 +753,9 @@ export class BridgeTerminal extends LitElement {
    * Write raw binary data (Uint8Array) to the terminal.
    */
   writeBinaryData(data: Uint8Array): void {
-    const isCompleted = this.status === "completed";
+    const isFinished = this.status === "completed" || this.status === "timeout";
 
-    if (!isCompleted) {
+    if (!isFinished) {
       // Set working status when data is written (for dynamic status indicator)
       this._setWorkingStatus();
       // Update last data time for frontend completion detection
@@ -770,12 +776,12 @@ export class BridgeTerminal extends LitElement {
     }
 
     // Schedule stream text extraction for real-time chat bubble
-    if (!isCompleted) {
+    if (!isFinished) {
       this._scheduleStreamExtract();
     }
 
-    // Reset completion check timer (frontend-based detection) — skip if already completed
-    if (!isCompleted) {
+    // Reset completion check timer (frontend-based detection) — skip if already finished
+    if (!isFinished) {
       this._resetCompletionCheck();
     }
   }
@@ -1157,6 +1163,8 @@ export class BridgeTerminal extends LitElement {
         return `🔧 ${this._cliDisplayName()} 正在工作...`;
       case "completed":
         return `📦 ${this._cliDisplayName()} 执行完毕`;
+      case "timeout":
+        return `⏱️ ${this._cliDisplayName()} 执行超时，已中断`;
       case "error":
         return `❌ ${this._cliDisplayName()} 出现错误`;
       case "disconnected":
@@ -1212,13 +1220,13 @@ export class BridgeTerminal extends LitElement {
   }
 
   /**
-   * Called when the backend signals that the bridge agent has completed.
-   * Cleans up streaming state and marks the terminal as completed.
+   * Called when the backend signals that the bridge agent has completed or timed out.
+   * Cleans up streaming state and marks the terminal as finished.
    * (The streaming chat bubble is cleared by the controller directly.)
    */
   completeAndFold(): void {
     // Prevent duplicate completion calls
-    if (this.status === "completed") {
+    if (this.status === "completed" || this.status === "timeout") {
       return;
     }
 
