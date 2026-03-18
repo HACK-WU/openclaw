@@ -131,9 +131,10 @@ type ManagedPty = {
   /** Idle reclaim timer. */
   idleTimer: ReturnType<typeof setTimeout> | null;
   /**
-   * When true, PTY output is still recorded (ringBuffer, recentTextLines)
-   * but the onRawData callback is NOT invoked, so the frontend does not
-   * receive the data.  Used during context injection to suppress echo.
+   * When true, PTY output recording and broadcast are fully suppressed.
+   * Ring buffer, recentTextLines, and onRawData are all skipped.
+   * Used during context injection to prevent echo from leaking to any consumer
+   * (live terminal, replay buffer, or bridge-assistant context analysis).
    */
   inputPhase: boolean;
   /** Callback: raw PTY data for group.terminal broadcast. */
@@ -299,10 +300,13 @@ export function writeToPty(groupId: string, agentId: string, data: string): bool
 /**
  * Toggle the input-phase flag on a Bridge Agent's PTY.
  *
- * While `active` is true, raw PTY output is still recorded internally
- * (ring buffer, recentTextLines) but is NOT broadcast to connected
- * clients via the onRawData callback.  This prevents context-injection
- * echo from leaking to the frontend terminal.
+ * While `active` is true, ALL PTY output handling is suppressed:
+ * - Ring buffer recording (prevents replay leak)
+ * - recentTextLines recording (keeps assistant context clean)
+ * - onRawData broadcast (prevents live terminal leak)
+ *
+ * Only the idle-reclaim timer is still reset to prevent premature cleanup.
+ * This ensures context-injection echo never reaches any consumer.
  */
 export function setInputPhase(groupId: string, agentId: string, active: boolean): void {
   const managed = ptyInstances.get(ptyKey(groupId, agentId));
@@ -525,6 +529,17 @@ function handlePtyData(managed: ManagedPty, data: string): void {
   managed.state.lastOutputAt = now;
   managed.state.status = "running";
 
+  // During inputPhase (context injection), suppress ALL recording so that
+  // context-echo never leaks into the ring buffer (replay) or recentTextLines
+  // (bridge-assistant). Previously only the onRawData broadcast was guarded;
+  // this closes the ring-buffer replay-leak vector.
+  if (managed.inputPhase) {
+    // Still reset idle timer so the PTY isn't mistakenly reclaimed during
+    // context injection.
+    resetIdleTimer(managed);
+    return;
+  }
+
   // Write to ring buffer (raw bytes)
   managed.ringBuffer.write(Buffer.from(data, "utf-8"));
 
@@ -545,11 +560,8 @@ function handlePtyData(managed: ManagedPty, data: string): void {
   // Reset idle reclaim timer — activity detected
   resetIdleTimer(managed);
 
-  // Callback for raw data broadcast — suppressed during inputPhase
-  // so the frontend never sees context-injection echo.
-  if (!managed.inputPhase) {
-    managed.onRawData?.(data);
-  }
+  // Callback for raw data broadcast
+  managed.onRawData?.(data);
 }
 
 function handlePtyExit(managed: ManagedPty, event: PtyExitEvent): void {
