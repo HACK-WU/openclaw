@@ -401,34 +401,39 @@ const handleGroupHistory: GatewayRequestHandler = ({ params, respond }) => {
 // ─── Backend Agent Chain Rate Limiting ───
 // Prevents runaway agent-to-agent forwarding even if frontend misbehaves.
 // Limits are per "conversation chain" — reset when Owner sends a new message.
+// NOTE: The actual chain state is managed in chain-state-store.ts.
+// This section only provides backward-compatible functions.
 
-type BackendChainState = { count: number; startedAt: number };
-const agentChainStates = new Map<string, BackendChainState>();
+const AGENT_CHAIN_MAX = 20; // max forwards per chain (Layer 2 hard limit)
 
-const AGENT_CHAIN_MAX = 20; // max forwards per chain
-const AGENT_CHAIN_MAX_DURATION_MS = 5 * 60_000; // 5 minutes
-
-function resetAgentChainState(groupId: string): void {
-  agentChainStates.delete(groupId);
+function resetAgentChainState(_groupId: string): void {
+  // Chain state is now managed in chain-state-store.ts
+  // This function is kept for backward compatibility but does nothing
+  // The actual reset happens via initChainState() in chain-state-store.ts
 }
 
-function checkAgentChainLimit(groupId: string): { ok: boolean; reason?: string } {
-  const now = Date.now();
-  const chain = agentChainStates.get(groupId);
-
-  if (chain) {
-    if (chain.count >= AGENT_CHAIN_MAX) {
-      return { ok: false, reason: "count" };
-    }
-    if (now - chain.startedAt >= AGENT_CHAIN_MAX_DURATION_MS) {
-      return { ok: false, reason: "timeout" };
-    }
+function checkAgentChainLimit(
+  groupId: string,
+  chainTimeout?: number,
+): { ok: boolean; reason?: string } {
+  const state = getChainState(groupId);
+  if (!state) {
+    // No chain state means this is not part of an active chain
+    return { ok: true };
   }
 
-  agentChainStates.set(groupId, {
-    count: (chain?.count ?? 0) + 1,
-    startedAt: chain?.startedAt ?? now,
-  });
+  const now = Date.now();
+
+  // Check user-configured timeout (Layer 1)
+  if (state.startedAt && now - state.startedAt >= (chainTimeout ?? 300_000)) {
+    return { ok: false, reason: "timeout" };
+  }
+
+  // Check backend hard limit (Layer 2)
+  if (state.roundCount >= AGENT_CHAIN_MAX) {
+    return { ok: false, reason: "count" };
+  }
+
   return { ok: true };
 }
 
@@ -469,7 +474,7 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
 
   // Agent sends a message → check backend chain limit (count + duration)
   if (resolvedSender.type === "agent") {
-    const chainCheck = checkAgentChainLimit(groupId);
+    const chainCheck = checkAgentChainLimit(groupId, meta.chainTimeout);
     if (!chainCheck.ok) {
       const detail =
         chainCheck.reason === "timeout"
