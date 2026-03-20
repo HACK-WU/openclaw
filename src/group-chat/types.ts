@@ -147,6 +147,18 @@ export type DispatchResult = {
 
 // ─── Conversation Chain State (anti-loop) ───
 
+/** Owner queued intermediate message during an active chain */
+export type QueuedOwnerMessage = {
+  /** Message ID */
+  messageId: string;
+  /** @ mentioned agent IDs */
+  mentionedAgents: string[];
+  /** Whether any agent was @ mentioned */
+  hasMention: boolean;
+  /** Message arrival timestamp (epoch ms) */
+  queuedAt: number;
+};
+
 export type ConversationChainState = {
   /** Owner's original message ID that started this chain */
   originMessageId: string;
@@ -154,6 +166,10 @@ export type ConversationChainState = {
   roundCount: number;
   /** Timestamp when this chain was started (Owner sent message) */
   startedAt: number;
+  /** Agent IDs that have been triggered in this chain (for dedup) */
+  triggeredAgents: string[];
+  /** Owner messages queued during chain execution */
+  queuedMessages: QueuedOwnerMessage[];
 };
 
 // ─── Parallel Agent Run ───

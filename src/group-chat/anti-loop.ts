@@ -26,6 +26,8 @@ export function createChainState(originMessageId: string): ConversationChainStat
     originMessageId,
     roundCount: 0,
     startedAt: Date.now(),
+    triggeredAgents: [],
+    queuedMessages: [],
   };
 }
 

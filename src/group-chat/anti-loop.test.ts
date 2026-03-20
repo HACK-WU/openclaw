@@ -54,6 +54,8 @@ describe("anti-loop (legacy API)", () => {
         originMessageId: "msg-1",
         roundCount: 10,
         startedAt: Date.now(),
+        triggeredAgents: [],
+        queuedMessages: [],
       };
       const result = canTriggerAgent(state, "a1", makeMeta({ maxRounds: 10 }));
       expect(result.allowed).toBe(false);
@@ -65,6 +67,8 @@ describe("anti-loop (legacy API)", () => {
         originMessageId: "msg-1",
         roundCount: 2,
         startedAt: Date.now(),
+        triggeredAgents: [],
+        queuedMessages: [],
       };
       // maxConsecutive is deprecated, so this should still allow
       const result = canTriggerAgent(state, "a1", makeMeta({ maxConsecutive: 1 }));
@@ -134,17 +138,18 @@ describe("chain-state-store", () => {
 
   describe("checkAndIncrementSync", () => {
     it("returns no_chain_state when not initialized", () => {
-      const result = checkAndIncrementSync(groupId, makeMeta());
+      const result = checkAndIncrementSync(groupId, makeMeta(), "a1");
       expect(result.allowed).toBe(false);
       expect(result.reason).toBe("no_chain_state");
     });
 
     it("increments roundCount when under limit", () => {
       initChainState(groupId, "msg-1");
-      const result = checkAndIncrementSync(groupId, makeMeta());
+      const result = checkAndIncrementSync(groupId, makeMeta(), "a1");
       expect(result.allowed).toBe(true);
       if (result.allowed) {
         expect(result.newState.roundCount).toBe(1);
+        expect(result.newState.triggeredAgents).toContain("a1");
       }
     });
 
@@ -153,15 +158,15 @@ describe("chain-state-store", () => {
       const meta = makeMeta({ maxRounds: 2 });
 
       // First increment
-      let result = checkAndIncrementSync(groupId, meta);
+      let result = checkAndIncrementSync(groupId, meta, "a1");
       expect(result.allowed).toBe(true);
 
       // Second increment
-      result = checkAndIncrementSync(groupId, meta);
+      result = checkAndIncrementSync(groupId, meta, "a2");
       expect(result.allowed).toBe(true);
 
       // Third should be blocked
-      result = checkAndIncrementSync(groupId, meta);
+      result = checkAndIncrementSync(groupId, meta, "a1");
       expect(result.allowed).toBe(false);
       if (!result.allowed) {
         expect(result.reason).toBe("max_rounds_exceeded");
@@ -178,7 +183,7 @@ describe("chain-state-store", () => {
         state.startedAt = Date.now() - 200; // 200ms ago
       }
 
-      const result = checkAndIncrementSync(groupId, meta);
+      const result = checkAndIncrementSync(groupId, meta, "a1");
       expect(result.allowed).toBe(false);
       if (!result.allowed) {
         expect(result.reason).toBe("chain_timeout_exceeded");
@@ -191,12 +196,12 @@ describe("chain-state-store", () => {
 
       // Increment to CHAIN_MAX_COUNT
       for (let i = 0; i < _test.CHAIN_MAX_COUNT; i++) {
-        const result = checkAndIncrementSync(groupId, meta);
+        const result = checkAndIncrementSync(groupId, meta, `agent-${i}`);
         expect(result.allowed).toBe(true);
       }
 
       // Next should be blocked by backend limit
-      const result = checkAndIncrementSync(groupId, meta);
+      const result = checkAndIncrementSync(groupId, meta, "agent-final");
       expect(result.allowed).toBe(false);
       if (!result.allowed) {
         expect(result.reason).toBe("backend_chain_max_exceeded");
@@ -209,10 +214,11 @@ describe("chain-state-store", () => {
       initChainState(groupId, "msg-1");
       const meta = makeMeta();
 
-      const result = await atomicCheckAndIncrement(groupId, meta);
+      const result = await atomicCheckAndIncrement(groupId, meta, "a1");
       expect(result.allowed).toBe(true);
       if (result.allowed) {
         expect(result.newState.roundCount).toBe(1);
+        expect(result.newState.triggeredAgents).toContain("a1");
       }
     });
 
@@ -222,9 +228,9 @@ describe("chain-state-store", () => {
 
       // Launch 3 parallel increments
       const results = await Promise.all([
-        atomicCheckAndIncrement(groupId, meta),
-        atomicCheckAndIncrement(groupId, meta),
-        atomicCheckAndIncrement(groupId, meta),
+        atomicCheckAndIncrement(groupId, meta, "a1"),
+        atomicCheckAndIncrement(groupId, meta, "a2"),
+        atomicCheckAndIncrement(groupId, meta, "a3"),
       ]);
 
       // Only 2 should succeed (maxRounds = 2)
@@ -247,7 +253,7 @@ describe("chain-state-store", () => {
       const results = await Promise.all(
         Array(10)
           .fill(null)
-          .map(() => atomicCheckAndIncrement(groupId, meta)),
+          .map((_, i) => atomicCheckAndIncrement(groupId, meta, `agent-${i}`)),
       );
 
       const allowed = results.filter((r) => r.allowed);

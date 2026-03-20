@@ -21,6 +21,14 @@ import {
   initChainState,
   atomicCheckAndIncrement,
   getChainState,
+  getDefaultChainTimeout,
+  startChainMonitor,
+  setChainMonitor,
+  stopChainMonitor,
+  removeChainMonitor,
+  hasActiveMonitor,
+  enqueueOwnerMessage,
+  drainQueuedMessages,
 } from "../../group-chat/chain-state-store.js";
 import { buildGroupSessionKey } from "../../group-chat/group-session-key.js";
 import {
@@ -539,11 +547,48 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
   // Initialize chain state when Owner sends a message (roundCount = 0)
   // For agent-forwarded messages, use existing chain state from params
   if (resolvedSender.type === "owner") {
+    // Check if there's an active chain running — if so, queue this message
+    const chainState = getChainState(groupId);
+    if (chainState && hasActiveMonitor(groupId)) {
+      // Active chain running → enqueue Owner message
+      const mentionedAgents = dispatch.targets.map((t) => t.agentId);
+      enqueueOwnerMessage(groupId, savedMsg.id, mentionedAgents, mentionedAgents.length > 0);
+      log.info(
+        `[CHAIN_QUEUE] Owner message ${savedMsg.id} queued for group ${groupId}, ` +
+          `mentioned: [${mentionedAgents.join(", ")}]`,
+      );
+      return;
+    }
+
+    // No active chain → start a new one
     initChainState(groupId, savedMsg.id);
   }
 
   const abortController = new AbortController();
   registerGroupAbort(groupId, savedMsg.id, abortController);
+
+  // Start chainTimeout monitor for Owner-initiated chains
+  if (resolvedSender.type === "owner") {
+    const chainTimeout = getDefaultChainTimeout(meta);
+    const stopMonitor = startChainMonitor({
+      groupId,
+      chainTimeout,
+      startedAt: Date.now(),
+      abortController,
+      onTimeout: (gid) => {
+        log.info(`[CHAIN_TIMEOUT] Chain timed out for group ${gid}`);
+        void appendSystemMessage(
+          gid,
+          `对话链超时（${Math.round(chainTimeout / 60000)} 分钟），正在终止所有 Agent...`,
+        );
+        broadcastGroupSystem(context.broadcast, gid, "chain_timeout", {
+          duration: chainTimeout,
+        });
+        removeChainMonitor(gid);
+      },
+    });
+    setChainMonitor(groupId, stopMonitor);
+  }
 
   try {
     if (dispatch.mode === "broadcast") {
@@ -551,7 +596,7 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
       const transcriptSnapshot = getTranscriptSnapshot(groupId);
       const promises = dispatch.targets.map(async (target) => {
         // Atomic check and increment roundCount
-        const check = await atomicCheckAndIncrement(groupId, meta);
+        const check = await atomicCheckAndIncrement(groupId, meta, target.agentId);
         if (!check.allowed) {
           log.info(`[BROADCAST_BLOCKED] Agent ${target.agentId} blocked: ${check.reason}`);
           return { agentId: target.agentId, blocked: true, reason: check.reason };
@@ -585,11 +630,16 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
           );
         }
       }
+
+      // Handle chain end (stop monitor, drain queued messages)
+      if (resolvedSender.type === "owner") {
+        await handleChainEnd(groupId, meta, context, abortController);
+      }
     } else {
       // Serial trigger for unicast/mention
       for (const target of dispatch.targets) {
         // Atomic check and increment roundCount
-        const check = await atomicCheckAndIncrement(groupId, meta);
+        const check = await atomicCheckAndIncrement(groupId, meta, target.agentId);
         if (!check.allowed) {
           await appendSystemMessage(groupId, `Conversation round limit reached (${check.reason})`);
           broadcastGroupSystem(context.broadcast, groupId, "round_limit", { reason: check.reason });
@@ -610,11 +660,121 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
         // chainState is no longer updated by triggerAgentReasoning
         // The increment is done by atomicCheckAndIncrement above
       }
+
+      // Handle chain end (stop monitor, drain queued messages)
+      if (resolvedSender.type === "owner") {
+        await handleChainEnd(groupId, meta, context, abortController);
+      }
     }
   } finally {
     unregisterGroupAbort(groupId, savedMsg.id);
   }
 };
+
+// ─── Chain End Handler ───
+
+/**
+ * Handle chain end: stop monitor, drain queued messages, recurse if needed.
+ */
+async function handleChainEnd(
+  groupId: string,
+  meta: GroupSessionEntry,
+  context: Parameters<GatewayRequestHandler>[0]["context"],
+  currentAbortController: AbortController,
+  depth = 0,
+): Promise<void> {
+  if (depth > 10) {
+    log.warn(`[CHAIN_DRAIN] Recursive drain limit reached for group ${groupId}`);
+    return;
+  }
+
+  try {
+    // 1. Stop monitor
+    stopChainMonitor(groupId);
+
+    // 2. Get current triggeredAgents for dedup
+    const chainState = getChainState(groupId);
+    const currentTriggered = chainState?.triggeredAgents ?? [];
+
+    // 3. Drain queued messages
+    const drained = drainQueuedMessages(groupId, currentTriggered);
+
+    if (!drained) {
+      return;
+    }
+
+    log.info(
+      `[CHAIN_DRAIN] Group ${groupId}: processing queued message ${drained.triggerMessageId}, ` +
+        `targets: [${drained.targetAgentIds.join(", ")}]`,
+    );
+
+    // 4. Start new chain round
+    initChainState(groupId, drained.triggerMessageId);
+
+    const newAbortController = new AbortController();
+    registerGroupAbort(groupId, drained.triggerMessageId, newAbortController);
+
+    // 5. Start new monitor
+    const chainTimeout = getDefaultChainTimeout(meta);
+    const stopMonitor = startChainMonitor({
+      groupId,
+      chainTimeout,
+      startedAt: Date.now(),
+      abortController: newAbortController,
+      onTimeout: (gid) => {
+        log.info(`[CHAIN_TIMEOUT] Chain timed out for group ${gid} (drained message)`);
+        void appendSystemMessage(
+          gid,
+          `对话链超时（${Math.round(chainTimeout / 60000)} 分钟），正在终止所有 Agent...`,
+        );
+        broadcastGroupSystem(context.broadcast, gid, "chain_timeout", { duration: chainTimeout });
+        removeChainMonitor(gid);
+      },
+    });
+    setChainMonitor(groupId, stopMonitor);
+
+    try {
+      // 6. Trigger merged target agents (parallel)
+      const transcriptSnapshot = getTranscriptSnapshot(groupId);
+      const promises = drained.targetAgentIds.map(async (agentId) => {
+        const check = await atomicCheckAndIncrement(groupId, meta, agentId);
+        if (!check.allowed) {
+          log.info(`[CHAIN_DRAIN_BLOCKED] Agent ${agentId} blocked: ${check.reason}`);
+          return { agentId, blocked: true, reason: check.reason };
+        }
+
+        // Find trigger message in transcript
+        const triggerMessage = transcriptSnapshot.find((m) => m.id === drained.triggerMessageId);
+        if (!triggerMessage) {
+          log.warn(
+            `[CHAIN_DRAIN] Trigger message ${drained.triggerMessageId} not found in transcript`,
+          );
+          return { agentId, blocked: true, reason: "message_not_found" };
+        }
+
+        return triggerAgentReasoning({
+          groupId,
+          agentId,
+          meta,
+          transcriptSnapshot,
+          triggerMessage,
+          chainState: check.newState,
+          broadcast: context.broadcast,
+          signal: newAbortController.signal,
+        });
+      });
+
+      await Promise.allSettled(promises);
+
+      // 7. Recurse if more queued messages arrived during this round
+      await handleChainEnd(groupId, meta, context, newAbortController, depth + 1);
+    } finally {
+      unregisterGroupAbort(groupId, drained.triggerMessageId);
+    }
+  } catch (error) {
+    log.error(`[CHAIN_DRAIN] Error in handleChainEnd for group ${groupId}:`, error);
+  }
+}
 
 const handleGroupAbort: GatewayRequestHandler = ({ params, respond }) => {
   const groupId = params.groupId as string;
