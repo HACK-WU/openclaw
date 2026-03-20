@@ -278,6 +278,15 @@ export const zhCN: Record<string, string> = {
   "chat.group.role.member": "成员",
   "chat.group.role.cliAssistant": "CLI 助手",
 
+  // Agent Create Dialog
+  "agent.create.name.hint": "可以是中文或英文，将用于 Agent 的显示名称",
+  "agent.create.agentId.format": "仅限字母、数字、下划线 [a-zA-Z0-9_]",
+  "agent.create.agentId.locked": "已从名称自动填充，点击解锁编辑",
+  "agent.create.agentId.unlock": "解锁编辑 Agent ID",
+  "agent.create.agentId.warning": "名称包含特殊字符，请手动指定 Agent ID（仅限字母、数字、下划线）",
+  "agent.create.workspace.hint": "工作空间目录，支持 ~ 展开为用户主目录",
+  "agent.create.workspace.relativeHint": "建议使用绝对路径（如 ~/agents/xxx 或 /home/user/xxx）",
+
   // Errors
   "error.notFound": "未找到",
   "error.loadFailed": "加载失败",

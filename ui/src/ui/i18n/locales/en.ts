@@ -306,6 +306,15 @@ export const en: Record<string, string> = {
   "chat.group.role.member": "Member",
   "chat.group.role.cliAssistant": "CLI Assistant",
 
+  // Agent Create Dialog
+  "agent.create.name.hint": "Can be Chinese or English, used as the agent's display name",
+  "agent.create.agentId.format": "Only letters, numbers, underscores [a-zA-Z0-9_]",
+  "agent.create.agentId.locked": "Auto-filled from name, click to unlock for editing",
+  "agent.create.agentId.unlock": "Unlock to edit Agent ID",
+  "agent.create.agentId.warning": "Name contains special characters, please specify Agent ID manually (letters, numbers, underscores only)",
+  "agent.create.workspace.hint": "Workspace directory, ~ expands to user home directory",
+  "agent.create.workspace.relativeHint": "Consider using an absolute path (e.g. ~/agents/xxx or /home/user/xxx)",
+
   // Errors
   "error.notFound": "Not found",
   "error.loadFailed": "Failed to load",

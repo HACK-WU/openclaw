@@ -291,6 +291,15 @@ export const zhTW: Record<string, string> = {
   "chat.group.role.member": "成員",
   "chat.group.role.cliAssistant": "CLI 助手",
 
+  // Agent Create Dialog
+  "agent.create.name.hint": "可以是中文或英文，將用於 Agent 的顯示名稱",
+  "agent.create.agentId.format": "僅限字母、數字、底線 [a-zA-Z0-9_]",
+  "agent.create.agentId.locked": "已從名稱自動填入，點擊解鎖編輯",
+  "agent.create.agentId.unlock": "解鎖編輯 Agent ID",
+  "agent.create.agentId.warning": "名稱包含特殊字元，請手動指定 Agent ID（僅限字母、數字、底線）",
+  "agent.create.workspace.hint": "工作空間目錄，支援 ~ 展開為使用者主目錄",
+  "agent.create.workspace.relativeHint": "建議使用絕對路徑（如 ~/agents/xxx 或 /home/user/xxx）",
+
   // Errors
   "error.notFound": "未找到",
   "error.loadFailed": "加載失敗",

@@ -9,6 +9,7 @@ import type {
   SkillStatusReport,
   ToolsCatalogResult,
 } from "../types.ts";
+import { t } from "../i18n/index.ts";
 import "../components/cli-test-terminal.ts";
 import {
   renderAgentFiles,
@@ -1346,6 +1347,9 @@ function renderCreateAgentDialog(props: AgentsProps) {
   const { createForm, createBusy, createError } = props;
   const nameIsValidId = AGENT_ID_PATTERN.test(createForm.name);
   const agentIdValue = createForm.agentId || (nameIsValidId ? createForm.name : "");
+  // Agent ID 锁定状态：名称有效且用户未手动修改 Agent ID
+  const agentIdLocked = nameIsValidId && !createForm.agentId;
+  const workspacePath = createForm.workspace.trim();
   const canSubmit =
     createForm.name.trim().length > 0 &&
     createForm.workspace.trim().length > 0 &&
@@ -1370,26 +1374,44 @@ function renderCreateAgentDialog(props: AgentsProps) {
               ?disabled=${createBusy}
               @input=${(e: Event) => props.onCreateFormChange("name", (e.target as HTMLInputElement).value)}
             />
+            <span class="field-hint">${t("agent.create.name.hint")}</span>
           </label>
           <label class="field">
             <span>Agent ID <span class="required">*</span></span>
-            <input
-              type="text"
-              .value=${createForm.agentId || (nameIsValidId ? createForm.name : "")}
-              placeholder="e.g. researcher"
-              ?disabled=${createBusy}
-              @input=${(e: Event) => props.onCreateFormChange("agentId", (e.target as HTMLInputElement).value)}
-            />
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input
+                type="text"
+                style="flex: 1;"
+                .value=${agentIdValue}
+                placeholder="e.g. researcher"
+                ?disabled=${createBusy || agentIdLocked}
+                @input=${(e: Event) => props.onCreateFormChange("agentId", (e.target as HTMLInputElement).value)}
+              />
+              ${agentIdLocked ? html`
+                <button
+                  class="btn btn--sm"
+                  style="padding: 4px 8px;"
+                  title=${t("agent.create.agentId.unlock")}
+                  @click=${() => props.onCreateFormChange("agentId", agentIdValue)}
+                >🔒</button>
+              ` : nothing}
+            </div>
             ${
               !nameIsValidId && createForm.name.trim().length > 0
                 ? html`
                     <span class="field-hint" style="color: var(--warning)"
-                      >⚠️ Agent 名称包含特殊字符，请手动指定 Agent ID（仅限字母、数字、下划线）</span
+                      >⚠️ ${t("agent.create.agentId.warning")}</span
                     >
                   `
-                : html`
-                    <span class="field-hint">仅限字母、数字、下划线 [a-zA-Z0-9_]</span>
-                  `
+                : agentIdLocked
+                  ? html`
+                      <span class="field-hint" style="color: var(--muted);"
+                        >🔒 ${t("agent.create.agentId.locked")}</span
+                      >
+                    `
+                  : html`
+                      <span class="field-hint">${t("agent.create.agentId.format")}</span>
+                    `
             }
           </label>
           <label class="field">
@@ -1401,13 +1423,18 @@ function renderCreateAgentDialog(props: AgentsProps) {
               ?disabled=${createBusy}
               @input=${(e: Event) => props.onCreateFormChange("workspace", (e.target as HTMLInputElement).value)}
             />
+            <span class="field-hint">
+              ${workspacePath && !workspacePath.startsWith("/") && !workspacePath.startsWith("~")
+                ? `ℹ️ ${t("agent.create.workspace.relativeHint")}`
+                : t("agent.create.workspace.hint")}
+            </span>
           </label>
           <label class="field">
             <span>Emoji (optional)</span>
             <input
               type="text"
               .value=${createForm.emoji}
-              placeholder="e.g. \uD83D\uDD2C"
+              placeholder="e.g. 🔬"
               ?disabled=${createBusy}
               @input=${(e: Event) => props.onCreateFormChange("emoji", (e.target as HTMLInputElement).value)}
             />
