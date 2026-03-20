@@ -166,6 +166,115 @@ Agent B 被触发 → roundCount = 2 → 回复
 
 **对话链边界**：当前所有 Agent 回复完成（或被超时终止）后，`roundCount` 才归零。Owner 在 Agent 执行过程中发送的新消息不会中断当前对话链。
 
+### 4.4 maxRounds 典型场景
+
+#### 场景 1：串行级联触发直到 maxRounds 阻止
+
+```
+maxRounds = 3，单播模式
+
+T=0:    Owner 发消息 @ Agent A → roundCount = 0
+T=1:    Agent A 触发 → roundCount = 1 → 执行 → 回复并 @ Agent B
+T=3:    Agent B 触发 → roundCount = 2 → 执行 → 回复并 @ Agent C
+T=5:    Agent C 触发 → roundCount = 3 = maxRounds → 执行 → 回复并 @ Agent D
+T=7:    Agent D 尝试触发 → roundCount=4 >= maxRounds=3 → ❌ 阻止
+T=7:    → maxRounds 耗尽 → chainTimeout 监控清零 → 对话链结束 → roundCount = 0
+```
+
+**结果**：A、B、C 依次执行，D 被 maxRounds 阻止。对话链在 D 被阻止时立即结束。
+
+#### 场景 2：广播初始派发耗尽 maxRounds
+
+```
+maxRounds = 3，广播模式
+
+T=0:    Owner 发消息 @ Agent A、B、C → roundCount = 0
+T=1:    Agent A 触发 → roundCount = 1 → 执行中
+T=1:    Agent B 触发 → roundCount = 2 → 执行中
+T=1:    Agent C 触发 → roundCount = 3 = maxRounds → 执行中
+T=3:    Agent A 回复完成 → 回复中 @ Agent D → D 尝试触发 → ❌ 阻止（roundCount=4 >= 3）
+T=5:    Agent B 回复完成 → 回复中 @ Agent E → E 尝试触发 → ❌ 阻止
+T=6:    Agent C 回复完成 → 回复中 @ Agent F → F 尝试触发 → ❌ 阻止
+T=6:    → 所有 Agent 完成 + maxRounds 耗尽 → 对话链结束 → roundCount = 0
+```
+
+**结果**：初始 3 个 Agent 执行完毕后，各自的级联触发全部被 maxRounds 阻止。
+
+#### 场景 3：广播部分槽位使用后级联填满
+
+```
+maxRounds = 5，广播模式
+
+T=0:    Owner 发消息 @ Agent A、B → roundCount = 0
+T=1:    Agent A 触发 → roundCount = 1 → 执行中
+T=1:    Agent B 触发 → roundCount = 2 → 执行中
+T=3:    Agent A 回复完成 → 回复中 @ Agent C、D
+T=3:    Agent C 触发 → roundCount = 3 → 执行中
+T=3:    Agent D 触发 → roundCount = 4 → 执行中
+T=5:    Agent B 回复完成 → 回复中 @ Agent E
+T=5:    Agent E 触发 → roundCount = 5 = maxRounds → 执行中
+T=7:    Agent C 回复完成 → @ Agent F → ❌ 阻止（roundCount=6 >= 5）
+T=8:    Agent D、E 回复完成
+T=8:    → 所有 Agent 完成 + maxRounds 耗尽 → 对话链结束 → roundCount = 0
+```
+
+**结果**：初始占 2 槽，级联占 3 槽，刚好耗尽 maxRounds=5。F 被阻止。
+
+#### 场景 4：maxRounds 阻止后 chainTimeout 不再需要
+
+```
+maxRounds = 2，chainTimeout = 8 分钟，广播模式
+
+T=0:    Owner 发消息 @ Agent A、B → 启动 monitor
+T=1:    Agent A 触发 → roundCount = 1 → 执行中
+T=1:    Agent B 触发 → roundCount = 2 = maxRounds → 执行中
+T=3:    Agent A 回复完成 → @ Agent C → ❌ 阻止
+T=3:    → maxRounds 耗尽 → monitor 提前清除（无需等到 T=8）
+T=5:    Agent B 回复完成 → @ Agent D → ❌ 阻止
+T=5:    → 所有 Agent 完成 + maxRounds 耗尽 → 对话链结束
+```
+
+**结果**：maxRounds 在 T=3 耗尽时，chainTimeout 的 monitor 被提前清除。即使 chainTimeout=8 分钟，对话链在 T=5 就结束了。这是 maxRounds 和 chainTimeout 的协作：maxRounds 先到达则 chainTimeout 监控提前退出。
+
+#### 场景 5：maxRounds 未耗尽，由 chainTimeout 终止
+
+```
+maxRounds = 100，chainTimeout = 8 分钟，广播模式
+
+T=0:    Owner 发消息 @ Agent A、B → 启动 monitor
+T=1:    Agent A 触发 → roundCount = 1 → 执行中
+T=1:    Agent B 触发 → roundCount = 2 → 执行中
+T=3:    Agent A 回复完成 → @ Agent C
+T=3:    Agent C 触发 → roundCount = 3 → 执行中（耗时 10 分钟）
+T=8:    chainTimeout 触发！→ Agent C 被终止（roundCount 仅为 3，远未到 maxRounds=100）
+T=8:    → 对话链超时结束 → roundCount = 0
+```
+
+**结果**：maxRounds 设置很大时，chainTimeout 成为主要的终止手段。maxRounds 防的是无限循环，chainTimeout 防的是单个 Agent 执行过长。
+
+#### 场景 6：maxRounds 耗尽后排队消息启动新一轮
+
+```
+maxRounds = 3，广播模式
+
+T=0:    Owner 发消息 M1 @ Agent A、B、C → roundCount = 0
+T=1:    Agent A 触发 → roundCount = 1 → 执行中
+T=1:    Agent B 触发 → roundCount = 2 → 执行中
+T=1:    Agent C 触发 → roundCount = 3 = maxRounds → 执行中
+T=3:    Owner 发消息 M2 @ Agent D → 排队等待
+T=4:    Agent A 回复完成 → @ Agent X → ❌ 阻止（roundCount=4 >= 3）
+T=5:    Agent B 回复完成 → @ Agent Y → ❌ 阻止
+T=6:    Agent C 回复完成
+T=6:    → 所有 Agent 完成 + maxRounds 耗尽 → 对话链彻底结束
+        → roundCount = 0，chainTimeout 监控清零
+        → 检查 M2：Agent D 不在 M1 触发列表中 → 启动 M2
+T=6:    Agent D 触发（针对 M2）→ roundCount = 1 → 通过
+```
+
+**结果**：maxRounds 耗尽是对话链结束的条件之一。耗尽后全部状态清零（roundCount、chainTimeout 监控），排队的 Owner 消息按正常流程启动新一轮。
+
+**注意**：此场景由 maxRounds 机制负责实现，chainTimeout 机制不需要额外处理。maxRounds 耗尽时直接清零 chainTimeout 监控即可。
+
 ---
 
 ## 五、超时处理
@@ -373,30 +482,7 @@ T=8:    Agent B 触发（针对 M2）→ 通过 → 开始执行
 
 **结果**：超时也是对话链结束的条件之一。超时后立即为排队的 Owner 消息启动新的一轮。
 
-### 5.13 场景 J：对话链因 maxRounds 耗尽而结束
-
-```
-maxRounds = 3，chainTimeout = 8 分钟（广播模式）
-
-T=0:    Owner 发消息 M1 @ Agent A、B、C → 启动 monitor
-T=1:    Agent A 触发 → roundCount=1 → 执行中
-T=1:    Agent B 触发 → roundCount=2 → 执行中
-T=1:    Agent C 触发 → roundCount=3 → 执行中（达到 maxRounds）
-T=3:    Owner 发消息 M2 @ Agent D → 排队等待
-T=4:    Agent A 回复完成 → Agent X 触发 → roundCount=4 >= maxRounds=3 → ❌ 阻止
-T=5:    Agent B 回复完成 → Agent Y 触发 → ❌ 阻止
-T=6:    Agent C 回复完成
-T=6:    → 所有 Agent 完成 + maxRounds 耗尽 → 对话链彻底结束
-        → roundCount = 0，monitor 停止
-        → 检查 M2：Agent D 不在 M1 中 → 启动 M2
-T=6:    Agent D 触发（针对 M2）→ roundCount=1 → 通过
-```
-
-**结果**：maxRounds 耗尽是对话链结束的另一种方式（与超时并列）。到达 maxRounds 限制后，对话链的全部状态（roundCount、monitor）清零，排队的 Owner 消息按正常流程启动新一轮。
-
-**关键规则**：maxRounds 到达限制 = 对话链彻底结束。只有 Owner 发送新消息才能开启下一轮对话。Agent 的 @ 不能重启对话链。
-
-### 5.9 为什么需要运行时监控？
+### 5.13 为什么需要运行时监控？
 
 如果只用触发前检查（无 monitor），存在以下漏洞：
 
