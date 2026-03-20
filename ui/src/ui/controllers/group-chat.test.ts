@@ -643,7 +643,7 @@ describe("group-chat controller", () => {
       handleGroupSystemEvent(state, { groupId: "g1", action: "round_limit" });
       expect(state.groupMessages).toHaveLength(1);
       expect(state.groupMessages[0].role).toBe("system");
-      expect(state.groupMessages[0].content).toContain("round limit");
+      expect(state.groupMessages[0].content).toContain("最大轮数限制");
     });
 
     it("ignores system events for non-active groups", () => {

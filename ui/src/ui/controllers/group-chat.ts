@@ -780,10 +780,13 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
       skipTranscript: true,
     });
 
+    // Reset chain state for summary round, but KEEP the original startedAt
+    // so that the chain duration limit can eventually fire.
+    const originalStartedAt = chain.startedAt;
     const now = Date.now();
     groupChainStates.set(groupId, {
-      count: 0,
-      startedAt: now,
+      count: chain.count, // Preserve count — summary is part of the same chain
+      startedAt: originalStartedAt, // Keep original start time for duration limit
       initiators: [],
       pendingAgents: new Set(validInitiators),
       lastMessageAt: now,
@@ -1742,34 +1745,53 @@ export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSyste
   const isActiveGroup = payload.groupId === host.activeGroupId;
   const groupHost = host as GroupHost;
 
-  if (eventName === "round_limit" && isActiveGroup) {
-    const systemMsg: GroupChatMessage = {
-      id: `sys-${Date.now()}`,
-      groupId: payload.groupId,
-      role: "system",
-      content: `Conversation round limit reached`,
-      sender: { type: "system" },
-      serverSeq: 0,
-      timestamp: Date.now(),
-    };
-    host.groupMessages = [...host.groupMessages, systemMsg];
+  if (eventName === "round_limit") {
+    // Reset chain state to prevent further forwards
+    resetChainState(payload.groupId);
+
+    if (isActiveGroup) {
+      const systemMsg: GroupChatMessage = {
+        id: `sys-${Date.now()}`,
+        groupId: payload.groupId,
+        role: "system",
+        content: `已达到最大轮数限制，对话链结束`,
+        sender: { type: "system" },
+        serverSeq: 0,
+        timestamp: Date.now(),
+      };
+      host.groupMessages = [...host.groupMessages, systemMsg];
+      host.groupPendingAgents = new Set();
+      host.groupStreams = new Map();
+      host.groupToolMessages = new Map();
+      streamBuffers.clear();
+    }
     return;
   }
 
   // Handle chain timeout with prominent warning
-  if (eventName === "chain_timeout" && isActiveGroup) {
-    const systemMsg: GroupChatMessage = {
-      id: `sys-${Date.now()}`,
-      groupId: payload.groupId,
-      role: "system",
-      content: `⏱️ 对话链超时，已中断连接`,
-      sender: { type: "system" },
-      serverSeq: 0,
-      timestamp: Date.now(),
-    };
-    host.groupMessages = [...host.groupMessages, systemMsg];
-    // Clear pending agents since chain is aborted
-    host.groupPendingAgents = new Set();
+  if (eventName === "chain_timeout") {
+    // Reset chain state FIRST — this prevents detectAndForwardMentions from
+    // triggering new forwards for messages that arrive after the timeout.
+    // Must happen regardless of whether this is the active group.
+    resetChainState(payload.groupId);
+
+    if (isActiveGroup) {
+      const systemMsg: GroupChatMessage = {
+        id: `sys-${Date.now()}`,
+        groupId: payload.groupId,
+        role: "system",
+        content: `⏱️ 对话链超时，已中断连接`,
+        sender: { type: "system" },
+        serverSeq: 0,
+        timestamp: Date.now(),
+      };
+      host.groupMessages = [...host.groupMessages, systemMsg];
+      // Clear all pending/streaming states since chain is aborted
+      host.groupPendingAgents = new Set();
+      host.groupStreams = new Map();
+      host.groupToolMessages = new Map();
+      streamBuffers.clear();
+    }
     return;
   }
 

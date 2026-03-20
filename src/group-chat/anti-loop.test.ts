@@ -55,7 +55,6 @@ describe("anti-loop (legacy API)", () => {
         roundCount: 10,
         startedAt: Date.now(),
         triggeredAgents: [],
-        queuedMessages: [],
       };
       const result = canTriggerAgent(state, "a1", makeMeta({ maxRounds: 10 }));
       expect(result.allowed).toBe(false);
@@ -68,7 +67,6 @@ describe("anti-loop (legacy API)", () => {
         roundCount: 2,
         startedAt: Date.now(),
         triggeredAgents: [],
-        queuedMessages: [],
       };
       // maxConsecutive is deprecated, so this should still allow
       const result = canTriggerAgent(state, "a1", makeMeta({ maxConsecutive: 1 }));

@@ -8,6 +8,7 @@
  * - All agents share the same state store (Map<groupId, ChainState>)
  * - Lock mechanism ensures atomic check-and-increment for parallel agents
  * - roundCount semantics: number of agents that have been triggered
+ * - Only Owner sending a new message resets the chain (initChainState)
  */
 
 import { getLogger } from "../logging.js";
@@ -30,6 +31,75 @@ const store = new Map<string, ConversationChainState>();
 
 /** Group-level locks for atomic operations */
 const locks = new Map<string, Promise<void>>();
+
+/** Group-level pending agent count (number of agents currently executing) */
+const pendingCounts = new Map<string, number>();
+
+// ─── Pending Agent Count ───
+
+/**
+ * Increment pending agent count for a group.
+ * Called when an agent starts executing (before triggerAgentReasoning).
+ */
+export function incrementPendingAgents(groupId: string): void {
+  pendingCounts.set(groupId, (pendingCounts.get(groupId) ?? 0) + 1);
+}
+
+/**
+ * Decrement pending agent count for a group.
+ * Called when an agent finishes executing (after triggerAgentReasoning).
+ * Returns the new count (0 means all agents done → chain idle).
+ */
+export function decrementPendingAgents(groupId: string): number {
+  const current = pendingCounts.get(groupId) ?? 0;
+  const next = Math.max(0, current - 1);
+  if (next === 0) {
+    pendingCounts.delete(groupId);
+  } else {
+    pendingCounts.set(groupId, next);
+  }
+  return next;
+}
+
+/**
+ * Get current pending agent count.
+ */
+export function getPendingAgentCount(groupId: string): number {
+  return pendingCounts.get(groupId) ?? 0;
+}
+
+/**
+ * Lightweight check for agent-forwarded messages.
+ * Verifies chain state exists and checks time/count limits.
+ * Does NOT increment roundCount — that's done by atomicCheckAndIncrement later.
+ */
+export function atomicAgentForwardCheck(
+  groupId: string,
+  meta: GroupSessionEntry,
+): { ok: true } | { ok: false; reason: string } {
+  const state = store.get(groupId);
+  if (!state) {
+    return { ok: false, reason: "no_chain_state" };
+  }
+
+  const now = Date.now();
+
+  // Layer 1: User configurable timeout
+  const timeout = meta.chainTimeout ?? getDefaultChainTimeout(meta);
+  if (state.startedAt && now - state.startedAt >= timeout) {
+    return { ok: false, reason: "timeout" };
+  }
+
+  // Layer 2: Backend hard limits
+  if (state.roundCount >= CHAIN_MAX_COUNT) {
+    return { ok: false, reason: "count" };
+  }
+  if (state.startedAt && now - state.startedAt >= CHAIN_MAX_DURATION_MS) {
+    return { ok: false, reason: "timeout" };
+  }
+
+  return { ok: true };
+}
 
 // ─── Monitor Storage ───
 
@@ -94,18 +164,24 @@ export function getChainState(groupId: string): ConversationChainState | undefin
 
 /**
  * Initialize a new chain state when Owner sends a message.
- * This resets roundCount to 0 and stops any existing monitor.
+ * This is the ONLY place where chain state is reset.
+ *
+ * - Resets roundCount to 0
+ * - Stops any existing monitor
+ * - Resets pending agent count
+ * - Aborts any running agents (via stopping old monitor which triggers abort)
  */
 export function initChainState(groupId: string, originMessageId: string): ConversationChainState {
   // Stop old monitor if exists
   stopChainMonitor(groupId);
+  // Reset pending agent count
+  pendingCounts.delete(groupId);
 
   const state: ConversationChainState = {
     originMessageId,
     roundCount: 0,
     startedAt: Date.now(),
     triggeredAgents: [],
-    queuedMessages: [],
   };
   store.set(groupId, state);
   return state;
@@ -118,6 +194,7 @@ export function clearChainState(groupId: string): void {
   stopChainMonitor(groupId);
   store.delete(groupId);
   locks.delete(groupId);
+  pendingCounts.delete(groupId);
 }
 
 /**
@@ -258,96 +335,6 @@ export function checkAndIncrementSync(
   return { allowed: true, newState: { ...state, triggeredAgents: [...state.triggeredAgents] } };
 }
 
-// ─── Queue Management ───
-
-/**
- * Enqueue an Owner message sent during an active chain.
- */
-export function enqueueOwnerMessage(
-  groupId: string,
-  messageId: string,
-  mentionedAgents: string[],
-  hasMention: boolean,
-): void {
-  const state = store.get(groupId);
-  if (!state) {
-    return;
-  }
-
-  state.queuedMessages.push({
-    messageId,
-    mentionedAgents,
-    hasMention,
-    queuedAt: Date.now(),
-  });
-  store.set(groupId, state);
-}
-
-/**
- * Drain queued Owner messages at chain end.
- *
- * Logic:
- * 1. Filter out messages without @ mentions (don't trigger chains)
- * 2. Merge all @-mention messages: last one is trigger, targets are union
- * 3. Dedup: remove agents already triggered in current chain
- * 4. If targets remain after dedup, return merged result; otherwise null
- */
-export function drainQueuedMessages(
-  groupId: string,
-  currentTriggeredAgents: string[],
-): {
-  triggerMessageId: string;
-  targetAgentIds: string[];
-} | null {
-  const state = store.get(groupId);
-  if (!state) {
-    return null;
-  }
-
-  const { queuedMessages } = state;
-
-  // Clear queue regardless of whether a new chain starts
-  state.queuedMessages = [];
-  store.set(groupId, state);
-
-  // Filter: only keep messages with @ mentions
-  const messagesWithMentions = queuedMessages.filter(
-    (m) => m.hasMention && m.mentionedAgents.length > 0,
-  );
-
-  if (messagesWithMentions.length === 0) {
-    return null;
-  }
-
-  // Last message with mention is the trigger message
-  const lastMessage = messagesWithMentions[messagesWithMentions.length - 1];
-
-  // Merge targets: union of all mentioned agents
-  const allMentioned = new Set<string>();
-  for (const msg of messagesWithMentions) {
-    for (const agentId of msg.mentionedAgents) {
-      allMentioned.add(agentId);
-    }
-  }
-
-  // Dedup: remove agents already triggered in current chain
-  const triggeredSet = new Set(currentTriggeredAgents);
-  for (const agentId of allMentioned) {
-    if (triggeredSet.has(agentId)) {
-      allMentioned.delete(agentId);
-    }
-  }
-
-  if (allMentioned.size === 0) {
-    return null;
-  }
-
-  return {
-    triggerMessageId: lastMessage.messageId,
-    targetAgentIds: [...allMentioned],
-  };
-}
-
 // ─── Chain Timeout Monitor ───
 
 /**
@@ -404,6 +391,7 @@ export const _test = {
   getStore: () => store,
   getLocks: () => locks,
   getMonitors: () => monitors,
+  getPendingCounts: () => pendingCounts,
   CHAIN_MAX_COUNT,
   CHAIN_MAX_DURATION_MS,
 };

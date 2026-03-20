@@ -10,8 +10,10 @@ import {
   setChainMonitor,
   stopChainMonitor,
   hasActiveMonitor,
-  enqueueOwnerMessage,
-  drainQueuedMessages,
+  incrementPendingAgents,
+  decrementPendingAgents,
+  getPendingAgentCount,
+  atomicAgentForwardCheck,
   _test,
 } from "./chain-state-store.js";
 import type { GroupSessionEntry } from "./types.js";
@@ -43,6 +45,7 @@ describe("chain-timeout monitor", () => {
     _test.getStore().clear();
     _test.getLocks().clear();
     _test.getMonitors().clear();
+    _test.getPendingCounts().clear();
     vi.useFakeTimers();
   });
 
@@ -211,116 +214,6 @@ describe("chain-timeout monitor", () => {
   });
 });
 
-describe("queue management", () => {
-  const groupId = "test-group";
-
-  beforeEach(() => {
-    _test.getStore().clear();
-    _test.getLocks().clear();
-  });
-
-  afterEach(() => {
-    clearChainState(groupId);
-  });
-
-  describe("enqueueOwnerMessage", () => {
-    it("does nothing if no chain state exists", () => {
-      enqueueOwnerMessage(groupId, "msg-1", ["a1"], true);
-      // No error should be thrown
-    });
-
-    it("adds message to queue", () => {
-      initChainState(groupId, "msg-0");
-      enqueueOwnerMessage(groupId, "msg-1", ["a1", "a2"], true);
-
-      const state = getChainState(groupId);
-      expect(state?.queuedMessages).toHaveLength(1);
-      expect(state?.queuedMessages[0].messageId).toBe("msg-1");
-      expect(state?.queuedMessages[0].mentionedAgents).toEqual(["a1", "a2"]);
-      expect(state?.queuedMessages[0].hasMention).toBe(true);
-    });
-  });
-
-  describe("drainQueuedMessages", () => {
-    it("returns null for empty queue", () => {
-      initChainState(groupId, "msg-0");
-      const result = drainQueuedMessages(groupId, []);
-      expect(result).toBeNull();
-    });
-
-    it("returns null when no chain state", () => {
-      const result = drainQueuedMessages(groupId, []);
-      expect(result).toBeNull();
-    });
-
-    it("returns null when all messages have no mentions", () => {
-      initChainState(groupId, "msg-0");
-      enqueueOwnerMessage(groupId, "msg-1", [], false);
-      enqueueOwnerMessage(groupId, "msg-2", [], false);
-
-      const result = drainQueuedMessages(groupId, []);
-      expect(result).toBeNull();
-    });
-
-    it("merges @ targets from multiple messages", () => {
-      initChainState(groupId, "msg-0");
-      enqueueOwnerMessage(groupId, "msg-1", ["a1"], true);
-      enqueueOwnerMessage(groupId, "msg-2", ["a2", "a3"], true);
-
-      const result = drainQueuedMessages(groupId, []);
-
-      expect(result).not.toBeNull();
-      expect(result!.triggerMessageId).toBe("msg-2"); // Last message with mentions
-      expect(result!.targetAgentIds).toContain("a1");
-      expect(result!.targetAgentIds).toContain("a2");
-      expect(result!.targetAgentIds).toContain("a3");
-    });
-
-    it("deduplicates against already triggered agents", () => {
-      initChainState(groupId, "msg-0");
-      enqueueOwnerMessage(groupId, "msg-1", ["a1", "a2"], true);
-      enqueueOwnerMessage(groupId, "msg-2", ["a2", "a3"], true);
-
-      // a1 and a2 already triggered
-      const result = drainQueuedMessages(groupId, ["a1", "a2"]);
-
-      expect(result).not.toBeNull();
-      expect(result!.triggerMessageId).toBe("msg-2");
-      expect(result!.targetAgentIds).toEqual(["a3"]); // a1, a2 removed
-    });
-
-    it("returns null when all targets already triggered", () => {
-      initChainState(groupId, "msg-0");
-      enqueueOwnerMessage(groupId, "msg-1", ["a1"], true);
-
-      const result = drainQueuedMessages(groupId, ["a1"]);
-      expect(result).toBeNull();
-    });
-
-    it("clears queue after draining", () => {
-      initChainState(groupId, "msg-0");
-      enqueueOwnerMessage(groupId, "msg-1", ["a1"], true);
-      enqueueOwnerMessage(groupId, "msg-2", ["a2"], true);
-
-      drainQueuedMessages(groupId, []);
-
-      const state = getChainState(groupId);
-      expect(state?.queuedMessages).toHaveLength(0);
-    });
-
-    it("filters out messages without mentions but keeps those with", () => {
-      initChainState(groupId, "msg-0");
-      enqueueOwnerMessage(groupId, "msg-plain", [], false); // No mention
-      enqueueOwnerMessage(groupId, "msg-with-mention", ["a1"], true);
-
-      const result = drainQueuedMessages(groupId, []);
-
-      expect(result).not.toBeNull();
-      expect(result!.triggerMessageId).toBe("msg-with-mention");
-    });
-  });
-});
-
 describe("atomicCheckAndIncrement with agentId", () => {
   const groupId = "test-group";
 
@@ -328,6 +221,7 @@ describe("atomicCheckAndIncrement with agentId", () => {
     _test.getStore().clear();
     _test.getLocks().clear();
     _test.getMonitors().clear();
+    _test.getPendingCounts().clear();
   });
 
   afterEach(() => {
@@ -381,5 +275,129 @@ describe("atomicCheckAndIncrement with agentId", () => {
 
     const state = getChainState(groupId);
     expect(state?.triggeredAgents).toContain("a1");
+  });
+});
+
+describe("pendingAgentCount", () => {
+  const groupId = "test-group";
+
+  beforeEach(() => {
+    _test.getStore().clear();
+    _test.getLocks().clear();
+    _test.getMonitors().clear();
+    _test.getPendingCounts().clear();
+  });
+
+  it("starts at 0", () => {
+    expect(getPendingAgentCount(groupId)).toBe(0);
+  });
+
+  it("increment and decrement work correctly", () => {
+    incrementPendingAgents(groupId);
+    expect(getPendingAgentCount(groupId)).toBe(1);
+
+    incrementPendingAgents(groupId);
+    expect(getPendingAgentCount(groupId)).toBe(2);
+
+    const remaining = decrementPendingAgents(groupId);
+    expect(remaining).toBe(1);
+    expect(getPendingAgentCount(groupId)).toBe(1);
+
+    const remaining2 = decrementPendingAgents(groupId);
+    expect(remaining2).toBe(0);
+    expect(getPendingAgentCount(groupId)).toBe(0);
+  });
+
+  it("decrement does not go below 0", () => {
+    const remaining = decrementPendingAgents(groupId);
+    expect(remaining).toBe(0);
+    expect(getPendingAgentCount(groupId)).toBe(0);
+  });
+
+  it("initChainState resets pendingCounts", () => {
+    incrementPendingAgents(groupId);
+    incrementPendingAgents(groupId);
+    expect(getPendingAgentCount(groupId)).toBe(2);
+
+    initChainState(groupId, "msg-1");
+    expect(getPendingAgentCount(groupId)).toBe(0);
+  });
+
+  it("clearChainState resets pendingCounts", () => {
+    incrementPendingAgents(groupId);
+    expect(getPendingAgentCount(groupId)).toBe(1);
+
+    clearChainState(groupId);
+    expect(getPendingAgentCount(groupId)).toBe(0);
+  });
+});
+
+describe("atomicAgentForwardCheck", () => {
+  const groupId = "test-group";
+
+  beforeEach(() => {
+    _test.getStore().clear();
+    _test.getLocks().clear();
+    _test.getMonitors().clear();
+    _test.getPendingCounts().clear();
+  });
+
+  afterEach(() => {
+    clearChainState(groupId);
+  });
+
+  it("returns ok:false when no chain state", () => {
+    const result = atomicAgentForwardCheck(groupId, makeMeta());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("no_chain_state");
+    }
+  });
+
+  it("returns ok:true when chain is active and within limits", () => {
+    initChainState(groupId, "msg-1");
+    const result = atomicAgentForwardCheck(groupId, makeMeta());
+    expect(result.ok).toBe(true);
+  });
+
+  it("returns ok:false when chain timeout exceeded", () => {
+    initChainState(groupId, "msg-1");
+    // Set startedAt to 2 minutes ago, timeout = 60 seconds
+    const state = getChainState(groupId)!;
+    state.startedAt = Date.now() - 120_000;
+
+    const result = atomicAgentForwardCheck(groupId, makeMeta({ chainTimeout: 60_000 }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("timeout");
+    }
+  });
+
+  it("returns ok:false when count exceeds backend hard limit", () => {
+    initChainState(groupId, "msg-1");
+    const state = getChainState(groupId)!;
+    state.roundCount = _test.CHAIN_MAX_COUNT; // At limit
+
+    const result = atomicAgentForwardCheck(groupId, makeMeta());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("count");
+    }
+  });
+
+  it("returns ok:false when backend duration limit exceeded", () => {
+    initChainState(groupId, "msg-1");
+    const state = getChainState(groupId)!;
+    state.startedAt = Date.now() - _test.CHAIN_MAX_DURATION_MS - 1000;
+
+    // Use a very large chainTimeout to bypass Layer 1 and hit Layer 2
+    const result = atomicAgentForwardCheck(
+      groupId,
+      makeMeta({ chainTimeout: _test.CHAIN_MAX_DURATION_MS + 60_000 }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("timeout");
+    }
   });
 });
