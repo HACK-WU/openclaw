@@ -159,7 +159,16 @@ export type AppViewState = {
   agentSkillsAgentId: string | null;
   // Agent create/delete state
   agentShowCreateDialog: boolean;
-  agentCreateForm: { name: string; agentId: string; workspace: string; emoji: string };
+  agentCreateForm: {
+    name: string;
+    agentId: string;
+    workspace: string;
+    emoji: string;
+    workspacePathStatus: "initial" | "valid" | "info" | "error";
+    workspacePathError?: string;
+    workspacePathWarning?: string;
+    isCheckingPath: boolean;
+  };
   agentCreateBusy: boolean;
   agentCreateError: string | null;
   agentDeleteBusy: boolean;

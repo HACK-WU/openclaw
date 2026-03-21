@@ -278,9 +278,35 @@ export const zhCN: Record<string, string> = {
   "chat.group.role.member": "成员",
   "chat.group.role.cliAssistant": "CLI 助手",
 
+  // Project Configuration
+  "chat.group.projectConfiguration": "项目配置",
+  "chat.group.projectDirectoryLockedDesc": "创建时锁定。CLI 智能体将在此目录下启动。",
+  "chat.group.projectDirectoryNotConfigured": "未配置。在创建群聊时设置。",
+  "chat.group.projectDocsDesc": "注入到智能体上下文的文件。可随时更新。",
+  "action.remove": "移除",
+
+  // Context Configuration
+  "chat.group.contextConfiguration": "上下文配置",
+  "chat.group.maxMessages": "最大消息数",
+  "chat.group.maxMessagesDesc": "发送给 CLI 智能体的历史消息最大数量 (5-100)。",
+  "chat.group.maxCharacters": "最大字符数",
+  "chat.group.maxCharactersDesc": "上下文中的最大总字符数 (10,000-200,000)。",
+  "chat.group.includeSystemMessages": "包含系统消息",
+  "chat.group.includeSystemMessagesDesc": "在上下文中包含成员加入/离开事件。",
+
   // Errors
   "error.notFound": "未找到",
   "error.loadFailed": "加载失败",
   "error.saveFailed": "保存失败",
   "error.connectionFailed": "连接失败",
+
+  // Agent Create Dialog
+  "agent.create.workspace.error.required": "请输入工作空间路径",
+  "agent.create.workspace.error.forbidden": "不能选择系统核心目录",
+  "agent.create.workspace.error.restricted": "该目录受保护，请选择其他位置",
+  "agent.create.workspace.error.notDirectory": "该路径不是目录",
+  "agent.create.workspace.error.parentNotFound": "父目录不存在",
+  "agent.create.workspace.error.checkFailed": "路径检测失败",
+  "agent.create.workspace.autoCreate": "路径不存在，将会自动创建该目录",
+  "agent.create.workspace.warning.caution": "该目录通常用于系统软件，请谨慎操作",
 };

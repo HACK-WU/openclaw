@@ -182,6 +182,47 @@ export async function saveAgentsConfig(state: AgentsConfigSaveState) {
   }
 }
 
+export type PathValidationResult = {
+  valid: boolean;
+  exists: boolean;
+  isDirectory: boolean;
+  isRestricted: boolean;
+  needsCreation: boolean;
+  error?: string;
+  warning?: string;
+};
+
+export async function checkWorkspacePath(
+  state: AgentsState,
+  path: string,
+): Promise<PathValidationResult | null> {
+  if (!state.client || !state.connected) {
+    return null;
+  }
+  try {
+    const res = await state.client.request<PathValidationResult>("agents.checkWorkspacePath", {
+      path,
+    });
+    return res ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getDefaultWorkspacePath(state: AgentsState, name?: string): Promise<string> {
+  if (!state.client || !state.connected) {
+    return "";
+  }
+  try {
+    const res = await state.client.request<{ path: string }>("agents.getDefaultWorkspacePath", {
+      name,
+    });
+    return res?.path ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export type CliAgentCreateParams = CliAgentCreateForm;
 
 /**

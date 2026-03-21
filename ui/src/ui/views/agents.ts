@@ -64,6 +64,11 @@ export type AgentCreateForm = {
   agentId: string;
   workspace: string;
   emoji: string;
+  // Workspace path validation state
+  workspacePathStatus: "initial" | "valid" | "info" | "error";
+  workspacePathError?: string;
+  workspacePathWarning?: string;
+  isCheckingPath: boolean;
 };
 
 export type CliType = "claude-code" | "opencode" | "codebuddy" | "qwen" | "custom";
@@ -197,6 +202,7 @@ export type AgentsProps = {
   onShowCreateDialog: () => void;
   onHideCreateDialog: () => void;
   onCreateFormChange: (field: keyof AgentCreateForm, value: string) => void;
+  onCheckWorkspacePath: (path: string) => void;
   onCreateAgent: () => void;
   // CLI Agent create callbacks
   onShowCliCreateDialog: () => void;
@@ -1110,11 +1116,11 @@ function renderAgentOverview(params: {
         : `${defaultPrimary} (inherited)`
       : "-";
   const identityName =
+    agent.name?.trim() ||
     agentIdentity?.name?.trim() ||
     agent.identity?.name?.trim() ||
-    agent.name?.trim() ||
     config.entry?.name ||
-    "-";
+    agent.id;
   const resolvedEmoji = resolveAgentEmoji(agent, agentIdentity);
   const identityEmoji = resolvedEmoji || "-";
   const skillFilter = Array.isArray(config.entry?.skills) ? config.entry?.skills : null;
@@ -1346,11 +1352,33 @@ function renderCreateAgentDialog(props: AgentsProps) {
   const { createForm, createBusy, createError } = props;
   const nameIsValidId = AGENT_ID_PATTERN.test(createForm.name);
   const agentIdValue = createForm.agentId || (nameIsValidId ? createForm.name : "");
+
+  // Path validation status
+  const pathStatus = createForm.workspacePathStatus;
+  const pathValid = pathStatus === "valid" || pathStatus === "info";
+
   const canSubmit =
     createForm.name.trim().length > 0 &&
     createForm.workspace.trim().length > 0 &&
     agentIdValue.trim().length > 0 &&
-    AGENT_ID_PATTERN.test(agentIdValue.trim());
+    AGENT_ID_PATTERN.test(agentIdValue.trim()) &&
+    pathValid;
+
+  // Path status icon and class
+  const statusIcon = {
+    initial: "",
+    valid: "✅",
+    info: "ℹ️",
+    error: "❌",
+  }[pathStatus];
+
+  const statusClass = {
+    initial: "",
+    valid: "valid",
+    info: "info",
+    error: "error",
+  }[pathStatus];
+
   return html`
     <div class="dialog-overlay" @click=${(e: Event) => {
       e.stopPropagation();
@@ -1394,13 +1422,35 @@ function renderCreateAgentDialog(props: AgentsProps) {
           </label>
           <label class="field">
             <span>Workspace Path <span class="required">*</span></span>
-            <input
-              type="text"
-              .value=${createForm.workspace}
-              placeholder="e.g. ~/agents/researcher"
-              ?disabled=${createBusy}
-              @input=${(e: Event) => props.onCreateFormChange("workspace", (e.target as HTMLInputElement).value)}
-            />
+            <div class="input-with-status">
+              <input
+                type="text"
+                class=${statusClass}
+                .value=${createForm.workspace}
+                placeholder="e.g. ~/agents/researcher"
+                ?disabled=${createBusy}
+                @input=${(e: Event) => props.onCreateFormChange("workspace", (e.target as HTMLInputElement).value)}
+                @blur=${() => {
+                  if (createForm.workspace.trim()) {
+                    props.onCheckWorkspacePath(createForm.workspace);
+                  }
+                }}
+              />
+              ${statusIcon ? html`<span class="status-icon ${statusClass}">${statusIcon}</span>` : nothing}
+            </div>
+            ${
+              createForm.isCheckingPath
+                ? html`
+                    <span class="field-hint">检测中...</span>
+                  `
+                : createForm.workspacePathError
+                  ? html`<span class="field-hint" style="color: var(--danger)">${createForm.workspacePathError}</span>`
+                  : createForm.workspacePathWarning
+                    ? html`<span class="field-hint" style="color: var(--info)">${createForm.workspacePathWarning}</span>`
+                    : html`
+                        <span class="field-hint">按回车或离开输入框以检测路径</span>
+                      `
+            }
           </label>
           <label class="field">
             <span>Emoji (optional)</span>

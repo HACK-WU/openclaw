@@ -297,7 +297,16 @@ export class OpenClawApp extends LitElement {
 
   // Agent create/delete state
   @state() agentShowCreateDialog = false;
-  @state() agentCreateForm = { name: "", agentId: "", workspace: "", emoji: "" };
+  @state() agentCreateForm = {
+    name: "",
+    agentId: "",
+    workspace: "",
+    emoji: "",
+    workspacePathStatus: "initial" as const,
+    workspacePathError: undefined as string | undefined,
+    workspacePathWarning: undefined as string | undefined,
+    isCheckingPath: false,
+  };
   @state() agentCreateBusy = false;
   @state() agentCreateError: string | null = null;
   @state() agentDeleteBusy = false;

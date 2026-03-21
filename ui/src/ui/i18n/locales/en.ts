@@ -306,9 +306,39 @@ export const en: Record<string, string> = {
   "chat.group.role.member": "Member",
   "chat.group.role.cliAssistant": "CLI Assistant",
 
+  // Project Configuration
+  "chat.group.projectConfiguration": "Project Configuration",
+  "chat.group.projectDirectoryLockedDesc":
+    "Locked at creation. CLI Agents start in this directory.",
+  "chat.group.projectDirectoryNotConfigured": "Not configured. Set during group creation.",
+  "chat.group.projectDocsDesc": "Files injected into agent context. Can be updated anytime.",
+  "action.remove": "Remove",
+
+  // Context Configuration
+  "chat.group.contextConfiguration": "Context Configuration",
+  "chat.group.maxMessages": "Max Messages",
+  "chat.group.maxMessagesDesc": "Maximum number of history messages sent to CLI Agents (5-100).",
+  "chat.group.maxCharacters": "Max Characters",
+  "chat.group.maxCharactersDesc": "Maximum total characters in context (10,000-200,000).",
+  "chat.group.includeSystemMessages": "Include System Messages",
+  "chat.group.includeSystemMessagesDesc": "Include member join/leave events in context.",
+
   // Errors
   "error.notFound": "Not found",
   "error.loadFailed": "Failed to load",
   "error.saveFailed": "Failed to save",
   "error.connectionFailed": "Connection failed",
+
+  // Agent Create Dialog
+  "agent.create.workspace.error.required": "Please enter workspace path",
+  "agent.create.workspace.error.forbidden": "Cannot select system core directory",
+  "agent.create.workspace.error.restricted":
+    "This directory is protected, please choose another location",
+  "agent.create.workspace.error.notDirectory": "Path is not a directory",
+  "agent.create.workspace.error.parentNotFound": "Parent directory does not exist",
+  "agent.create.workspace.error.checkFailed": "Path check failed",
+  "agent.create.workspace.autoCreate":
+    "Path does not exist, directory will be created automatically",
+  "agent.create.workspace.warning.caution":
+    "This directory is typically used for system software, proceed with caution",
 };

@@ -296,4 +296,14 @@ export const zhTW: Record<string, string> = {
   "error.loadFailed": "加載失敗",
   "error.saveFailed": "保存失敗",
   "error.connectionFailed": "連接失敗",
+
+  // Agent Create Dialog
+  "agent.create.workspace.error.required": "請輸入工作空間路徑",
+  "agent.create.workspace.error.forbidden": "不能選擇系統核心目錄",
+  "agent.create.workspace.error.restricted": "該目錄受保護，請選擇其他位置",
+  "agent.create.workspace.error.notDirectory": "該路徑不是目錄",
+  "agent.create.workspace.error.parentNotFound": "父目錄不存在",
+  "agent.create.workspace.error.checkFailed": "路徑檢測失敗",
+  "agent.create.workspace.autoCreate": "路徑不存在，將會自動創建該目錄",
+  "agent.create.workspace.warning.caution": "該目錄通常用於系統軟件，請謹慎操作",
 };

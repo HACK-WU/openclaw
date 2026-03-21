@@ -31,6 +31,8 @@ import {
   showCliEditDialog,
   hideCliEditDialog,
   updateCliAgent,
+  checkWorkspacePath,
+  getDefaultWorkspacePath,
 } from "./controllers/agents.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
@@ -1088,8 +1090,19 @@ export function renderApp(state: AppViewState) {
                   updateConfigFormValue(state, basePath, { primary, fallbacks: normalized });
                 },
                 // Create/Delete callbacks
-                onShowCreateDialog: () => {
-                  state.agentCreateForm = { name: "", agentId: "", workspace: "", emoji: "" };
+                onShowCreateDialog: async () => {
+                  // Get default workspace path
+                  const defaultPath = await getDefaultWorkspacePath(state);
+                  state.agentCreateForm = {
+                    name: "",
+                    agentId: "",
+                    workspace: defaultPath,
+                    emoji: "",
+                    workspacePathStatus: "initial",
+                    workspacePathError: undefined,
+                    workspacePathWarning: undefined,
+                    isCheckingPath: false,
+                  };
                   state.agentCreateError = null;
                   state.agentShowCreateDialog = true;
                   state.agentShowAddMenu = false;
@@ -1098,7 +1111,41 @@ export function renderApp(state: AppViewState) {
                   state.agentShowCreateDialog = false;
                 },
                 onCreateFormChange: (field, value) => {
-                  state.agentCreateForm = { ...state.agentCreateForm, [field]: value };
+                  const form = { ...state.agentCreateForm, [field]: value };
+                  // Reset path validation when workspace changes
+                  if (field === "workspace") {
+                    form.workspacePathStatus = "initial";
+                    form.workspacePathError = undefined;
+                    form.workspacePathWarning = undefined;
+                  }
+                  state.agentCreateForm = form;
+                },
+                onCheckWorkspacePath: async (path: string) => {
+                  state.agentCreateForm = {
+                    ...state.agentCreateForm,
+                    isCheckingPath: true,
+                  };
+                  const result = await checkWorkspacePath(state, path);
+                  if (result) {
+                    state.agentCreateForm = {
+                      ...state.agentCreateForm,
+                      isCheckingPath: false,
+                      workspacePathStatus: result.valid
+                        ? result.needsCreation
+                          ? "info"
+                          : "valid"
+                        : "error",
+                      workspacePathError: result.error,
+                      workspacePathWarning: result.warning,
+                    };
+                  } else {
+                    state.agentCreateForm = {
+                      ...state.agentCreateForm,
+                      isCheckingPath: false,
+                      workspacePathStatus: "error",
+                      workspacePathError: "agent.create.workspace.error.checkFailed",
+                    };
+                  }
                 },
                 onCreateAgent: async () => {
                   const ok = await createAgent(state, state.agentCreateForm);
