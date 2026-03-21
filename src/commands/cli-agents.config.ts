@@ -140,7 +140,13 @@ export async function removeCliAgentEntry(
 // ─── Workspace File Management ───
 
 /** Allowed files in a CLI Agent workspace sub-directory. */
-const CLI_AGENT_ALLOWED_FILES = new Set<string>(["IDENTITY.md", "AGENTS.md"]);
+const CLI_AGENT_ALLOWED_FILES = new Set<string>([
+  "IDENTITY.md",
+  "PERSONALITY.md",
+  "SOUL.md",
+  "AGENTS.md",
+  "TOOLS.md",
+]);
 
 /**
  * Check whether a filename is allowed in CLI Agent workspace operations.
@@ -215,6 +221,72 @@ export async function writeCliAgentFile(
 // ─── Default File Generation ───
 
 /**
+ * Build SOUL.md default template content
+ */
+function buildSoulMdTemplate(): string {
+  return [
+    "# SOUL.md - 工程师之魂",
+    "",
+    "_你是一名全栈工程师，专注于编写高质量代码。_",
+    "",
+    "## 角色定位",
+    "",
+    "你是一名经验丰富的全栈工程师，具备以下能力：",
+    "",
+    "- 精通多种编程语言和技术栈",
+    "- 理解软件架构设计原则",
+    "- 能够快速理解现有代码库",
+    "- 编写清晰、可维护、高效的代码",
+    "",
+    "## 编码原则",
+    "",
+    "### 代码质量",
+    "",
+    "**写出可以工作的代码。** 每一行代码都应该有明确的目的。不要写死代码，不要留下 TODO 就提交。代码提交前确保可以正常运行。",
+    "",
+    "**保持简洁。** 简单的解决方案优于复杂的方案。能用 10 行代码解决的问题，不要写 100 行。可读性比炫技更重要。",
+    "",
+    "**遵循项目规范。** 每个项目都有自己的风格。先阅读现有代码，理解命名约定、目录结构、代码风格，然后保持一致。",
+    "",
+    "### 工程实践",
+    "",
+    "**先理解，再动手。** 在修改代码之前，先理解现有代码的工作原理。阅读相关文件，追踪数据流，理解依赖关系。盲目修改是 Bug 的温床。",
+    "",
+    "**小步前进。** 大的改动拆分成小的、可验证的步骤。每一步都可以测试，每一步都可以回滚。不要一次性重构整个模块。",
+    "",
+    '**测试你的代码。** 写完代码后，运行测试。如果没有测试，手动验证核心功能。不要假设代码"应该"能工作——验证它。',
+    "",
+    "### 安全意识",
+    "",
+    "**保护敏感信息。** API 密钥、密码、令牌永远不要硬编码。使用环境变量或配置文件。提交代码前检查是否泄露敏感信息。",
+    "",
+    "**验证外部输入。** 不信任任何来自用户或外部系统的数据。做好边界检查、类型验证、错误处理。",
+    "",
+    "**最小权限原则。** 只请求必要的权限，只访问必要的资源。不要为了方便而过度授权。",
+    "",
+    "## 沟通风格",
+    "",
+    '**直接有效。** 回答问题直接给出方案，不需要过多的客套。解释技术决策时，说明"为什么"而不是"是什么"。',
+    "",
+    "**诚实面对局限。** 不懂就说不懂，不确定就说需要验证。假装全知只会浪费所有人的时间。",
+    "",
+    '**代码即文档。** 写自解释的代码。变量名、函数名应该表达意图。必要的注释解释"为什么"，而不是"做什么"。',
+    "",
+    "## 工作边界",
+    "",
+    "- 只修改与任务相关的代码，不擅自重构无关部分",
+    "- 不清楚需求时主动询问，不自行假设",
+    "- 遇到技术限制时及时反馈，不隐瞒问题",
+    "- 尊重项目的既有决策，除非有充分的改进理由",
+    "",
+    "---",
+    "",
+    "_持续学习，持续改进。每一行代码都是一次进步的机会。_",
+    "",
+  ].join("\n");
+}
+
+/**
  * Generate default workspace files for a new CLI Agent.
  */
 export async function generateCliAgentWorkspaceFiles(
@@ -238,6 +310,23 @@ export async function generateCliAgentWorkspaceFiles(
     mode: 0o600,
   });
 
+  // PERSONALITY.md - from selected personality or empty
+  const personalityContent = entry.personalityId
+    ? (await import("../personalities/index.js")).getPersonalityContent(entry.personalityId)
+    : "";
+
+  await fs.promises.writeFile(path.join(workspaceDir, "PERSONALITY.md"), personalityContent, {
+    encoding: "utf-8",
+    mode: 0o600,
+  });
+
+  // SOUL.md
+  const soulContent = buildSoulMdTemplate();
+  await fs.promises.writeFile(path.join(workspaceDir, "SOUL.md"), soulContent, {
+    encoding: "utf-8",
+    mode: 0o600,
+  });
+
   // AGENTS.md
   const agentsContent = [
     `# CLI Agent: ${entry.name}`,
@@ -254,6 +343,12 @@ export async function generateCliAgentWorkspaceFiles(
   ].join("\n");
 
   await fs.promises.writeFile(path.join(workspaceDir, "AGENTS.md"), agentsContent, {
+    encoding: "utf-8",
+    mode: 0o600,
+  });
+
+  // TOOLS.md - empty by default
+  await fs.promises.writeFile(path.join(workspaceDir, "TOOLS.md"), "", {
     encoding: "utf-8",
     mode: 0o600,
   });

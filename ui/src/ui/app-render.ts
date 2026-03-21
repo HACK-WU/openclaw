@@ -33,6 +33,10 @@ import {
   updateCliAgent,
   checkWorkspacePath,
   getDefaultWorkspacePath,
+  loadPersonalities,
+  selectPersonality,
+  openPersonalityViewDialog,
+  closePersonalityViewDialog,
 } from "./controllers/agents.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
@@ -89,6 +93,7 @@ import {
   createGroup,
   deleteGroup,
   updateGroupMembers,
+  removeGroupMember,
   openDisbandGroupDialog,
   closeDisbandGroupDialog,
   confirmDisbandGroup,
@@ -797,6 +802,11 @@ export function renderApp(state: AppViewState) {
                 // CLI Agent test terminal dialog
                 cliTestTerminalOpen: state.cliTestTerminalOpen,
                 cliTestTerminalData: state.cliTestTerminalData,
+                // Personalities state
+                personalitiesList: state.personalitiesList,
+                personalitiesLoading: state.personalitiesLoading,
+                personalitiesError: state.personalitiesError,
+                personalityViewDialog: state.personalityViewDialog,
                 onRefresh: async () => {
                   await loadAgents(state);
                   await loadCliAgents(state);
@@ -1165,7 +1175,7 @@ export function renderApp(state: AppViewState) {
                   }
                 },
                 // CLI Agent create callbacks
-                onShowCliCreateDialog: () => {
+                onShowCliCreateDialog: async () => {
                   state.agentCliCreateForm = {
                     name: "claude-code",
                     agentId: "",
@@ -1178,10 +1188,13 @@ export function renderApp(state: AppViewState) {
                     timeout: 300,
                     idleTimeout: 600,
                     tailTrimMarker: "",
+                    personalityId: null,
                   };
                   state.agentCliCreateError = null;
                   state.agentShowCliCreateDialog = true;
                   state.agentShowAddMenu = false;
+                  // Load personalities list
+                  await loadPersonalities(state);
                 },
                 onHideCliCreateDialog: () => {
                   state.agentShowCliCreateDialog = false;
@@ -1309,6 +1322,19 @@ export function renderApp(state: AppViewState) {
                   if (ok) {
                     await loadCliAgents(state);
                   }
+                },
+                // Personalities callbacks
+                onLoadPersonalities: async () => {
+                  await loadPersonalities(state);
+                },
+                onSelectPersonality: (id: string | null) => {
+                  selectPersonality(state, id);
+                },
+                onViewPersonality: async (id: string) => {
+                  await openPersonalityViewDialog(state, id);
+                },
+                onClosePersonalityView: () => {
+                  closePersonalityViewDialog(state);
                 },
                 onShowDeleteConfirm: (agentId) => {
                   state.agentDeleteError = null;
@@ -1638,6 +1664,7 @@ export function renderApp(state: AppViewState) {
                 groupError: state.groupError,
                 groupCreateDialog: state.groupCreateDialog,
                 groupAddMemberDialog: state.groupAddMemberDialog,
+                groupRemoveMemberDialog: state.groupRemoveMemberDialog,
                 groupDisbandDialog: state.groupDisbandDialog,
                 groupInfoPanelOpen: state.groupInfoPanelOpen,
                 bridgeTerminalStatuses: state.bridgeTerminalStatuses,
@@ -1712,6 +1739,24 @@ export function renderApp(state: AppViewState) {
                       state.activeGroupId,
                       "add",
                       { members },
+                    );
+                  }
+                },
+                onOpenRemoveMemberDialog: (agentId, agentName) => {
+                  state.groupRemoveMemberDialog = {
+                    agentId,
+                    agentName,
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseRemoveMemberDialog: () => (state.groupRemoveMemberDialog = null),
+                onRemoveMember: (agentId) => {
+                  if (state.activeGroupId) {
+                    void removeGroupMember(
+                      state as unknown as Parameters<typeof removeGroupMember>[0],
+                      state.activeGroupId,
+                      agentId,
                     );
                   }
                 },

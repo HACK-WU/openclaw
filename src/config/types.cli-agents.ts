@@ -37,6 +37,8 @@ export type CliAgentEntry = {
    * Example for CodeBuddy: "↵\\s*send"
    */
   tailTrimMarker?: string;
+  /** Selected personality ID (e.g., "architect", "implementer"). Optional. */
+  personalityId?: string;
 };
 
 /**

@@ -1,4 +1,9 @@
 import { html, nothing } from "lit";
+import {
+  renderPersonalitySelector,
+  renderPersonalityViewDialog,
+} from "../components/personality-selector.ts";
+import "../components/cli-test-terminal.ts";
 import type {
   AgentIdentityResult,
   AgentsFilesListResult,
@@ -9,7 +14,6 @@ import type {
   SkillStatusReport,
   ToolsCatalogResult,
 } from "../types.ts";
-import "../components/cli-test-terminal.ts";
 import {
   renderAgentFiles,
   renderAgentChannels,
@@ -91,6 +95,8 @@ export type CliAgentCreateForm = {
   tailTrimTestText?: string;
   /** Whether the tail trim test preview is visible. */
   tailTrimTestVisible?: boolean;
+  /** Selected personality ID (e.g., "architect", "implementer"). null means no personality selected. */
+  personalityId: string | null;
 };
 
 /** CLI type presets for auto-filling form fields. */
@@ -177,6 +183,25 @@ export type AgentsProps = {
   // CLI Agent test terminal dialog
   cliTestTerminalOpen: boolean;
   cliTestTerminalData: string[];
+  // Personalities state
+  personalitiesList: Array<{
+    id: string;
+    name: string;
+    label: string;
+    description: string;
+  }>;
+  personalitiesLoading: boolean;
+  personalitiesError: string | null;
+  personalityViewDialog: {
+    open: boolean;
+    personality: {
+      id: string;
+      name: string;
+      label: string;
+      description: string;
+      content: string;
+    } | null;
+  };
   onRefresh: () => void;
   onSelectAgent: (agentId: string) => void;
   onSelectPanel: (panel: AgentsPanel) => void;
@@ -225,6 +250,11 @@ export type AgentsProps = {
   onCliTestSendInput: (agentId: string, input: string) => void;
   // CLI Agent delete callback
   onDeleteCliAgent: (agentId: string) => void;
+  // Personalities callbacks
+  onLoadPersonalities: () => void;
+  onSelectPersonality: (id: string | null) => void;
+  onViewPersonality: (id: string) => void;
+  onClosePersonalityView: () => void;
   // Delete callbacks
   onDeleteAgent: (agentId: string) => void;
   onShowDeleteConfirm: (agentId: string) => void;
@@ -625,6 +655,11 @@ export function renderAgents(props: AgentsProps) {
     ${props.showCreateDialog ? renderCreateAgentDialog(props) : nothing}
     ${props.showCliCreateDialog ? renderCreateCliAgentDialog(props) : nothing}
     ${props.showCliEditDialog ? renderEditCliAgentDialog(props) : nothing}
+    ${renderPersonalityViewDialog({
+      open: props.personalityViewDialog?.open ?? false,
+      personality: props.personalityViewDialog?.personality ?? null,
+      onClose: props.onClosePersonalityView,
+    })}
     ${props.showDeleteConfirm ? renderDeleteConfirmOverlay(props) : nothing}
   `;
 }
@@ -1770,6 +1805,16 @@ function renderCreateCliAgentDialog(props: AgentsProps) {
             />
             <span class="field-hint">CLI 启动时的工作目录（也是 Agent 工作空间）${!cliCreateForm.workspace && defaultWorkspace ? "（已自动填入默认值）" : ""}</span>
           </label>
+
+          <!-- Personality Selection -->
+          ${renderPersonalitySelector({
+            personalities: props.personalitiesList ?? [],
+            selectedId: cliCreateForm.personalityId,
+            loading: props.personalitiesLoading ?? false,
+            error: props.personalitiesError ?? null,
+            onSelect: props.onSelectPersonality,
+            onView: props.onViewPersonality,
+          })}
 
           <!-- Environment Variables -->
           <div class="field">

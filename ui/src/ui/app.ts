@@ -218,6 +218,9 @@ export class OpenClawApp extends LitElement {
   @state() groupError: string | null = null;
   @state() groupCreateDialog: GroupCreateDialogState | null = null;
   @state() groupAddMemberDialog: GroupAddMemberDialogState | null = null;
+  @state() groupRemoveMemberDialog:
+    | import("./controllers/group-chat.js").GroupRemoveMemberDialogState
+    | null = null;
   @state() groupDisbandDialog:
     | import("./controllers/group-chat.js").GroupDisbandDialogState
     | null = null;
@@ -345,6 +348,25 @@ export class OpenClawApp extends LitElement {
   @state() cliTestResult: import("./views/agents.ts").CliTestResult | null = null;
   @state() cliTestTerminalOpen = false;
   @state() cliTestTerminalData: string[] = [];
+  // Personalities state
+  @state() personalitiesList: Array<{
+    id: string;
+    name: string;
+    label: string;
+    description: string;
+  }> = [];
+  @state() personalitiesLoading = false;
+  @state() personalitiesError: string | null = null;
+  @state() personalityViewDialog: {
+    open: boolean;
+    personality: {
+      id: string;
+      name: string;
+      label: string;
+      description: string;
+      content: string;
+    } | null;
+  } = { open: false, personality: null };
   @state() agentConfigSaveSuccess = false;
 
   @state() sessionsLoading = false;

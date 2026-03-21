@@ -26,6 +26,7 @@ import { loadConfig } from "../../config/config.js";
 import type { CliAgentEntry } from "../../config/types.cli-agents.js";
 import type { CliType } from "../../group-chat/bridge-types.js";
 import { getLogger } from "../../logging.js";
+import { getPersonality, listPersonalities } from "../../personalities/index.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 
 const log = getLogger("cli-agents:handler");
@@ -165,6 +166,7 @@ const handleCliAgentsCreate: GatewayRequestHandler = async ({ params, respond })
     timeout: optionalTimeout(params, "timeout"),
     emoji: optionalString(params, "emoji"),
     tailTrimMarker: optionalString(params, "tailTrimMarker"),
+    personalityId: optionalString(params, "personalityId"),
   };
 
   // Write to bridge.json + create workspace files
@@ -591,6 +593,29 @@ const handleCliAgentsTestSendInput: GatewayRequestHandler = async ({ params, res
   }
 };
 
+// ─── Personalities Handlers ───
+
+const handlePersonalitiesList: GatewayRequestHandler = ({ respond }) => {
+  const personalities = listPersonalities();
+  respond(true, { personalities });
+};
+
+const handlePersonalitiesGet: GatewayRequestHandler = ({ params, respond }) => {
+  const id = requireString(params, "id");
+  if (!id) {
+    respond(false, undefined, { message: "id is required", code: 400 });
+    return;
+  }
+
+  const personality = getPersonality(id);
+  if (!personality) {
+    respond(false, undefined, { message: `Personality "${id}" not found`, code: 404 });
+    return;
+  }
+
+  respond(true, { personality });
+};
+
 // ─── Export handler map ───
 
 export const cliAgentsHandlers: GatewayRequestHandlers = {
@@ -604,4 +629,6 @@ export const cliAgentsHandlers: GatewayRequestHandlers = {
   "cliAgents.test": handleCliAgentsTest,
   "cliAgents.testStop": handleCliAgentsTestStop,
   "cliAgents.testSendInput": handleCliAgentsTestSendInput,
+  "personalities.list": handlePersonalitiesList,
+  "personalities.get": handlePersonalitiesGet,
 };

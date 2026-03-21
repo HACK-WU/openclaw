@@ -43,6 +43,26 @@ export type AgentsState = {
   cliTestResult?: CliTestResult | null;
   cliTestTerminalOpen?: boolean;
   cliTestTerminalData?: string[];
+  // Personalities state
+  personalitiesList?: Array<{
+    id: string;
+    name: string;
+    label: string;
+    description: string;
+  }>;
+  personalitiesLoading?: boolean;
+  personalitiesError?: string | null;
+  selectedPersonalityId?: string | null;
+  personalityViewDialog?: {
+    open: boolean;
+    personality: {
+      id: string;
+      name: string;
+      label: string;
+      description: string;
+      content: string;
+    } | null;
+  };
 };
 
 export type AgentsConfigSaveState = AgentsState & ConfigState;
@@ -287,6 +307,7 @@ export async function createCliAgent(
       timeout: params.timeout * 1000, // convert seconds to ms
       emoji: params.emoji || "🔧",
       tailTrimMarker: params.tailTrimMarker || undefined,
+      personalityId: params.personalityId || undefined,
     });
 
     if (res?.ok) {
@@ -480,5 +501,97 @@ export async function updateCliAgent(state: AgentsState): Promise<boolean> {
     return false;
   } finally {
     state.agentCliEditBusy = false;
+  }
+}
+
+// ─── Personalities ───
+
+export type PersonalityMeta = {
+  id: string;
+  name: string;
+  label: string;
+  description: string;
+};
+
+export type Personality = PersonalityMeta & {
+  content: string;
+};
+
+/**
+ * Load available personalities from the backend.
+ */
+export async function loadPersonalities(state: AgentsState): Promise<void> {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  if (state.personalitiesLoading) {
+    return;
+  }
+  state.personalitiesLoading = true;
+  state.personalitiesError = null;
+  try {
+    const res = await state.client.request<{ personalities: PersonalityMeta[] }>(
+      "personalities.list",
+      {},
+    );
+    if (res) {
+      state.personalitiesList = res.personalities;
+    }
+  } catch (err) {
+    state.personalitiesError = String(err);
+  } finally {
+    state.personalitiesLoading = false;
+  }
+}
+
+/**
+ * Get a specific personality by ID (for viewing details).
+ */
+export async function getPersonality(state: AgentsState, id: string): Promise<Personality | null> {
+  if (!state.client || !state.connected) {
+    return null;
+  }
+  try {
+    const res = await state.client.request<{ personality: Personality }>("personalities.get", {
+      id,
+    });
+    return res?.personality ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Open the personality view dialog.
+ */
+export async function openPersonalityViewDialog(state: AgentsState, id: string): Promise<void> {
+  const personality = await getPersonality(state, id);
+  state.personalityViewDialog = {
+    open: true,
+    personality,
+  };
+}
+
+/**
+ * Close the personality view dialog.
+ */
+export function closePersonalityViewDialog(state: AgentsState): void {
+  state.personalityViewDialog = {
+    open: false,
+    personality: null,
+  };
+}
+
+/**
+ * Select a personality for the CLI Agent create form.
+ */
+export function selectPersonality(state: AgentsState, id: string | null): void {
+  state.selectedPersonalityId = id;
+  if (state.agentCliCreateForm) {
+    // Create new object reference to trigger re-render
+    state.agentCliCreateForm = {
+      ...state.agentCliCreateForm,
+      personalityId: id,
+    };
   }
 }

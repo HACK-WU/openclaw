@@ -67,6 +67,7 @@ export const en: Record<string, string> = {
   "action.save": "Save",
   "action.cancel": "Cancel",
   "action.delete": "Delete",
+  "action.remove": "Remove",
   "action.edit": "Edit",
   "action.preview": "Preview",
   "action.add": "Add",
@@ -269,6 +270,8 @@ export const en: Record<string, string> = {
   "chat.group.back": "Back",
   "chat.group.message": "Message",
   "chat.group.addMember": "Add Member",
+  "chat.group.removeMember": "Remove Member",
+  "chat.group.removeMemberConfirm": "Are you sure you want to remove {name}?",
   "chat.group.add": "Add",
   "chat.group.noAvailableAgents": "No available agents to add.",
   "chat.group.noAnnouncement": "No announcement",
@@ -312,7 +315,6 @@ export const en: Record<string, string> = {
     "Locked at creation. CLI Agents start in this directory.",
   "chat.group.projectDirectoryNotConfigured": "Not configured. Set during group creation.",
   "chat.group.projectDocsDesc": "Files injected into agent context. Can be updated anytime.",
-  "action.remove": "Remove",
 
   // Context Configuration
   "chat.group.contextConfiguration": "Context Configuration",
@@ -322,6 +324,52 @@ export const en: Record<string, string> = {
   "chat.group.maxCharactersDesc": "Maximum total characters in context (10,000-200,000).",
   "chat.group.includeSystemMessages": "Include System Messages",
   "chat.group.includeSystemMessagesDesc": "Include member join/leave events in context.",
+
+  // CLI Agent Core Files
+  "cliAgent.coreFiles.title": "Core Files",
+  "cliAgent.coreFiles.files": "Files",
+  "cliAgent.coreFiles.identity": "Identity",
+  "cliAgent.coreFiles.personality": "Personality",
+  "cliAgent.coreFiles.soul": "Soul",
+  "cliAgent.coreFiles.agents": "Project Guide",
+  "cliAgent.coreFiles.tools": "Tools",
+  "cliAgent.coreFiles.identityDesc": "Define your identity information",
+  "cliAgent.coreFiles.personalityDesc": "Define your personality traits",
+  "cliAgent.coreFiles.soulDesc": "Engineer role and coding principles",
+  "cliAgent.coreFiles.agentsDesc": "Project conventions and guidelines",
+  "cliAgent.coreFiles.toolsDesc": "Environment config and device info (optional)",
+  "cliAgent.coreFiles.reset": "Reset",
+  "cliAgent.coreFiles.save": "Save",
+  "cliAgent.coreFiles.unsaved": "Unsaved changes",
+  "cliAgent.coreFiles.fileNotFound": "File not found, will create on save",
+  "cliAgent.coreFiles.agentsReadOnly":
+    "This file is usually maintained by the project. Consider updating via project config.",
+
+  // Personality Selection
+  "personality.title": "Personality (Optional)",
+  "personality.none": "No Personality",
+  "personality.noneDesc": "Use default behavior",
+  "personality.view": "View",
+  "personality.preview": "Preview",
+  "personality.close": "Close",
+  "personality.coreTraits": "Core Traits",
+  "personality.thinkingMode": "Thinking Mode",
+  "personality.communicationStyle": "Communication Style",
+  "personality.decisionTendency": "Decision Tendency",
+  "personality.typicalExpressions": "Typical Expressions",
+  "personality.architect.name": "The Architect",
+  "personality.architect.desc":
+    "Reviews problems from a global perspective, focuses on long-term system evolution",
+  "personality.implementer.name": "The Implementer",
+  "personality.implementer.desc": "Result-oriented, pursues quick delivery of working code",
+  "personality.reviewer.name": "The Reviewer",
+  "personality.reviewer.desc":
+    "Scrutinizes everything with skepticism, focuses on quality and risks",
+  "personality.explorer.name": "The Explorer",
+  "personality.explorer.desc":
+    "Curious about new technologies, loves exploring different solutions",
+  "personality.guardian.name": "The Guardian",
+  "personality.guardian.desc": "Stability comes first, considers risks for any change",
 
   // Errors
   "error.notFound": "Not found",

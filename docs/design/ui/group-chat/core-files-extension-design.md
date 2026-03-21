@@ -8,12 +8,15 @@
 
 ## 1. Core Files 文件说明
 
-| 文件          | 用途                                      | 更新频率               |
-| ------------- | ----------------------------------------- | ---------------------- |
-| `IDENTITY.md` | 身份定义（名称、类型、风格、emoji、头像） | 用户首次配置后很少更新 |
-| `SOUL.md`     | 行为准则与核心价值观                      | 项目级别，稳定不变     |
-| `AGENTS.md`   | 项目规范与开发指南                        | 随项目演进更新         |
-| `TOOLS.md`    | 环境特定配置与设备信息                    | 环境变化时更新         |
+| 文件             | 用途                                      | 更新频率               |
+| ---------------- | ----------------------------------------- | ---------------------- |
+| `IDENTITY.md`    | 身份定义（名称、类型、风格、emoji、头像） | 用户首次配置后很少更新 |
+| `PERSONALITY.md` | 性格定义（思维方式、沟通风格、决策倾向）  | 创建时选择，很少更新   |
+| `SOUL.md`        | 行为准则与核心价值观                      | 项目级别，稳定不变     |
+| `AGENTS.md`      | 项目规范与开发指南                        | 随项目演进更新         |
+| `TOOLS.md`       | 环境特定配置与设备信息                    | 环境变化时更新         |
+
+> **注意**: `PERSONALITY.md` 的详细设计请参考 [CLI Agent 性格系统设计](./cli-agent-personality-system.md)
 
 ---
 
@@ -30,10 +33,10 @@
 │  │ 📁 文件            │  │ 📝 IDENTITY.md                   │  │
 │  │                    │  │                                  │  │
 │  │ ├─ IDENTITY.md     │  │ # IDENTITY.md - 我是谁           │  │
-│  │ ├─ SOUL.md         │  │                                  │  │
-│  │ ├─ AGENTS.md       │  │ *在首次对话中填写。让它成为你的。*  │  │
-│  │ └─ TOOLS.md        │  │                                  │  │
-│  │                    │  │ - **名称：**                      │  │
+│  │ ├─ PERSONALITY.md  │  │                                  │  │
+│  │ ├─ SOUL.md         │  │ *在首次对话中填写。让它成为你的。*  │  │
+│  │ ├─ AGENTS.md       │  │                                  │  │
+│  │ └─ TOOLS.md        │  │ - **名称：**                      │  │
 │  │                    │  │   *(选择一个你喜欢的)*            │  │
 │  │                    │  │ - **类型：**                      │  │
 │  │                    │  │   *(AI？机器人？机器中的幽灵？)*   │  │
@@ -57,9 +60,10 @@
 │ 📁 文件                    │
 │                            │
 │ ├─ IDENTITY.md      ●      │  ← ● 表示已编辑（有未保存更改）
+│ ├─ PERSONALITY.md         │
 │ ├─ SOUL.md                │
 │ ├─ AGENTS.md              │
-│ └─ TOOLS.md         ●      │  ← 灰色 ● 表示文件不存在
+│ └─ TOOLS.md        ●      │  ← 灰色 ● 表示文件不存在
 └────────────────────────────┘
 ```
 
@@ -82,7 +86,27 @@
 - CLI: /root/.local/bin/codebuddy
 ```
 
-### 3.2 SOUL.md（新增）
+### 3.2 PERSONALITY.md（新增）
+
+**标题**: PERSONALITY.md
+**用途**: 定义 Agent 的性格特征，让每个 Agent 拥有独特的工作风格
+
+**说明**:
+此文件用于定义 Agent 的性格，包括思维方式、沟通风格、决策倾向等。
+创建 Agent 时可以从内置性格中选择，也可以自定义。
+
+> **详细设计**: 参见 [CLI Agent 性格系统设计](./cli-agent-personality-system.md)
+
+**内置性格选项**:
+| 性格 | 标签 | 适用场景 |
+|------|------|----------|
+| 严谨架构师 | 关注系统长期演进 | 系统设计、架构评审 |
+| 快速实现者 | 追求快速交付 | 原型开发、功能实现 |
+| 挑剔审查者 | 关注质量和风险 | 代码审查、质量把控 |
+| 创意探索者 | 喜欢探索新方案 | 技术调研、创新方案 |
+| 稳健守护者 | 关注系统稳定性 | 系统维护、生产环境 |
+
+### 3.3 SOUL.md（新增）
 
 **标题**: SOUL.md
 **用途**: 定义 Agent 的工程师角色定位与代码行为准则
@@ -149,7 +173,7 @@ _你是一名全栈工程师，专注于编写高质量代码。_
 _持续学习，持续改进。每一行代码都是一次进步的机会。_
 ```
 
-### 3.3 AGENTS.md（现有）
+### 3.4 AGENTS.md（现有）
 
 **标题**: AGENTS.md
 **用途**: 项目级别的开发规范和指南
@@ -170,7 +194,7 @@ _持续学习，持续改进。每一行代码都是一次进步的机会。_
 - 不在输出中打印敏感信息（API Key、密码等）
 ```
 
-### 3.4 TOOLS.md（新增）
+### 3.5 TOOLS.md（新增）
 
 **标题**: TOOLS.md
 **用途**: 存储环境特定的配置和设备信息
@@ -191,23 +215,27 @@ _持续学习，持续改进。每一行代码都是一次进步的机会。_
 
 ### 4.1 新增 i18n Key
 
-| Key                                 | 中文                                       | 英文                                                                                  |
-| ----------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `cliAgent.coreFiles.title`          | 核心文件                                   | Core Files                                                                            |
-| `cliAgent.coreFiles.files`          | 文件                                       | Files                                                                                 |
-| `cliAgent.coreFiles.identity`       | 身份定义                                   | Identity                                                                              |
-| `cliAgent.coreFiles.soul`           | 灵魂                                       | Soul                                                                                  |
-| `cliAgent.coreFiles.agents`         | 项目指南                                   | Project Guide                                                                         |
-| `cliAgent.coreFiles.tools`          | 工具笔记                                   | Tools                                                                                 |
-| `cliAgent.coreFiles.identityDesc`   | 定义你的身份信息                           | Define who you are                                                                    |
-| `cliAgent.coreFiles.soulDesc`       | 定义核心价值观和行为准则                   | Define your core values and behavior                                                  |
-| `cliAgent.coreFiles.agentsDesc`     | 项目规范与开发指南                         | Project conventions and guidelines                                                    |
-| `cliAgent.coreFiles.toolsDesc`      | 环境配置与设备信息                         | Environment config and device info                                                    |
-| `cliAgent.coreFiles.reset`          | 重置                                       | Reset                                                                                 |
-| `cliAgent.coreFiles.save`           | 保存                                       | Save                                                                                  |
-| `cliAgent.coreFiles.unsaved`        | 未保存的更改                               | Unsaved changes                                                                       |
-| `cliAgent.coreFiles.fileNotFound`   | 文件不存在，将使用默认模板创建             | File not found, will create with default template                                     |
-| `cliAgent.coreFiles.agentsReadOnly` | 此文件通常由项目维护，建议通过项目配置修改 | This file is usually maintained by the project. Consider updating via project config. |
+| Key                                  | 中文                                       | 英文                                                                                  |
+| ------------------------------------ | ------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `cliAgent.coreFiles.title`           | 核心文件                                   | Core Files                                                                            |
+| `cliAgent.coreFiles.files`           | 文件                                       | Files                                                                                 |
+| `cliAgent.coreFiles.identity`        | 身份定义                                   | Identity                                                                              |
+| `cliAgent.coreFiles.personality`     | 性格画像                                   | Personality                                                                           |
+| `cliAgent.coreFiles.soul`            | 灵魂                                       | Soul                                                                                  |
+| `cliAgent.coreFiles.agents`          | 项目指南                                   | Project Guide                                                                         |
+| `cliAgent.coreFiles.tools`           | 工具笔记                                   | Tools                                                                                 |
+| `cliAgent.coreFiles.identityDesc`    | 定义你的身份信息                           | Define who you are                                                                    |
+| `cliAgent.coreFiles.personalityDesc` | 定义你的性格特征                           | Define your personality traits                                                        |
+| `cliAgent.coreFiles.soulDesc`        | 定义核心价值观和行为准则                   | Define your core values and behavior                                                  |
+| `cliAgent.coreFiles.agentsDesc`      | 项目规范与开发指南                         | Project conventions and guidelines                                                    |
+| `cliAgent.coreFiles.toolsDesc`       | 环境配置与设备信息                         | Environment config and device info                                                    |
+| `cliAgent.coreFiles.reset`           | 重置                                       | Reset                                                                                 |
+| `cliAgent.coreFiles.save`            | 保存                                       | Save                                                                                  |
+| `cliAgent.coreFiles.unsaved`         | 未保存的更改                               | Unsaved changes                                                                       |
+| `cliAgent.coreFiles.fileNotFound`    | 文件不存在，将使用默认模板创建             | File not found, will create with default template                                     |
+| `cliAgent.coreFiles.agentsReadOnly`  | 此文件通常由项目维护，建议通过项目配置修改 | This file is usually maintained by the project. Consider updating via project config. |
+
+> **注意**: 性格相关的完整国际化文案请参考 [CLI Agent 性格系统设计](./cli-agent-personality-system.md) 第 9 节
 
 ---
 
@@ -246,6 +274,7 @@ Core Files 存储在 CLI Agent 的工作空间目录：
 ```
 ${workspaceDir}/
 ├── IDENTITY.md
+├── PERSONALITY.md
 ├── SOUL.md
 ├── AGENTS.md
 └── TOOLS.md
@@ -268,6 +297,7 @@ ${workspaceDir}/
 │ 📁 文件                    │
 │                            │
 │ ├─ IDENTITY.md      ●      │  ← 已编辑，未保存
+│ ├─ PERSONALITY.md         │  ← 无更改
 │ ├─ SOUL.md                │  ← 无更改
 │ ├─ AGENTS.md       🔒     │  ← 建议只读
 │ └─ TOOLS.md        ○      │  ← 文件不存在
@@ -351,6 +381,7 @@ export function renderAgentFiles(params: {
 // 修改第 143 行
 const CLI_AGENT_ALLOWED_FILES = new Set<string>([
   "IDENTITY.md",
+  "PERSONALITY.md", // 新增 - 性格定义
   "SOUL.md", // 新增
   "AGENTS.md",
   "TOOLS.md", // 新增
@@ -543,12 +574,12 @@ function buildSoulMdTemplate(): string {
 
 ### 10.1 必须修改
 
-| 文件                                | 修改内容                                                                                                              | 优先级 |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------ |
-| `src/commands/cli-agents.config.ts` | 1. 扩展 `CLI_AGENT_ALLOWED_FILES` 添加 SOUL.md、TOOLS.md<br>2. 修改 `generateCliAgentWorkspaceFiles()` 生成新文件模板 | P0     |
-| `ui/src/ui/i18n/locales/zh-CN.ts`   | 添加 core files 相关中文文案                                                                                          | P1     |
-| `ui/src/ui/i18n/locales/en.ts`      | 添加 core files 相关英文文案                                                                                          | P1     |
-| `ui/src/ui/i18n/locales/zh-TW.ts`   | 添加 core files 相关繁体中文文案                                                                                      | P1     |
+| 文件                                | 修改内容                                                                                                                              | 优先级 |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `src/commands/cli-agents.config.ts` | 1. 扩展 `CLI_AGENT_ALLOWED_FILES` 添加 PERSONALITY.md、SOUL.md、TOOLS.md<br>2. 修改 `generateCliAgentWorkspaceFiles()` 生成新文件模板 | P0     |
+| `ui/src/ui/i18n/locales/zh-CN.ts`   | 添加 core files 相关中文文案（含性格相关）                                                                                            | P1     |
+| `ui/src/ui/i18n/locales/en.ts`      | 添加 core files 相关英文文案（含性格相关）                                                                                            | P1     |
+| `ui/src/ui/i18n/locales/zh-TW.ts`   | 添加 core files 相关繁体中文文案（含性格相关）                                                                                        | P1     |
 
 ### 10.2 可选优化
 
@@ -581,6 +612,7 @@ function buildSoulMdTemplate(): string {
 ┌─────────────────────────────────────────────────────────────┐
 │  renderAgentFiles() - 动态渲染文件列表                        │
 │  ├─ IDENTITY.md                                             │
+│  ├─ PERSONALITY.md                                          │
 │  ├─ SOUL.md                                                 │
 │  ├─ AGENTS.md                                               │
 │  └─ TOOLS.md                                                │
@@ -634,5 +666,6 @@ function buildSoulMdTemplate(): string {
 
 ## 13. 关联文档
 
+- [CLI Agent 性格系统设计](./cli-agent-personality-system.md) — PERSONALITY.md 详细设计
 - [CLI Agent 上下文管理](../../group-chat-bridge/cli-agent-context.md) — Core Files 注入设计
 - [核心文件注入实现方案](../../todo/cli-agent-core-files-injection.md) — 后台实现方案
