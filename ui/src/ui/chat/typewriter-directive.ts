@@ -5,8 +5,8 @@ import { renderMarkdownUncached } from "../markdown.ts";
 
 /**
  * Reveal mode for the typewriter effect.
- * - "char": reveal character-by-character (default, for LLM streaming text)
- * - "line": reveal line-by-line (for terminal/CLI output)
+ * - "char": reveal character-by-character (for fine-grained control)
+ * - "line": reveal line-by-line when newlines present, fall back to chunked reveal otherwise (default)
  */
 export type TypewriterMode = "char" | "line";
 
@@ -52,6 +52,12 @@ const MD_RENDER_INTERVAL_MS = 80;
  */
 const LINE_REVEAL_INTERVAL_MS = 60;
 
+/**
+ * Characters to reveal per tick when in "line" mode but no newline found.
+ * This provides a fallback chunked reveal for paragraphs without line breaks.
+ */
+const LINE_MODE_CHUNK_SIZE = 50;
+
 function commonPrefixLength(a: string, b: string): number {
   const limit = Math.min(a.length, b.length);
   for (let i = 0; i < limit; i++) {
@@ -75,8 +81,8 @@ class TypewriterDirective extends AsyncDirective {
   private _lastMdRender = 0;
   // Last rendered HTML string to avoid redundant DOM updates
   private _lastRenderedHtml = "";
-  // Reveal mode: "char" (character-by-character) or "line" (line-by-line)
-  private _mode: TypewriterMode = "char";
+  // Reveal mode: "char" (character-by-character) or "line" (line-by-line, default)
+  private _mode: TypewriterMode = "line";
 
   constructor(partInfo: PartInfo) {
     super(partInfo);
@@ -89,7 +95,7 @@ class TypewriterDirective extends AsyncDirective {
     this._element = part.element;
     const prevTarget = this._target;
     this._target = text;
-    this._mode = mode ?? "char";
+    this._mode = mode ?? "line";
 
     // Streaming updates usually append text. However, we can occasionally see
     // truncation or minor rewrites (e.g. model revisions or transport oddities).
@@ -177,8 +183,16 @@ class TypewriterDirective extends AsyncDirective {
         // Reveal up to and including the newline
         this._revealed = nextNewline + 1;
       } else {
-        // No more newlines — reveal everything remaining
-        this._revealed = this._target.length;
+        // No newline found: fall back to chunked reveal for paragraphs.
+        // This prevents long single-paragraph text from appearing all at once.
+        const remaining = this._target.length - this._revealed;
+        if (remaining <= LINE_MODE_CHUNK_SIZE) {
+          // Small remaining text: reveal it all
+          this._revealed = this._target.length;
+        } else {
+          // Large remaining text: reveal next chunk
+          this._revealed += LINE_MODE_CHUNK_SIZE;
+        }
       }
     } else {
       // Character-by-character mode (original behavior)
@@ -237,13 +251,15 @@ class TypewriterDirective extends AsyncDirective {
  * chat output.
  *
  * Supports two modes:
- * - `"char"` (default): character-by-character reveal for LLM streaming text
- * - `"line"`: line-by-line reveal for terminal/CLI output
+ * - `"line"` (default): line-by-line reveal when newlines present, falls back
+ *   to chunked reveal (50 chars at a time) for paragraphs without line breaks.
+ *   This reduces visual flicker compared to character-by-character mode.
+ * - `"char"`: character-by-character reveal for fine-grained control.
  *
  * Usage (element binding):
  * ```ts
- * html`<div ${typewriter(text)}></div>`             // char mode (default)
- * html`<div ${typewriter(text, "line")}></div>`     // line mode
+ * html`<div ${typewriter(text)}></div>`             // line mode (default)
+ * html`<div ${typewriter(text, "char")}></div>`     // char mode
  * ```
  *
  * The directive directly manipulates the element's innerHTML for performance,

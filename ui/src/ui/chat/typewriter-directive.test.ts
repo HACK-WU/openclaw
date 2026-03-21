@@ -23,8 +23,9 @@ describe("typewriter directive", () => {
     vi.useRealTimers();
   });
 
-  it("reveals content over multiple frames (not all at once)", () => {
-    const text = "abcdefghijklmnopqrstuvwxyz"; // long enough to require multiple frames
+  it("reveals content over multiple frames in line mode (default)", () => {
+    // Use text with newlines to trigger line-by-line reveal
+    const text = "line one\nline two\nline three";
 
     render(html`<div class="chat-text-streaming" ${typewriter(text)}></div>`, host);
 
@@ -35,7 +36,63 @@ describe("typewriter directive", () => {
     const before = el.textContent ?? "";
     expect(before.length).toBeLessThan(text.length);
 
+    // Advance one tick (60ms for line mode) to reveal first line
+    vi.advanceTimersByTime(60);
+    const after1 = el.textContent ?? "";
+    expect(after1.length).toBeGreaterThan(0);
+    expect(after1.length).toBeLessThan(text.length);
+
+    // Advance another tick to reveal second line
+    vi.advanceTimersByTime(60);
+    const after2 = el.textContent ?? "";
+    expect(after2.length).toBeGreaterThan(after1.length);
+
+    // Run enough frames to finish.
+    vi.advanceTimersByTime(60 * 5);
+    // Final render uses Markdown, so textContent should contain the full text
+    expect(el.textContent).toBe(text);
+  });
+
+  it("falls back to chunked reveal when no newlines present", () => {
+    // Text without newlines triggers chunked reveal (50 chars at a time)
+    const text = "a".repeat(150); // 150 chars, should take 3 chunks
+
+    render(html`<div class="chat-text-streaming" ${typewriter(text)}></div>`, host);
+
+    const el = host.querySelector(".chat-text-streaming") as HTMLDivElement;
+    expect(el).toBeTruthy();
+
+    // Advance one tick (60ms for line mode)
+    vi.advanceTimersByTime(60);
+    const after1 = el.textContent ?? "";
+    // Should reveal ~50 chars (LINE_MODE_CHUNK_SIZE)
+    expect(after1.length).toBeGreaterThan(0);
+    expect(after1.length).toBeLessThan(text.length);
+
+    // Advance another tick
+    vi.advanceTimersByTime(60);
+    const after2 = el.textContent ?? "";
+    expect(after2.length).toBeGreaterThan(after1.length);
+
+    // Run enough frames to finish
+    vi.advanceTimersByTime(60 * 5);
+    expect(el.textContent).toBe(text);
+  });
+
+  it("reveals content character-by-character in char mode", () => {
+    const text = "abcdefghijklmnopqrstuvwxyz"; // long enough to require multiple frames
+
+    render(html`<div class="chat-text-streaming" ${typewriter(text, "char")}></div>`, host);
+
+    const el = host.querySelector(".chat-text-streaming") as HTMLDivElement;
+    expect(el).toBeTruthy();
+
+    // On first render, revealed=0, so content should be minimal (empty or cursor-only)
+    const before = el.textContent ?? "";
+    expect(before.length).toBeLessThan(text.length);
+
     // Advance enough to reveal some characters and trigger a Markdown render
+    // char mode uses 16ms interval
     vi.advanceTimersByTime(16 * 6);
     const after1 = el.textContent ?? "";
     expect(after1.length).toBeGreaterThan(0);
@@ -53,7 +110,7 @@ describe("typewriter directive", () => {
 
   it("does not restart from 0 when the stream truncates to a shorter prefix", () => {
     const base = "abcdefghijklmnopqrstuvwxyz";
-    render(html`<div class="chat-text-streaming" ${typewriter(base)}></div>`, host);
+    render(html`<div class="chat-text-streaming" ${typewriter(base, "char")}></div>`, host);
 
     // Reveal a few frames — advance enough for MD_RENDER_INTERVAL_MS (80ms) to pass
     vi.advanceTimersByTime(16 * 6);
@@ -64,7 +121,7 @@ describe("typewriter directive", () => {
 
     // Truncate to a shorter prefix.
     const truncated = base.slice(0, 10);
-    render(html`<div class="chat-text-streaming" ${typewriter(truncated)}></div>`, host);
+    render(html`<div class="chat-text-streaming" ${typewriter(truncated, "char")}></div>`, host);
 
     const elAfter = host.querySelector(".chat-text-streaming") as HTMLDivElement;
 
@@ -84,7 +141,7 @@ describe("typewriter directive", () => {
 
   it("cancels pending animation when disconnected", () => {
     const text = "abcdefghijklmnopqrstuvwxyz";
-    render(html`<div class="chat-text-streaming" ${typewriter(text)}></div>`, host);
+    render(html`<div class="chat-text-streaming" ${typewriter(text, "char")}></div>`, host);
 
     // After first render, a setTimeout should be scheduled for the animation tick.
     // Advance one tick to confirm animation started.
