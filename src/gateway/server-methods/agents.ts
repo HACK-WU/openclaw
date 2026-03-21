@@ -44,11 +44,13 @@ import {
   ErrorCodes,
   errorShape,
   formatValidationErrors,
+  validateAgentsCheckWorkspacePathParams,
   validateAgentsCreateParams,
   validateAgentsDeleteParams,
   validateAgentsFilesGetParams,
   validateAgentsFilesListParams,
   validateAgentsFilesSetParams,
+  validateAgentsGetDefaultWorkspacePathParams,
   validateAgentsListParams,
   validateAgentsSetDefaultParams,
   validateAgentsUpdateParams,
@@ -680,6 +682,55 @@ export const agentsHandlers: GatewayRequestHandlers = {
     clearRuntimeConfigSnapshot();
 
     respond(true, { ok: true, agentId }, undefined);
+  },
+  "agents.checkWorkspacePath": async ({ params, respond }) => {
+    if (!validateAgentsCheckWorkspacePathParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid agents.checkWorkspacePath params: ${formatValidationErrors(
+            validateAgentsCheckWorkspacePathParams.errors,
+          )}`,
+        ),
+      );
+      return;
+    }
+
+    const { validateWorkspacePath } = await import("../../utils/path-validator.js");
+    const result = validateWorkspacePath(String(params.path));
+    respond(true, result, undefined);
+  },
+  "agents.getDefaultWorkspacePath": async ({ params, respond }) => {
+    if (!validateAgentsGetDefaultWorkspacePathParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid agents.getDefaultWorkspacePath params: ${formatValidationErrors(
+            validateAgentsGetDefaultWorkspacePathParams.errors,
+          )}`,
+        ),
+      );
+      return;
+    }
+
+    const { homedir } = await import("node:os");
+    const { dirname, join } = await import("node:path");
+    const { sanitizeDirName } = await import("../../utils/path-validator.js");
+
+    const cfg = loadConfig();
+    const agentEntries = listAgentEntries(cfg);
+    const defaultEntry = agentEntries.find((e) => e.default);
+    const currentWorkspace = defaultEntry?.workspace || homedir();
+    const parentDir = dirname(currentWorkspace);
+
+    const name = typeof params.name === "string" ? params.name.trim() : "";
+    const dirName = name ? sanitizeDirName(name) : "new-agent";
+
+    respond(true, { path: join(parentDir, dirName) }, undefined);
   },
   "agents.files.list": async ({ params, respond }) => {
     if (!validateAgentsFilesListParams(params)) {

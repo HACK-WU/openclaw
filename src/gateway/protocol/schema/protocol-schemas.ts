@@ -11,6 +11,8 @@ import {
 } from "./agent.js";
 import {
   AgentSummarySchema,
+  AgentsCheckWorkspacePathParamsSchema,
+  AgentsCheckWorkspacePathResultSchema,
   AgentsCreateParamsSchema,
   AgentsCreateResultSchema,
   AgentsDeleteParamsSchema,
@@ -22,6 +24,8 @@ import {
   AgentsFilesListResultSchema,
   AgentsFilesSetParamsSchema,
   AgentsFilesSetResultSchema,
+  AgentsGetDefaultWorkspacePathParamsSchema,
+  AgentsGetDefaultWorkspacePathResultSchema,
   AgentsListParamsSchema,
   AgentsListResultSchema,
   AgentsSetDefaultParamsSchema,
@@ -249,6 +253,10 @@ export const ProtocolSchemas = {
   AgentsListResult: AgentsListResultSchema,
   AgentsSetDefaultParams: AgentsSetDefaultParamsSchema,
   AgentsSetDefaultResult: AgentsSetDefaultResultSchema,
+  AgentsCheckWorkspacePathParams: AgentsCheckWorkspacePathParamsSchema,
+  AgentsCheckWorkspacePathResult: AgentsCheckWorkspacePathResultSchema,
+  AgentsGetDefaultWorkspacePathParams: AgentsGetDefaultWorkspacePathParamsSchema,
+  AgentsGetDefaultWorkspacePathResult: AgentsGetDefaultWorkspacePathResultSchema,
   ModelChoice: ModelChoiceSchema,
   ModelsListParams: ModelsListParamsSchema,
   ModelsListResult: ModelsListResultSchema,

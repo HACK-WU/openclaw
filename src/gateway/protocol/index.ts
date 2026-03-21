@@ -42,6 +42,10 @@ import {
   AgentsListResultSchema,
   type AgentsSetDefaultParams,
   AgentsSetDefaultParamsSchema,
+  type AgentsCheckWorkspacePathParams,
+  AgentsCheckWorkspacePathParamsSchema,
+  type AgentsGetDefaultWorkspacePathParams,
+  AgentsGetDefaultWorkspacePathParamsSchema,
   type AgentWaitParams,
   AgentWaitParamsSchema,
   type ChannelsLogoutParams,
@@ -276,6 +280,11 @@ export const validateAgentsDeleteParams = ajv.compile<AgentsDeleteParams>(Agents
 export const validateAgentsSetDefaultParams = ajv.compile<AgentsSetDefaultParams>(
   AgentsSetDefaultParamsSchema,
 );
+export const validateAgentsCheckWorkspacePathParams = ajv.compile<AgentsCheckWorkspacePathParams>(
+  AgentsCheckWorkspacePathParamsSchema,
+);
+export const validateAgentsGetDefaultWorkspacePathParams =
+  ajv.compile<AgentsGetDefaultWorkspacePathParams>(AgentsGetDefaultWorkspacePathParamsSchema);
 export const validateAgentsFilesListParams = ajv.compile<AgentsFilesListParams>(
   AgentsFilesListParamsSchema,
 );

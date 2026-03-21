@@ -319,3 +319,41 @@ export const ToolsCatalogResultSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+// ─── agents.checkWorkspacePath ───
+
+export const AgentsCheckWorkspacePathParamsSchema = Type.Object(
+  {
+    path: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
+
+export const AgentsCheckWorkspacePathResultSchema = Type.Object(
+  {
+    valid: Type.Boolean(),
+    exists: Type.Boolean(),
+    isDirectory: Type.Boolean(),
+    isRestricted: Type.Boolean(),
+    needsCreation: Type.Boolean(),
+    error: Type.Optional(Type.String()),
+    warning: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
+// ─── agents.getDefaultWorkspacePath ───
+
+export const AgentsGetDefaultWorkspacePathParamsSchema = Type.Object(
+  {
+    name: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
+export const AgentsGetDefaultWorkspacePathResultSchema = Type.Object(
+  {
+    path: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
