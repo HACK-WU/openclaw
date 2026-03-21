@@ -178,7 +178,7 @@ export type GroupChatViewProps = {
   onCloseCreateDialog: () => void;
   onOpenAddMemberDialog: () => void;
   onCloseAddMemberDialog: () => void;
-  onAddMembers: (members: Array<{ agentId: string; role: "member" }>) => void;
+  onAddMembers: (members: Array<{ agentId: string; role: "member" | "bridge-assistant" }>) => void;
   onOpenRemoveMemberDialog: (agentId: string, agentName: string) => void;
   onCloseRemoveMemberDialog: () => void;
   onRemoveMember: (agentId: string) => void;
@@ -1468,49 +1468,30 @@ function renderClearMessagesDialog(props: GroupChatViewProps) {
     return nothing;
   }
 
-  // Check if this is a blocked state (error already set)
-  const isBlocked = dialog.error && !dialog.isClearing;
-
   return html`
     <div class="modal-overlay" role="dialog" aria-modal="true" aria-live="polite">
-      <div class="modal-card ${isBlocked ? "" : "modal-card--danger"}">
+      <div class="modal-card modal-card--danger">
         <div class="modal-header">
-          <div class="modal-icon ${isBlocked ? "" : "modal-icon--danger"}">
-            ${isBlocked ? icons.alertCircle : icons.trash}
+          <div class="modal-icon modal-icon--danger">
+            ${icons.trash}
           </div>
           <div class="modal-title-group">
-            <div class="modal-title">${
-              isBlocked ? t("chat.group.clearMessagesBlocked") : t("chat.group.clearMessages")
-            }</div>
+            <div class="modal-title">${t("chat.group.clearMessages")}</div>
             <div class="modal-subtitle">${dialog.groupName}</div>
           </div>
         </div>
 
         <div class="modal-body">
-          ${
-            isBlocked
-              ? html`
-                <div class="warning-box">
-                  <div class="warning-box__icon">${icons.alertTriangle}</div>
-                  <div class="warning-box__content">
-                    <div class="warning-box__title">${t("chat.group.clearMessagesWarning")}</div>
-                    <div class="warning-box__text">${t("chat.group.clearMessagesBlockedDetail")}</div>
-                  </div>
-                </div>
-              `
-              : html`
-                <div class="warning-box">
-                  <div class="warning-box__icon">${icons.alertTriangle}</div>
-                  <div class="warning-box__content">
-                    <div class="warning-box__title">${t("chat.sidebar.deleteWarningTitle")}</div>
-                    <div class="warning-box__text">${t("chat.group.clearMessagesConfirmDetail")}</div>
-                  </div>
-                </div>
-              `
-          }
+          <div class="warning-box">
+            <div class="warning-box__icon">${icons.alertTriangle}</div>
+            <div class="warning-box__content">
+              <div class="warning-box__title">${t("chat.sidebar.deleteWarningTitle")}</div>
+              <div class="warning-box__text">${t("chat.group.clearMessagesConfirmDetail")}</div>
+            </div>
+          </div>
 
           ${
-            dialog.error && !isBlocked
+            dialog.error
               ? html`
                 <div class="modal-error">
                   <span class="modal-error__icon">${icons.alertCircle}</span>
@@ -1523,32 +1504,26 @@ function renderClearMessagesDialog(props: GroupChatViewProps) {
 
         <div class="modal-actions">
           <button
-            class="btn ${isBlocked ? "btn--primary" : "btn--secondary"}"
+            class="btn btn--secondary"
             ?disabled=${dialog.isClearing}
             @click=${() => props.onCloseClearMessagesDialog()}
           >
             ${t("common.cancel")}
           </button>
-          ${
-            !isBlocked
-              ? html`
-                <button
-                  class="btn btn--danger"
-                  ?disabled=${dialog.isClearing}
-                  @click=${() => props.onConfirmClearMessages()}
-                >
-                  ${
-                    dialog.isClearing
-                      ? html`
-                        <span class="btn__spinner">${icons.loader}</span>
-                        <span>${t("chat.group.clearing")}</span>
-                      `
-                      : html`<span>${t("chat.group.clearMessages")}</span>`
-                  }
-                </button>
-              `
-              : nothing
-          }
+          <button
+            class="btn btn--danger"
+            ?disabled=${dialog.isClearing}
+            @click=${() => props.onConfirmClearMessages()}
+          >
+            ${
+              dialog.isClearing
+                ? html`
+                  <span class="btn__spinner">${icons.loader}</span>
+                  <span>${t("chat.group.clearing")}</span>
+                `
+                : html`<span>${t("chat.group.clearMessages")}</span>`
+            }
+          </button>
         </div>
       </div>
     </div>
@@ -1899,20 +1874,36 @@ function renderAddMemberDialog(props: GroupChatViewProps) {
               ? html`<div class="group-chat-list__empty">${t("chat.group.noAvailableAgents")}</div>`
               : html`
                 <div class="group-create__agents">
-                  ${availableAgents.map(
-                    (agent) => html`
+                  ${availableAgents.map((agent) => {
+                    const selected = dialog.selectedAgents.find((s) => s.agentId === agent.id);
+                    // Get or compute default role: member (default for add member dialog)
+                    const pendingRole = dialog.pendingRoles[agent.id];
+                    const currentRole = selected?.role ?? pendingRole ?? "member";
+
+                    return html`
                       <label class="group-create__agent-option">
                         <input
                           type="checkbox"
-                          .checked=${dialog.selectedAgents.some((s) => s.agentId === agent.id)}
+                          .checked=${Boolean(selected)}
                           @change=${(e: Event) => {
                             const checked = (e.target as HTMLInputElement).checked;
                             if (checked) {
+                              // Use the current role from dropdown (if set) or default to member
+                              const role = dialog.pendingRoles[agent.id] ?? "member";
                               dialog.selectedAgents = [
                                 ...dialog.selectedAgents,
-                                { agentId: agent.id, role: "member" },
+                                { agentId: agent.id, role },
                               ];
+                              // Clear pending role since it's now selected
+                              delete dialog.pendingRoles[agent.id];
                             } else {
+                              // Save current role to pending before removing
+                              const existing = dialog.selectedAgents.find(
+                                (s) => s.agentId === agent.id,
+                              );
+                              if (existing) {
+                                dialog.pendingRoles[agent.id] = existing.role;
+                              }
                               dialog.selectedAgents = dialog.selectedAgents.filter(
                                 (s) => s.agentId !== agent.id,
                               );
@@ -1921,9 +1912,34 @@ function renderAddMemberDialog(props: GroupChatViewProps) {
                         />
                         <span class="group-create__agent-emoji">${agent.identity?.emoji ?? "🤖"}</span>
                         <span class="group-create__agent-name">${agent.identity?.name ?? agent.id}</span>
+                        <!-- Role dropdown always visible -->
+                        <select
+                          class="field group-create__role-select ${selected ? "" : "group-create__role-select--unselected"}"
+                          style="margin-left: auto; width: auto; min-width: 120px; font-size: 12px; padding: 2px 6px;"
+                          .value=${currentRole}
+                          @click=${(e: Event) => e.stopPropagation()}
+                          @change=${(e: Event) => {
+                            const role = (e.target as HTMLSelectElement).value as
+                              | "member"
+                              | "bridge-assistant";
+
+                            if (selected) {
+                              // Already selected: update immediately
+                              dialog.selectedAgents = dialog.selectedAgents.map((s) =>
+                                s.agentId === agent.id ? { ...s, role } : s,
+                              );
+                            } else {
+                              // Not selected: save to pending roles
+                              dialog.pendingRoles[agent.id] = role;
+                            }
+                          }}
+                        >
+                          <option value="member" ?selected=${currentRole === "member"}>${t("chat.group.role.member")}</option>
+                          <option value="bridge-assistant" ?selected=${currentRole === "bridge-assistant"}>${t("chat.group.role.cliAssistant")}</option>
+                        </select>
                       </label>
-                    `,
-                  )}
+                    `;
+                  })}
                 </div>
               `
           }

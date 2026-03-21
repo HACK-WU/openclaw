@@ -1672,6 +1672,7 @@ export function renderApp(state: AppViewState) {
                 groupAddMemberDialog: state.groupAddMemberDialog,
                 groupRemoveMemberDialog: state.groupRemoveMemberDialog,
                 groupDisbandDialog: state.groupDisbandDialog,
+                groupClearMessagesDialog: state.groupClearMessagesDialog,
                 groupInfoPanelOpen: state.groupInfoPanelOpen,
                 bridgeTerminalStatuses: state.bridgeTerminalStatuses,
                 bridgeTerminalReplayBuffers: state.bridgeTerminalReplayBuffers,
@@ -1733,6 +1734,7 @@ export function renderApp(state: AppViewState) {
                 onOpenAddMemberDialog: () => {
                   state.groupAddMemberDialog = {
                     selectedAgents: [],
+                    pendingRoles: {},
                     isBusy: false,
                     error: null,
                   };

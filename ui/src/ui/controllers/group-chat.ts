@@ -203,7 +203,9 @@ export type GroupCreateDialogState = {
 };
 
 export type GroupAddMemberDialogState = {
-  selectedAgents: Array<{ agentId: string; role: "member" }>;
+  selectedAgents: Array<{ agentId: string; role: "member" | "bridge-assistant" }>;
+  /** Pending role selections for unchecked agents (agentId → role). */
+  pendingRoles: Record<string, "member" | "bridge-assistant">;
   isBusy: boolean;
   error: string | null;
 };
@@ -1356,7 +1358,10 @@ export async function updateGroupMembers(
   host: GroupHost,
   groupId: string,
   action: "add" | "remove",
-  payload: { members?: Array<{ agentId: string }>; agentIds?: string[] },
+  payload: {
+    members?: Array<{ agentId: string; role?: "member" | "bridge-assistant" }>;
+    agentIds?: string[];
+  },
 ): Promise<void> {
   if (!host.client || !host.connected) {
     return;
@@ -1564,76 +1569,6 @@ export async function confirmDisbandGroup(host: GroupHost): Promise<void> {
 // ─── Clear Messages ───
 
 /**
- * Check if messages can be cleared (no active conversation).
- */
-export function canClearMessages(
-  groupId: string,
-  host: GroupChatState,
-): { allowed: boolean; reason?: string; blockingAgents?: string[] } {
-  // 1. Check active streams
-  const hasActiveStreams = host.groupStreams.size > 0;
-  if (hasActiveStreams) {
-    const activeAgents = Array.from(host.groupStreams.keys());
-    return {
-      allowed: false,
-      reason: "有 Agent 正在生成回复",
-      blockingAgents: activeAgents,
-    };
-  }
-
-  // 2. Check pending agents
-  const hasPendingAgents = host.groupPendingAgents.size > 0;
-  if (hasPendingAgents) {
-    const pending = Array.from(host.groupPendingAgents);
-    return {
-      allowed: false,
-      reason: "有 Agent 等待响应",
-      blockingAgents: pending,
-    };
-  }
-
-  // 3. Check chain state
-  const chain = groupChainStates.get(groupId);
-  if (chain) {
-    // Check if chain has pending agents
-    if (chain.pendingAgents.size > 0) {
-      const pending = Array.from(chain.pendingAgents);
-      return {
-        allowed: false,
-        reason: "当前对话链中有 Agent 等待响应",
-        blockingAgents: pending,
-      };
-    }
-
-    // Check if summary is in progress
-    if (summaryInFlight.has(groupId)) {
-      return {
-        allowed: false,
-        reason: "汇总流程正在进行中",
-      };
-    }
-  }
-
-  // 4. Check bridge terminal statuses
-  const bridgeStatuses = host.bridgeTerminalStatuses;
-  if (bridgeStatuses) {
-    const activeBridges = Array.from(bridgeStatuses.entries())
-      .filter(([_, status]) => status === "working" || status === "ready")
-      .map(([agentId, _]) => agentId);
-
-    if (activeBridges.length > 0) {
-      return {
-        allowed: false,
-        reason: "有 CLI Agent 正在执行",
-        blockingAgents: activeBridges,
-      };
-    }
-  }
-
-  return { allowed: true };
-}
-
-/**
  * 打开清空消息确认对话框
  */
 export function openClearMessagesDialog(
@@ -1641,19 +1576,6 @@ export function openClearMessagesDialog(
   groupId: string,
   groupName: string,
 ): void {
-  // Check if clearing is allowed
-  const check = canClearMessages(groupId, host);
-  if (!check.allowed) {
-    // Show error dialog instead
-    host.groupClearMessagesDialog = {
-      groupId,
-      groupName,
-      isClearing: false,
-      error: check.reason || "无法清空消息",
-    };
-    return;
-  }
-
   host.groupClearMessagesDialog = {
     groupId,
     groupName,
@@ -1675,16 +1597,6 @@ export function closeClearMessagesDialog(host: GroupChatState): void {
 export async function confirmClearMessages(host: GroupHost): Promise<void> {
   const dialog = host.groupClearMessagesDialog;
   if (!dialog) {
-    return;
-  }
-
-  // Double-check constraints before clearing
-  const check = canClearMessages(dialog.groupId, host);
-  if (!check.allowed) {
-    host.groupClearMessagesDialog = {
-      ...dialog,
-      error: check.reason || "无法清空消息",
-    };
     return;
   }
 
@@ -2007,7 +1919,7 @@ export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSyste
     return;
   }
 
-  if (eventName === "archived") {
+  if (eventName === "archived" || eventName === "deleted") {
     resetChainState(payload.groupId);
     groupMetaCache.delete(payload.groupId);
     groupActiveStreamKeys.delete(payload.groupId);
@@ -2048,7 +1960,12 @@ export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSyste
     void refreshGroupMetaCache(groupHost, payload.groupId);
   }
 
-  if (eventName === "created" || eventName === "archived" || shouldRefreshMeta.has(eventName)) {
+  if (
+    eventName === "created" ||
+    eventName === "archived" ||
+    eventName === "deleted" ||
+    shouldRefreshMeta.has(eventName)
+  ) {
     void loadGroupList(groupHost);
   }
 }
