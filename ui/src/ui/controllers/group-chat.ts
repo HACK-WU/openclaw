@@ -164,8 +164,12 @@ export type GroupChatState = {
   groupCreateDialog: GroupCreateDialogState | null;
   /** Add member dialog state */
   groupAddMemberDialog: GroupAddMemberDialogState | null;
+  /** Remove member dialog state */
+  groupRemoveMemberDialog: GroupRemoveMemberDialogState | null;
   /** Disband group dialog state */
   groupDisbandDialog: GroupDisbandDialogState | null;
+  /** Clear messages dialog state */
+  groupClearMessagesDialog: GroupClearMessagesDialogState | null;
   /** Info panel open */
   groupInfoPanelOpen: boolean;
   // ─── Bridge Terminal state ───
@@ -204,10 +208,24 @@ export type GroupAddMemberDialogState = {
   error: string | null;
 };
 
+export type GroupRemoveMemberDialogState = {
+  agentId: string;
+  agentName: string;
+  isBusy: boolean;
+  error: string | null;
+};
+
 export type GroupDisbandDialogState = {
   groupId: string;
   groupName: string;
   isDisbanding: boolean;
+  error: string | null;
+};
+
+export type GroupClearMessagesDialogState = {
+  groupId: string;
+  groupName: string;
+  isClearing: boolean;
   error: string | null;
 };
 
@@ -228,6 +246,8 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   groupCreateDialog: null,
   groupDisbandDialog: null,
   groupAddMemberDialog: null,
+  groupRemoveMemberDialog: null,
+  groupClearMessagesDialog: null,
   groupInfoPanelOpen: false,
   bridgeTerminalStatuses: new Map(),
 };
@@ -348,6 +368,7 @@ function resetGroupRoomState(host: GroupChatState): void {
   host.groupDraft = "";
   host.groupError = null;
   host.groupAddMemberDialog = null;
+  host.groupRemoveMemberDialog = null;
   host.groupDisbandDialog = null;
   host.groupInfoPanelOpen = false;
   host.bridgeTerminalStatuses = new Map();
@@ -1362,6 +1383,35 @@ export async function updateGroupMembers(
   }
 }
 
+export async function removeGroupMember(
+  host: GroupHost,
+  groupId: string,
+  agentId: string,
+): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  const dialog = host.groupRemoveMemberDialog;
+  if (dialog) {
+    dialog.isBusy = true;
+    dialog.error = null;
+  }
+  try {
+    await host.client.request("group.removeMembers", { groupId, agentIds: [agentId] });
+    if (dialog) {
+      host.groupRemoveMemberDialog = null;
+    }
+    await loadGroupInfo(host, groupId);
+    await loadGroupList(host);
+  } catch (err) {
+    if (dialog) {
+      dialog.isBusy = false;
+      dialog.error = String(err);
+    }
+    host.groupError = `Failed to remove member: ${String(err)}`;
+  }
+}
+
 export async function updateGroupSettings(
   host: GroupHost,
   groupId: string,
@@ -1506,6 +1556,164 @@ export async function confirmDisbandGroup(host: GroupHost): Promise<void> {
     host.groupDisbandDialog = {
       ...dialog,
       isDisbanding: false,
+      error: String(err),
+    };
+  }
+}
+
+// ─── Clear Messages ───
+
+/**
+ * Check if messages can be cleared (no active conversation).
+ */
+export function canClearMessages(
+  groupId: string,
+  host: GroupChatState,
+): { allowed: boolean; reason?: string; blockingAgents?: string[] } {
+  // 1. Check active streams
+  const hasActiveStreams = host.groupStreams.size > 0;
+  if (hasActiveStreams) {
+    const activeAgents = Array.from(host.groupStreams.keys());
+    return {
+      allowed: false,
+      reason: "有 Agent 正在生成回复",
+      blockingAgents: activeAgents,
+    };
+  }
+
+  // 2. Check pending agents
+  const hasPendingAgents = host.groupPendingAgents.size > 0;
+  if (hasPendingAgents) {
+    const pending = Array.from(host.groupPendingAgents);
+    return {
+      allowed: false,
+      reason: "有 Agent 等待响应",
+      blockingAgents: pending,
+    };
+  }
+
+  // 3. Check chain state
+  const chain = groupChainStates.get(groupId);
+  if (chain) {
+    // Check if chain has pending agents
+    if (chain.pendingAgents.size > 0) {
+      const pending = Array.from(chain.pendingAgents);
+      return {
+        allowed: false,
+        reason: "当前对话链中有 Agent 等待响应",
+        blockingAgents: pending,
+      };
+    }
+
+    // Check if summary is in progress
+    if (summaryInFlight.has(groupId)) {
+      return {
+        allowed: false,
+        reason: "汇总流程正在进行中",
+      };
+    }
+  }
+
+  // 4. Check bridge terminal statuses
+  const bridgeStatuses = host.bridgeTerminalStatuses;
+  if (bridgeStatuses) {
+    const activeBridges = Array.from(bridgeStatuses.entries())
+      .filter(([_, status]) => status === "working" || status === "ready")
+      .map(([agentId, _]) => agentId);
+
+    if (activeBridges.length > 0) {
+      return {
+        allowed: false,
+        reason: "有 CLI Agent 正在执行",
+        blockingAgents: activeBridges,
+      };
+    }
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * 打开清空消息确认对话框
+ */
+export function openClearMessagesDialog(
+  host: GroupChatState,
+  groupId: string,
+  groupName: string,
+): void {
+  // Check if clearing is allowed
+  const check = canClearMessages(groupId, host);
+  if (!check.allowed) {
+    // Show error dialog instead
+    host.groupClearMessagesDialog = {
+      groupId,
+      groupName,
+      isClearing: false,
+      error: check.reason || "无法清空消息",
+    };
+    return;
+  }
+
+  host.groupClearMessagesDialog = {
+    groupId,
+    groupName,
+    isClearing: false,
+    error: null,
+  };
+}
+
+/**
+ * 关闭清空消息确认对话框
+ */
+export function closeClearMessagesDialog(host: GroupChatState): void {
+  host.groupClearMessagesDialog = null;
+}
+
+/**
+ * 确认清空消息
+ */
+export async function confirmClearMessages(host: GroupHost): Promise<void> {
+  const dialog = host.groupClearMessagesDialog;
+  if (!dialog) {
+    return;
+  }
+
+  // Double-check constraints before clearing
+  const check = canClearMessages(dialog.groupId, host);
+  if (!check.allowed) {
+    host.groupClearMessagesDialog = {
+      ...dialog,
+      error: check.reason || "无法清空消息",
+    };
+    return;
+  }
+
+  // Set clearing state
+  host.groupClearMessagesDialog = { ...dialog, isClearing: true, error: null };
+
+  try {
+    if (!host.client || !host.connected) {
+      throw new Error("Not connected");
+    }
+
+    await host.client.request("group.clearMessages", { groupId: dialog.groupId });
+
+    // Clear local state
+    host.groupMessages = [];
+    host.groupStreams = new Map();
+    host.groupPendingAgents = new Set();
+    host.groupToolMessages = new Map();
+    streamBuffers.clear();
+
+    // Reset chain state
+    resetChainState(dialog.groupId);
+
+    // Close dialog
+    host.groupClearMessagesDialog = null;
+  } catch (err) {
+    host.groupClearMessagesDialog = {
+      ...dialog,
+      isClearing: false,
       error: String(err),
     };
   }
@@ -1807,6 +2015,20 @@ export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSyste
     if (isActiveGroup) {
       openGroupList(host);
     }
+  }
+
+  // Handle messages cleared event
+  if (eventName === "messages_cleared") {
+    resetChainState(payload.groupId);
+    clearParsedMentionMessages(payload.groupId);
+    if (isActiveGroup) {
+      host.groupMessages = [];
+      host.groupStreams = new Map();
+      host.groupPendingAgents = new Set();
+      host.groupToolMessages = new Map();
+      streamBuffers.clear();
+    }
+    return;
   }
 
   const shouldRefreshMeta = new Set([

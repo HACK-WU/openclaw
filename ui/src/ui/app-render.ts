@@ -97,6 +97,9 @@ import {
   openDisbandGroupDialog,
   closeDisbandGroupDialog,
   confirmDisbandGroup,
+  openClearMessagesDialog,
+  closeClearMessagesDialog,
+  confirmClearMessages,
   sendTerminalResize,
   handleBridgeTerminalStreamUpdate,
   clearBridgeTerminalStream,
@@ -1112,10 +1115,13 @@ export function renderApp(state: AppViewState) {
                     workspacePathError: undefined,
                     workspacePathWarning: undefined,
                     isCheckingPath: false,
+                    personalityId: null,
                   };
                   state.agentCreateError = null;
                   state.agentShowCreateDialog = true;
                   state.agentShowAddMenu = false;
+                  // Load personalities list
+                  await loadPersonalities(state);
                 },
                 onHideCreateDialog: () => {
                   state.agentShowCreateDialog = false;
@@ -1959,6 +1965,25 @@ export function renderApp(state: AppViewState) {
                 onConfirmDisbandGroup: () => {
                   void confirmDisbandGroup(
                     state as unknown as Parameters<typeof confirmDisbandGroup>[0],
+                  );
+                },
+                onOpenClearMessagesDialog: () => {
+                  if (state.activeGroupId && state.activeGroupMeta) {
+                    openClearMessagesDialog(
+                      state as unknown as Parameters<typeof openClearMessagesDialog>[0],
+                      state.activeGroupId,
+                      state.activeGroupMeta.name,
+                    );
+                  }
+                },
+                onCloseClearMessagesDialog: () => {
+                  closeClearMessagesDialog(
+                    state as unknown as Parameters<typeof closeClearMessagesDialog>[0],
+                  );
+                },
+                onConfirmClearMessages: () => {
+                  void confirmClearMessages(
+                    state as unknown as Parameters<typeof confirmClearMessages>[0],
                   );
                 },
               })

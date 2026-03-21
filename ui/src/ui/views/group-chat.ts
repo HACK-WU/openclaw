@@ -23,7 +23,9 @@ import type {
   GroupIndexEntry,
   GroupCreateDialogState,
   GroupAddMemberDialogState,
+  GroupRemoveMemberDialogState,
   GroupDisbandDialogState,
+  GroupClearMessagesDialogState,
   GroupToolMessage,
 } from "../controllers/group-chat.ts";
 import { getMentionedAgents } from "../controllers/group-chat.ts";
@@ -142,7 +144,7 @@ export type GroupChatViewProps = {
   activeGroupId: string | null;
   activeGroupMeta: GroupSessionMeta | null;
   groupMessages: GroupChatMessage[];
-  groupStreams: Map<string, { runId: string; text: string; startedAt: number }>;
+  groupStreams: Map<string, { runId: string; text: string; startedAt: number; frozen?: boolean }>;
   groupPendingAgents: Set<string>;
   groupToolMessages: Map<string, GroupToolMessage[]>;
   groupIndex: GroupIndexEntry[];
@@ -153,7 +155,9 @@ export type GroupChatViewProps = {
   groupError: string | null;
   groupCreateDialog: GroupCreateDialogState | null;
   groupAddMemberDialog: GroupAddMemberDialogState | null;
+  groupRemoveMemberDialog: GroupRemoveMemberDialogState | null;
   groupDisbandDialog: GroupDisbandDialogState | null;
+  groupClearMessagesDialog: GroupClearMessagesDialogState | null;
   groupInfoPanelOpen: boolean;
   // Agents
   agentsList: Array<{ id: string; identity?: { name?: string; emoji?: string } }>;
@@ -175,6 +179,9 @@ export type GroupChatViewProps = {
   onOpenAddMemberDialog: () => void;
   onCloseAddMemberDialog: () => void;
   onAddMembers: (members: Array<{ agentId: string; role: "member" }>) => void;
+  onOpenRemoveMemberDialog: (agentId: string, agentName: string) => void;
+  onCloseRemoveMemberDialog: () => void;
+  onRemoveMember: (agentId: string) => void;
   onToggleInfoPanel: () => void;
   onRefresh: () => void;
   // Group settings callbacks
@@ -197,6 +204,10 @@ export type GroupChatViewProps = {
   onOpenDisbandDialog: () => void;
   onCloseDisbandDialog: () => void;
   onConfirmDisbandGroup: () => void;
+  // Clear messages
+  onOpenClearMessagesDialog: () => void;
+  onCloseClearMessagesDialog: () => void;
+  onConfirmClearMessages: () => void;
   // Export transcript
   onExportTranscript: () => void;
   // Path validation
@@ -631,7 +642,9 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
 
       ${props.groupInfoPanelOpen ? renderGroupInfoPanel(meta, props) : nothing}
       ${props.groupAddMemberDialog ? renderAddMemberDialog(props) : nothing}
+      ${props.groupRemoveMemberDialog ? renderRemoveMemberDialog(props) : nothing}
       ${renderDisbandGroupDialog(props)}
+      ${renderClearMessagesDialog(props)}
       ${renderAnnouncementEditDialog(meta, props)}
     </div>
   `;
@@ -930,6 +943,7 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
             const displayName = resolveAgentName(m.agentId, props.agentsList);
             const showId = displayName !== m.agentId;
             const roleLabel = m.bridge ? "bridge" : m.role;
+            const canRemove = m.role !== "assistant";
             return html`
               <li class="group-members-panel__item">
                 <span class="group-members-panel__emoji">
@@ -940,6 +954,19 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
                   ${showId ? html`<span class="group-members-panel__id">@${m.agentId}</span>` : nothing}
                 </span>
                 <span class="group-members-panel__role badge badge--${roleLabel}">${roleLabel}</span>
+                ${
+                  canRemove
+                    ? html`
+                        <button
+                          class="btn btn--sm btn--icon group-members-panel__remove-btn"
+                          @click=${() => props.onOpenRemoveMemberDialog(m.agentId, displayName)}
+                          title=${t("chat.group.removeMember")}
+                        >
+                          ${icons.x}
+                        </button>
+                      `
+                    : nothing
+                }
               </li>
             `;
           })}
@@ -1190,11 +1217,11 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
 
         <!-- Project Configuration -->
         <div class="group-info-panel__section">
-          <label>Project Configuration</label>
+          <label>${t("chat.group.projectConfiguration")}</label>
           <div class="group-info-panel__settings">
             <div class="group-info-panel__setting-item">
               <div class="group-info-panel__setting-header">
-                <span class="group-info-panel__setting-name">Project Directory</span>
+                <span class="group-info-panel__setting-name">${t("chat.group.projectDirectory")}</span>
               </div>
               ${
                 meta.project?.directory
@@ -1203,16 +1230,16 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
                     <span>🔒</span>
                     <span>${meta.project.directory}</span>
                   </div>
-                  <span class="group-info-panel__setting-desc">Locked at creation. CLI Agents start in this directory.</span>
+                  <span class="group-info-panel__setting-desc">${t("chat.group.projectDirectoryLockedDesc")}</span>
                 `
                   : html`
-                      <span class="group-info-panel__setting-desc muted">Not configured. Set during group creation.</span>
+                      <span class="group-info-panel__setting-desc muted">${t("chat.group.projectDirectoryNotConfigured")}</span>
                     `
               }
             </div>
             <div class="group-info-panel__setting-item">
               <div class="group-info-panel__setting-header">
-                <span class="group-info-panel__setting-name">Project Docs</span>
+                <span class="group-info-panel__setting-name">${t("chat.group.projectDocs")}</span>
               </div>
               <div style="display: flex; flex-direction: column; gap: 4px;">
                 ${(meta.project?.docs ?? []).map(
@@ -1222,7 +1249,7 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
                       <button
                         class="btn btn--sm btn--icon"
                         style="padding: 2px;"
-                        title="Remove"
+                        title=${t("action.remove")}
                         @click=${() => {
                           const updated = [...(meta.project?.docs ?? [])];
                           updated.splice(idx, 1);
@@ -1264,21 +1291,21 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
                         input.value = "";
                       }
                     }}
-                  >+ Add</button>
+                  >+ ${t("action.add")}</button>
                 </div>
               </div>
-              <span class="group-info-panel__setting-desc">Files injected into agent context. Can be updated anytime.</span>
+              <span class="group-info-panel__setting-desc">${t("chat.group.projectDocsDesc")}</span>
             </div>
           </div>
         </div>
 
         <!-- Context Configuration -->
         <div class="group-info-panel__section">
-          <label>Context Configuration</label>
+          <label>${t("chat.group.contextConfiguration")}</label>
           <div class="group-info-panel__settings">
             <div class="group-info-panel__setting-item">
               <div class="group-info-panel__setting-header">
-                <span class="group-info-panel__setting-name">Max Messages</span>
+                <span class="group-info-panel__setting-name">${t("chat.group.maxMessages")}</span>
                 <input
                   type="number"
                   class="field group-info-panel__setting-input"
@@ -1296,11 +1323,11 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
                   }}
                 />
               </div>
-              <span class="group-info-panel__setting-desc">Maximum number of history messages sent to CLI Agents (5-100).</span>
+              <span class="group-info-panel__setting-desc">${t("chat.group.maxMessagesDesc")}</span>
             </div>
             <div class="group-info-panel__setting-item">
               <div class="group-info-panel__setting-header">
-                <span class="group-info-panel__setting-name">Max Characters</span>
+                <span class="group-info-panel__setting-name">${t("chat.group.maxCharacters")}</span>
                 <input
                   type="number"
                   class="field group-info-panel__setting-input"
@@ -1319,11 +1346,11 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
                   }}
                 />
               </div>
-              <span class="group-info-panel__setting-desc">Maximum total characters in context (10,000-200,000).</span>
+              <span class="group-info-panel__setting-desc">${t("chat.group.maxCharactersDesc")}</span>
             </div>
             <div class="group-info-panel__setting-item">
               <div class="group-info-panel__setting-header">
-                <span class="group-info-panel__setting-name">Include System Messages</span>
+                <span class="group-info-panel__setting-name">${t("chat.group.includeSystemMessages")}</span>
                 <input
                   type="checkbox"
                   .checked=${meta.contextConfig?.includeSystemMessages ?? false}
@@ -1335,20 +1362,28 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
                   }}
                 />
               </div>
-              <span class="group-info-panel__setting-desc">Include member join/leave events in context.</span>
+              <span class="group-info-panel__setting-desc">${t("chat.group.includeSystemMessagesDesc")}</span>
             </div>
           </div>
         </div>
 
         <!-- Danger Zone -->
         <div class="group-info-panel__section group-info-panel__section--danger">
-          <label>${t("chat.group.dangerZone") || "Danger Zone"}</label>
-          <button
-            class="btn btn--danger btn--sm"
-            @click=${() => props.onOpenDisbandDialog()}
-          >
-            ${icons.trash} ${t("chat.group.disband") || "Disband Group"}
-          </button>
+          <label>${t("chat.group.dangerZone")}</label>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <button
+              class="btn btn--danger btn--sm"
+              @click=${() => props.onOpenClearMessagesDialog()}
+            >
+              ${icons.trash} ${t("chat.group.clearMessages")}
+            </button>
+            <button
+              class="btn btn--danger btn--sm"
+              @click=${() => props.onOpenDisbandDialog()}
+            >
+              ${icons.trash} ${t("chat.group.disband")}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1371,7 +1406,7 @@ function renderDisbandGroupDialog(props: GroupChatViewProps) {
             ${icons.trash}
           </div>
           <div class="modal-title-group">
-            <div class="modal-title">${t("chat.group.disband") || "Disband Group"}</div>
+            <div class="modal-title">${t("chat.group.disband")}</div>
             <div class="modal-subtitle">${dialog.groupName}</div>
           </div>
         </div>
@@ -1380,8 +1415,8 @@ function renderDisbandGroupDialog(props: GroupChatViewProps) {
           <div class="warning-box">
             <div class="warning-box__icon">${icons.alertTriangle}</div>
             <div class="warning-box__content">
-              <div class="warning-box__title">${t("chat.sidebar.deleteWarningTitle") || "This action cannot be undone"}</div>
-              <div class="warning-box__text">${t("chat.group.disbandConfirmDetail") || "All messages and settings will be permanently deleted."}</div>
+              <div class="warning-box__title">${t("chat.sidebar.deleteWarningTitle")}</div>
+              <div class="warning-box__text">${t("chat.group.disbandConfirmDetail")}</div>
             </div>
           </div>
 
@@ -1403,7 +1438,7 @@ function renderDisbandGroupDialog(props: GroupChatViewProps) {
             ?disabled=${dialog.isDisbanding}
             @click=${() => props.onCloseDisbandDialog()}
           >
-            ${t("common.cancel") || "Cancel"}
+            ${t("common.cancel")}
           </button>
           <button
             class="btn btn--danger"
@@ -1414,11 +1449,106 @@ function renderDisbandGroupDialog(props: GroupChatViewProps) {
               dialog.isDisbanding
                 ? html`
                   <span class="btn__spinner">${icons.loader}</span>
-                  <span>${t("chat.group.disbanding") || "Disbanding..."}</span>
+                  <span>${t("chat.group.disbanding")}</span>
                 `
-                : html`<span>${t("chat.group.disband") || "Disband Group"}</span>`
+                : html`<span>${t("chat.group.disband")}</span>`
             }
           </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Clear Messages Dialog ───
+
+function renderClearMessagesDialog(props: GroupChatViewProps) {
+  const dialog = props.groupClearMessagesDialog;
+  if (!dialog) {
+    return nothing;
+  }
+
+  // Check if this is a blocked state (error already set)
+  const isBlocked = dialog.error && !dialog.isClearing;
+
+  return html`
+    <div class="modal-overlay" role="dialog" aria-modal="true" aria-live="polite">
+      <div class="modal-card ${isBlocked ? "" : "modal-card--danger"}">
+        <div class="modal-header">
+          <div class="modal-icon ${isBlocked ? "" : "modal-icon--danger"}">
+            ${isBlocked ? icons.alertCircle : icons.trash}
+          </div>
+          <div class="modal-title-group">
+            <div class="modal-title">${
+              isBlocked ? t("chat.group.clearMessagesBlocked") : t("chat.group.clearMessages")
+            }</div>
+            <div class="modal-subtitle">${dialog.groupName}</div>
+          </div>
+        </div>
+
+        <div class="modal-body">
+          ${
+            isBlocked
+              ? html`
+                <div class="warning-box">
+                  <div class="warning-box__icon">${icons.alertTriangle}</div>
+                  <div class="warning-box__content">
+                    <div class="warning-box__title">${t("chat.group.clearMessagesWarning")}</div>
+                    <div class="warning-box__text">${t("chat.group.clearMessagesBlockedDetail")}</div>
+                  </div>
+                </div>
+              `
+              : html`
+                <div class="warning-box">
+                  <div class="warning-box__icon">${icons.alertTriangle}</div>
+                  <div class="warning-box__content">
+                    <div class="warning-box__title">${t("chat.sidebar.deleteWarningTitle")}</div>
+                    <div class="warning-box__text">${t("chat.group.clearMessagesConfirmDetail")}</div>
+                  </div>
+                </div>
+              `
+          }
+
+          ${
+            dialog.error && !isBlocked
+              ? html`
+                <div class="modal-error">
+                  <span class="modal-error__icon">${icons.alertCircle}</span>
+                  <span>${dialog.error}</span>
+                </div>
+              `
+              : nothing
+          }
+        </div>
+
+        <div class="modal-actions">
+          <button
+            class="btn ${isBlocked ? "btn--primary" : "btn--secondary"}"
+            ?disabled=${dialog.isClearing}
+            @click=${() => props.onCloseClearMessagesDialog()}
+          >
+            ${t("common.cancel")}
+          </button>
+          ${
+            !isBlocked
+              ? html`
+                <button
+                  class="btn btn--danger"
+                  ?disabled=${dialog.isClearing}
+                  @click=${() => props.onConfirmClearMessages()}
+                >
+                  ${
+                    dialog.isClearing
+                      ? html`
+                        <span class="btn__spinner">${icons.loader}</span>
+                        <span>${t("chat.group.clearing")}</span>
+                      `
+                      : html`<span>${t("chat.group.clearMessages")}</span>`
+                  }
+                </button>
+              `
+              : nothing
+          }
         </div>
       </div>
     </div>
@@ -1816,6 +1946,52 @@ function renderAddMemberDialog(props: GroupChatViewProps) {
           >
             ${dialog.isBusy ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing}
             ${t("chat.group.add")}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Remove Member Dialog ───
+
+function renderRemoveMemberDialog(props: GroupChatViewProps) {
+  const dialog = props.groupRemoveMemberDialog;
+  if (!dialog) {
+    return nothing;
+  }
+
+  return html`
+    <div class="modal-overlay" role="dialog" aria-modal="true"
+      @click=${(e: Event) => {
+        if ((e.target as HTMLElement).classList.contains("modal-overlay")) {
+          props.onCloseRemoveMemberDialog();
+        }
+      }}
+    >
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title">${t("chat.group.removeMember")}</h3>
+        </div>
+        <div class="modal-body">
+          <p>${t("chat.group.removeMemberConfirm", { name: dialog.agentName })}</p>
+          ${dialog.error ? html`<div class="modal-error">${dialog.error}</div>` : nothing}
+        </div>
+        <div class="modal-actions">
+          <button
+            class="btn btn--secondary"
+            @click=${() => props.onCloseRemoveMemberDialog()}
+            ?disabled=${dialog.isBusy}
+          >
+            ${t("action.cancel")}
+          </button>
+          <button
+            class="btn btn--danger"
+            ?disabled=${dialog.isBusy}
+            @click=${() => props.onRemoveMember(dialog.agentId)}
+          >
+            ${dialog.isBusy ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing}
+            ${t("action.remove")}
           </button>
         </div>
       </div>

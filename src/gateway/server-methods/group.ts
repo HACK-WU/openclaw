@@ -29,6 +29,8 @@ import {
   getPendingAgentCount,
   atomicAgentForwardCheck,
   getChainState,
+  clearChainState,
+  hasActiveMonitor,
 } from "../../group-chat/chain-state-store.js";
 import { buildGroupSessionKey } from "../../group-chat/group-session-key.js";
 import {
@@ -51,6 +53,7 @@ import {
   appendSystemMessage,
   readGroupMessages,
   getTranscriptSnapshot,
+  clearGroupMessages,
 } from "../../group-chat/transcript.js";
 import type { GroupIndexEntry as RawGroupIndexEntry } from "../../group-chat/types.js";
 import type { GroupChatMessage, MessageSender } from "../../group-chat/types.js";
@@ -1031,6 +1034,63 @@ const handleGroupValidatePath: GatewayRequestHandler = async ({ params, respond 
   respond(true, { results });
 };
 
+// ─── Clear Messages ───
+
+/**
+ * Clear all messages from a group chat.
+ *
+ * Constraints:
+ * - No active streams (agents generating responses)
+ * - No pending agents (agents waiting to respond)
+ * - No active chain monitors (ongoing conversation chain)
+ */
+const handleGroupClearMessages: GatewayRequestHandler = async ({ params, respond, context }) => {
+  const groupId = params.groupId as string;
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  // Check for active conversation
+  const pendingCount = getPendingAgentCount(groupId);
+  const activePtys = getGroupActivePtys(groupId);
+
+  // Constraint checks
+  const hasPendingAgents = pendingCount > 0;
+  const hasActivePtys = activePtys.size > 0;
+  const hasChainMonitor = hasActiveMonitor(groupId);
+
+  if (hasPendingAgents || hasActivePtys || hasChainMonitor) {
+    const reasons: string[] = [];
+    if (hasPendingAgents) {
+      reasons.push(`${pendingCount} agent(s) pending response`);
+    }
+    if (hasActivePtys) {
+      reasons.push(`${activePtys.size} active terminal(s)`);
+    }
+    if (hasChainMonitor) {
+      reasons.push("conversation chain active");
+    }
+
+    respond(false, undefined, {
+      message: `Cannot clear messages while conversation is active: ${reasons.join(", ")}`,
+      code: 409, // Conflict
+    });
+    return;
+  }
+
+  // Clear messages from transcript
+  await clearGroupMessages(groupId);
+
+  // Clear chain state
+  clearChainState(groupId);
+
+  // Broadcast clear event to all clients
+  broadcastGroupSystem(context.broadcast, groupId, "messages_cleared", {});
+
+  respond(true, { ok: true });
+};
+
 // ─── Export handler map ───
 
 export const groupHandlers: GatewayRequestHandlers = {
@@ -1059,4 +1119,6 @@ export const groupHandlers: GatewayRequestHandlers = {
   // Path validation
   "group.validatePath": handleGroupValidatePath,
   "group.setAntiLoopConfig": handleGroupSetAntiLoopConfig,
+  // Clear messages
+  "group.clearMessages": handleGroupClearMessages,
 };

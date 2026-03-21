@@ -162,3 +162,32 @@ export function estimateGroupTranscriptTokens(messages: GroupChatMessage[]): num
   }
   return Math.ceil(totalChars / 4);
 }
+
+/**
+ * Clear all messages from a group transcript.
+ * Preserves the session header and resets the sequence counter.
+ * Uses withGroupLock for concurrent write safety.
+ */
+export async function clearGroupMessages(groupId: string): Promise<void> {
+  return withGroupLock(groupId, async () => {
+    const filePath = resolveGroupTranscriptPath(groupId);
+
+    // Preserve session header
+    const header = {
+      type: "session",
+      version: "1.0",
+      id: groupId,
+      timestamp: new Date().toISOString(),
+      sessionType: "group",
+    };
+
+    // Rewrite file with only the header
+    await fs.promises.writeFile(filePath, `${JSON.stringify(header)}\n`, {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
+
+    // Reset sequence counter
+    seqCounters.set(groupId, 0);
+  });
+}

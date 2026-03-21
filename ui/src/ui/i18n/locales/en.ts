@@ -281,6 +281,17 @@ export const en: Record<string, string> = {
   "chat.group.disband": "Disband Group",
   "chat.group.disbandConfirm":
     "Are you sure you want to disband this group? This action cannot be undone.",
+  "chat.group.disbandConfirmDetail": "All messages and settings will be permanently deleted.",
+  "chat.group.disbanding": "Disbanding...",
+  "chat.group.clearMessages": "Clear Messages",
+  "chat.group.clearMessagesConfirm": "Are you sure you want to clear all messages?",
+  "chat.group.clearMessagesConfirmDetail":
+    "This action will delete all chat messages and cannot be undone.",
+  "chat.group.clearMessagesWarning": "Cannot clear messages while conversation is active",
+  "chat.group.clearMessagesBlocked": "Cannot Clear Messages",
+  "chat.group.clearMessagesBlockedDetail":
+    "Some agents are still responding. Please wait for them to finish.",
+  "chat.group.clearing": "Clearing...",
   "chat.group.export": "Export Transcript",
   "chat.group.generating": "Generating",
   "chat.group.thinkingLevel": "Thinking Level",

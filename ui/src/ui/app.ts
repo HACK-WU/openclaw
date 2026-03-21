@@ -309,6 +309,7 @@ export class OpenClawApp extends LitElement {
     workspacePathError: undefined as string | undefined,
     workspacePathWarning: undefined as string | undefined,
     isCheckingPath: false,
+    personalityId: null as string | null,
   };
   @state() agentCreateBusy = false;
   @state() agentCreateError: string | null = null;
