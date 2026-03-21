@@ -172,7 +172,7 @@ const CTX_END_MARKER = "[OPENCLAW_CTX_END]";
  * Everything above (and including) the last occurrence of this line is stripped
  * during text extraction so the final output contains only the CLI's response.
  */
-const INPUT_END_MARKER = "──── End of Input ────";
+const INPUT_END_MARKER = "# ──── End of Input ────";
 
 /**
  * 过滤上下文消息块
@@ -187,7 +187,7 @@ const INPUT_END_MARKER = "──── End of Input ────";
 function filterContextBlock(text: string): string {
   const lines = text.split("\n");
 
-  // ─── 最高优先：从后往前查找 "──── End of Input ────" 标记 ───
+  // ─── 最高优先：从后往前查找 "# ──── End of Input ────" 标记 ───
   // This marker is appended after the user's visible request text.
   // Everything above it (context + user input echo) should be stripped.
   let lastInputEndIndex = -1;
