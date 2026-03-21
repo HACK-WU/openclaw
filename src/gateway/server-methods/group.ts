@@ -6,7 +6,11 @@
  */
 
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { findCliAgentEntry } from "../../commands/cli-agents.config.js";
+import { loadConfig } from "../../config/config.js";
+import { resolveStorePath } from "../../config/sessions/paths.js";
+import { updateSessionStore } from "../../config/sessions/store.js";
 import { triggerAgentReasoning } from "../../group-chat/agent-trigger.js";
 import {
   cleanupGroupBridgeAgents,
@@ -30,12 +34,11 @@ import {
   atomicAgentForwardCheck,
   getChainState,
   clearChainState,
-  hasActiveMonitor,
 } from "../../group-chat/chain-state-store.js";
 import { buildGroupSessionKey } from "../../group-chat/group-session-key.js";
 import {
-  archiveGroup,
   createGroup,
+  deleteGroup,
   loadGroupIndex,
   loadGroupMeta,
   updateGroupMeta,
@@ -194,12 +197,33 @@ const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, conte
     return;
   }
 
-  // Cleanup all Bridge Agent PTY processes before archiving
+  // Cleanup all Bridge Agent PTY processes before deleting
   await cleanupGroupBridgeAgents(groupId, context.broadcast);
 
-  await archiveGroup(groupId);
+  // Broadcast deleted event before actual deletion (so clients can clean up state)
+  broadcastGroupSystem(context.broadcast, groupId, "deleted", {});
+
+  // Actually delete the group directory (including transcript.jsonl)
+  await deleteGroup(groupId);
+
+  // Delete all session store entries for this group.
+  // Session keys for group chats are stored as agent:<agentId>:group:<groupId>:<memberAgentId>
+  // We need to find and delete all entries containing :group:<groupId>:
+  try {
+    const cfg = loadConfig();
+    const storePath = resolveStorePath(cfg.session?.store);
+    const groupKeyPattern = `:group:${groupId}:`;
+    await updateSessionStore(storePath, (store) => {
+      const keysToDelete = Object.keys(store).filter((key) => key.includes(groupKeyPattern));
+      for (const key of keysToDelete) {
+        delete store[key];
+      }
+    });
+  } catch {
+    // Best-effort cleanup; don't fail the delete if session store cleanup fails
+  }
+
   respond(true, { ok: true });
-  broadcastGroupSystem(context.broadcast, groupId, "archived", {});
 };
 
 const handleGroupAddMembers: GatewayRequestHandler = async ({ params, respond, context }) => {
@@ -1038,11 +1062,6 @@ const handleGroupValidatePath: GatewayRequestHandler = async ({ params, respond 
 
 /**
  * Clear all messages from a group chat.
- *
- * Constraints:
- * - No active streams (agents generating responses)
- * - No pending agents (agents waiting to respond)
- * - No active chain monitors (ongoing conversation chain)
  */
 const handleGroupClearMessages: GatewayRequestHandler = async ({ params, respond, context }) => {
   const groupId = params.groupId as string;
@@ -1051,41 +1070,71 @@ const handleGroupClearMessages: GatewayRequestHandler = async ({ params, respond
     return;
   }
 
-  // Check for active conversation
-  const pendingCount = getPendingAgentCount(groupId);
-  const activePtys = getGroupActivePtys(groupId);
-
-  // Constraint checks
-  const hasPendingAgents = pendingCount > 0;
-  const hasActivePtys = activePtys.size > 0;
-  const hasChainMonitor = hasActiveMonitor(groupId);
-
-  if (hasPendingAgents || hasActivePtys || hasChainMonitor) {
-    const reasons: string[] = [];
-    if (hasPendingAgents) {
-      reasons.push(`${pendingCount} agent(s) pending response`);
-    }
-    if (hasActivePtys) {
-      reasons.push(`${activePtys.size} active terminal(s)`);
-    }
-    if (hasChainMonitor) {
-      reasons.push("conversation chain active");
-    }
-
-    respond(false, undefined, {
-      message: `Cannot clear messages while conversation is active: ${reasons.join(", ")}`,
-      code: 409, // Conflict
-    });
+  // Get group meta to find all members
+  const meta = loadGroupMeta(groupId);
+  if (!meta) {
+    respond(false, undefined, { message: "Group not found", code: 404 });
     return;
   }
 
-  // Clear messages from transcript
+  // 1. Cleanup all Bridge Agent PTY processes
+  // This terminates the CLI processes and clears their internal state
+  await cleanupGroupBridgeAgents(groupId, context.broadcast);
+
+  // 2. Clear messages from transcript
   await clearGroupMessages(groupId);
 
-  // Clear chain state
+  // 3. Clear chain state
   clearChainState(groupId);
 
-  // Broadcast clear event to all clients
+  // 4. Clear each agent's session transcript file and reset session IDs
+  // This ensures agents won't see previous conversation history
+  const { resolveSessionTranscriptsDirForAgent, resolveDefaultSessionStorePath } =
+    await import("../../config/sessions/paths.js");
+  const { loadSessionStore, updateSessionStore } = await import("../../config/sessions/store.js");
+  const { randomUUID } = await import("node:crypto");
+  const fs = await import("node:fs/promises");
+
+  // Group agents by their agentId to handle per-agent session stores
+  const agentIds = [...new Set(meta.members.map((m) => m.agentId))];
+
+  for (const agentId of agentIds) {
+    // Build session key for looking up session entry
+    const sessionKey = buildGroupSessionKey(groupId, agentId);
+
+    // Get session store and entry for this agent
+    const storePath = resolveDefaultSessionStorePath(agentId);
+    const store = loadSessionStore(storePath);
+    const sessionEntry = store[sessionKey];
+
+    // Delete session transcript file if session exists
+    // The transcript file is named by sessionId (a UUID), not sessionKey
+    if (sessionEntry?.sessionId) {
+      const sessionsDir = resolveSessionTranscriptsDirForAgent(agentId);
+      const transcriptPath = path.join(sessionsDir, `${sessionEntry.sessionId}.jsonl`);
+      try {
+        await fs.unlink(transcriptPath);
+        log.info(
+          `[CLEAR_MESSAGES] Deleted transcript file for agent ${agentId}: ${transcriptPath}`,
+        );
+      } catch {
+        // Ignore if file doesn't exist
+      }
+    }
+
+    // Reset session ID in the agent's session store
+    await updateSessionStore(storePath, (store) => {
+      const entry = store[sessionKey];
+      if (entry) {
+        // Generate new session ID to prevent history bleeding
+        entry.sessionId = randomUUID();
+        entry.updatedAt = Date.now();
+        log.info(`[CLEAR_MESSAGES] Reset sessionId for ${sessionKey}`);
+      }
+    });
+  }
+
+  // 5. Broadcast clear event to all clients
   broadcastGroupSystem(context.broadcast, groupId, "messages_cleared", {});
 
   respond(true, { ok: true });
