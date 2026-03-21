@@ -387,9 +387,22 @@ const handleCliAgentsTest: GatewayRequestHandler = async ({ params, respond, con
         encoding: "utf-8",
       },
     ).trim();
-    checks.push({ name: "command_exists", ok: true, message: whichResult || command });
-  } catch {
+    // Use only the first line if multiple lines (PATH may have duplicates)
+    const firstPath = whichResult.split("\n")[0]?.trim() || whichResult;
+    checks.push({ name: "command_exists", ok: true, message: firstPath });
+    // Debug: show raw result details in UI
+    checks.push({
+      name: "command_exists_debug",
+      ok: true,
+      message: `lines: ${whichResult.split("\n").length}, raw: ${whichResult.slice(0, 80)}...`,
+    });
+  } catch (err) {
     checks.push({ name: "command_exists", ok: false, message: `"${command}" not found in PATH` });
+    checks.push({
+      name: "command_exists_error",
+      ok: false,
+      message: `Error: ${err instanceof Error ? err.message.slice(0, 100) : String(err).slice(0, 100)}`,
+    });
     respond(true, { ok: false, agentId, checks });
     return;
   }
@@ -442,7 +455,6 @@ const handleCliAgentsTest: GatewayRequestHandler = async ({ params, respond, con
         env: existing.env,
         timeout: 15_000, // 15 second timeout for test
       },
-      completionIdleSecs: 5,
       onRawData: (data: string) => {
         outputReceived = true;
         // Stream test output to connected clients
@@ -451,11 +463,14 @@ const handleCliAgentsTest: GatewayRequestHandler = async ({ params, respond, con
           data: Buffer.from(data, "utf-8").toString("base64"),
         });
       },
-      onCompletion: () => {
+      onExit: (code: number | null, _signal: number | null) => {
         completed = true;
-      },
-      onExit: (_code: number | null, _signal: number | null) => {
-        completed = true;
+        // Debug: log exit info
+        checks.push({
+          name: "pty_exit",
+          ok: code === 0,
+          message: `exitCode=${code}`,
+        });
       },
     });
 
@@ -473,11 +488,19 @@ const handleCliAgentsTest: GatewayRequestHandler = async ({ params, respond, con
     while (!completed && Date.now() - waitStart < 10_000) {
       await new Promise<void>((resolve) => setTimeout(resolve, 500));
     }
+    const totalWaitMs = Date.now() - waitStart;
 
     checks.push({
       name: "output_received",
       ok: outputReceived,
       message: outputReceived ? "CLI produced output" : "no output received",
+    });
+
+    // Debug: show PTY state details
+    checks.push({
+      name: "output_debug",
+      ok: true,
+      message: `completed=${completed}, waitMs=${totalWaitMs}, pid=${ptyState.pid}, status=${ptyState.status}`,
     });
 
     // NOTE: Do NOT kill the PTY here — keep it alive so the user can interact
@@ -488,10 +511,22 @@ const handleCliAgentsTest: GatewayRequestHandler = async ({ params, respond, con
     const allOk = checks.every((c) => c.ok);
     respond(true, { ok: allOk, agentId, checks });
   } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
     checks.push({
       name: "pty_spawn",
       ok: false,
-      message: err instanceof Error ? err.message : String(err),
+      message: errorMsg.slice(0, 100),
+    });
+    checks.push({
+      name: "pty_spawn_error",
+      ok: false,
+      message: `Full error: ${errorMsg.slice(0, 200)}`,
+    });
+    // Debug: show config that was used
+    checks.push({
+      name: "pty_config",
+      ok: false,
+      message: `cmd=${existing.command}, args=${JSON.stringify(existing.args || [])}, cwd=${existing.cwd || "(none)"}`,
     });
     // Ensure cleanup
     try {
