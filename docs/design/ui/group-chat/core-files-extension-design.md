@@ -269,10 +269,10 @@ _持续学习，持续改进。每一行代码都是一次进步的机会。_
 
 ## 6. 文件存储位置
 
-Core Files 存储在 CLI Agent 的工作空间目录：
+Core Files 存储在 CLI Agent 的**身份文件存储目录**，这是一个固定位置，与 CLI Agent 配置的工作目录 (`cwd`) 无关：
 
 ```
-${workspaceDir}/
+{stateDir}/cli-agents/{agentId}/
 ├── IDENTITY.md
 ├── PERSONALITY.md
 ├── SOUL.md
@@ -280,11 +280,23 @@ ${workspaceDir}/
 └── TOOLS.md
 ```
 
-**workspaceDir 解析优先级**:
+**stateDir 解析逻辑**（由 `resolveStateDir()` 函数提供）：
 
-1. CLI Agent 配置的 `cwd`
-2. 群聊项目目录（如果在群聊上下文中）
-3. 默认工作目录
+| 优先级 | 来源                          | 说明                   |
+| ------ | ----------------------------- | ---------------------- |
+| 1      | `OPENCLAW_STATE_DIR` 环境变量 | 显式指定的状态目录     |
+| 2      | `CLAWDBOT_STATE_DIR` 环境变量 | 兼容旧版环境变量       |
+| 3      | `~/.openclaw`                 | 默认状态目录           |
+| 4      | `~/.clawdbot` 等              | 兼容旧版目录（如存在） |
+
+> **注意**：开发模式下可能使用不同的状态目录路径。使用 `resolveCliAgentWorkspaceDir(agentId)` 函数获取实际路径。
+
+**关键区别**：
+
+| 概念                   | 路径                               | 用途                                 |
+| ---------------------- | ---------------------------------- | ------------------------------------ |
+| **身份文件存储目录**   | `{stateDir}/cli-agents/{agentId}/` | 存储 IDENTITY.md 等核心文件          |
+| **CLI Agent 工作目录** | 用户配置的 `cwd` 或群聊项目目录    | CLI 进程启动的工作目录，用于执行任务 |
 
 ---
 

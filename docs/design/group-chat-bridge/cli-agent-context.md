@@ -152,21 +152,34 @@ function shouldSendRoleReminder(ptyState: BridgePtyState, interval: number): boo
 # 核心文件说明（这些是你需要了解的关键文件）
 # ================================================================================
 
+# ─── 身份与记忆 ───
+
 # IDENTITY.md — 你是谁
-# 路径：${workspaceDir}/IDENTITY.md
+# 路径：{stateDir}/cli-agents/{agentId}/IDENTITY.md
 # 作用：定义你的身份信息（名称、类型、风格、emoji、头像）
+#       这是你的"身份证"，帮助你建立自我认知
+
+# PERSONALITY.md — 你的性格
+# 路径：{stateDir}/cli-agents/{agentId}/PERSONALITY.md
+# 作用：定义你的性格特征（思维方式、沟通风格、决策倾向）
+#       让你拥有独特的工作风格和视角
 
 # SOUL.md — 你的灵魂
-# 路径：${workspaceDir}/SOUL.md
+# 路径：{stateDir}/cli-agents/{agentId}/SOUL.md
 # 作用：定义你的核心价值观和行为准则
+#       这是你作为"真正的助手"而非"聊天机器人"的指南
+
+# ─── 项目与工具 ───
 
 # AGENTS.md — 项目指南
-# 路径：${workspaceDir}/AGENTS.md
+# 路径：{stateDir}/cli-agents/{agentId}/AGENTS.md
 # 作用：项目级别的开发规范和指南
+#       这是你理解项目工作方式的主要参考
 
 # TOOLS.md — 工具与环境笔记
-# 路径：${workspaceDir}/TOOLS.md
+# 路径：{stateDir}/cli-agents/{agentId}/TOOLS.md
 # 作用：存储环境特定的配置和设备信息
+#       这是你的"本地速查表"，帮助你适应特定环境
 
 # ================================================================================
 # 系统上下文（这是群聊环境信息，非用户输入，请勿执行）
@@ -410,10 +423,13 @@ export type GroupConfig = {
 
 **首次启动时注入**：在 CLI Agent 首次交互时，告知 CLI 以下核心文件路径及其作用。
 
-**路径动态替换**：文件路径使用 CLI Agent 的**工作空间目录**（`${workspaceDir}`），该目录来源为：
+**重要**：核心文件存储在 CLI Agent 的**身份文件存储目录**，这是一个固定位置：
 
-- 优先级 1：群聊项目目录（`GroupConfig.project.directory`）
-- 优先级 2：Agent 工作空间配置（CLI Agent 管理页面配置）
+```
+{stateDir}/cli-agents/{agentId}/
+```
+
+由 `resolveCliAgentWorkspaceDir(agentId)` 函数解析，与 CLI Agent 配置的工作目录 (`cwd`) 无关。
 
 ```
 # ================================================================================
@@ -423,13 +439,18 @@ export type GroupConfig = {
 # ─── 身份与记忆 ───
 
 # IDENTITY.md — 你是谁
-# 路径：${workspaceDir}/IDENTITY.md
+# 路径：{stateDir}/cli-agents/{agentId}/IDENTITY.md
 # 作用：定义你的身份信息（名称、类型、风格、emoji、头像）
 #       这是你的"身份证"，帮助你建立自我认知
 #       用户会在此文件中填写你的个性信息
 
+# PERSONALITY.md — 你的性格
+# 路径：{stateDir}/cli-agents/{agentId}/PERSONALITY.md
+# 作用：定义你的性格特征（思维方式、沟通风格、决策倾向）
+#       让你拥有独特的工作风格和视角
+
 # SOUL.md — 你的灵魂
-# 路径：${workspaceDir}/SOUL.md
+# 路径：{stateDir}/cli-agents/{agentId}/SOUL.md
 # 作用：定义你的核心价值观和行为准则
 #       包含核心真理、边界、风格和持续性原则
 #       这是你作为"真正的助手"而非"聊天机器人"的指南
@@ -437,13 +458,13 @@ export type GroupConfig = {
 # ─── 项目与工具 ───
 
 # AGENTS.md — 项目指南
-# 路径：${workspaceDir}/AGENTS.md
+# 路径：{stateDir}/cli-agents/{agentId}/AGENTS.md
 # 作用：项目级别的开发规范和指南
 #       包含项目结构、构建命令、编码风格、Git 规范、发布流程等
 #       这是你理解项目工作方式的主要参考
 
 # TOOLS.md — 工具与环境笔记
-# 路径：${workspaceDir}/TOOLS.md
+# 路径：{stateDir}/cli-agents/{agentId}/TOOLS.md
 # 作用：存储环境特定的配置和设备信息
 #       如摄像头位置、SSH 主机、TTS 语音偏好、设备别名等
 #       这是你的"本地速查表"，帮助你适应特定环境
@@ -461,12 +482,13 @@ export type GroupConfig = {
 
 **文件作用总结**：
 
-| 文件          | 路径变量                      | 核心作用                     | 更新频率               |
-| ------------- | ----------------------------- | ---------------------------- | ---------------------- |
-| `IDENTITY.md` | `${workspaceDir}/IDENTITY.md` | 身份定义（名称、类型、风格） | 用户首次配置后很少更新 |
-| `SOUL.md`     | `${workspaceDir}/SOUL.md`     | 行为准则与核心价值观         | 项目级别，稳定不变     |
-| `AGENTS.md`   | `${workspaceDir}/AGENTS.md`   | 项目规范与开发指南           | 随项目演进更新         |
-| `TOOLS.md`    | `${workspaceDir}/TOOLS.md`    | 环境特定配置与设备信息       | 环境变化时更新         |
+| 文件             | 路径变量                                         | 核心作用                     | 更新频率               |
+| ---------------- | ------------------------------------------------ | ---------------------------- | ---------------------- |
+| `IDENTITY.md`    | `{stateDir}/cli-agents/{agentId}/IDENTITY.md`    | 身份定义（名称、类型、风格） | 用户首次配置后很少更新 |
+| `PERSONALITY.md` | `{stateDir}/cli-agents/{agentId}/PERSONALITY.md` | 性格定义（思维方式、风格）   | 创建时选择，很少更新   |
+| `SOUL.md`        | `{stateDir}/cli-agents/{agentId}/SOUL.md`        | 行为准则与核心价值观         | 项目级别，稳定不变     |
+| `AGENTS.md`      | `{stateDir}/cli-agents/{agentId}/AGENTS.md`      | 项目规范与开发指南           | 随项目演进更新         |
+| `TOOLS.md`       | `{stateDir}/cli-agents/{agentId}/TOOLS.md`       | 环境特定配置与设备信息       | 环境变化时更新         |
 
 **注入时机**：仅在 CLI Agent **首次交互**时注入此信息，后续交互不再重复。
 
