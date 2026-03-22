@@ -281,6 +281,12 @@ export async function atomicCheckAndIncrement(
       return { allowed: false, reason: "backend_chain_timeout_exceeded" };
     }
 
+    // Check if this agent has already been triggered in this chain
+    // This prevents duplicate triggers due to race conditions or message redelivery
+    if (state.triggeredAgents.includes(agentId)) {
+      return { allowed: false, reason: "agent_already_triggered_in_this_chain" };
+    }
+
     // Atomic increment + record triggered agent
     state.roundCount += 1;
     state.triggeredAgents.push(agentId);
@@ -325,6 +331,12 @@ export function checkAndIncrementSync(
   }
   if (state.startedAt && now - state.startedAt >= CHAIN_MAX_DURATION_MS) {
     return { allowed: false, reason: "backend_chain_timeout_exceeded" };
+  }
+
+  // Check if this agent has already been triggered in this chain
+  // This prevents duplicate triggers due to race conditions or message redelivery
+  if (state.triggeredAgents.includes(agentId)) {
+    return { allowed: false, reason: "agent_already_triggered_in_this_chain" };
   }
 
   // Increment + record

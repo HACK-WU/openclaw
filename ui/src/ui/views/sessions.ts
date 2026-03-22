@@ -237,9 +237,17 @@ function renderRow(
   const label = typeof row.label === "string" ? row.label.trim() : "";
   const showDisplayName = Boolean(displayName && displayName !== row.key && displayName !== label);
   const canLink = row.kind !== "global";
-  const chatUrl = canLink
-    ? `${pathForTab("chat", basePath)}?session=${encodeURIComponent(row.key)}`
-    : null;
+  // Generate URL based on session kind
+  let chatUrl: string | null = null;
+  if (canLink) {
+    if (row.kind === "group" && row.groupId) {
+      // Group chat: link to group chat view with ?group= parameter
+      chatUrl = `${pathForTab("chat", basePath)}?group=${encodeURIComponent(row.groupId)}`;
+    } else {
+      // Direct chat: link to session with ?session= parameter
+      chatUrl = `${pathForTab("chat", basePath)}?session=${encodeURIComponent(row.key)}`;
+    }
+  }
 
   return html`
     <div class="table-row">

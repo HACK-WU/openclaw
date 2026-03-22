@@ -1,6 +1,7 @@
 import type { GatewayBrowserClient } from "../gateway.ts";
-import type { AgentsListResult, ToolsCatalogResult } from "../types.ts";
+import type { AgentsListResult, SessionsListResult, ToolsCatalogResult } from "../types.ts";
 import type {
+  AgentCreateForm,
   CliAgentCreateForm,
   CliAgentsListResult,
   CliTestResult,
@@ -8,6 +9,47 @@ import type {
 } from "../views/agents.ts";
 import { saveConfig } from "./config.ts";
 import type { ConfigState } from "./config.ts";
+
+/**
+ * Check if an agent is referenced in any session.
+ * Returns true if the agent can be deleted (not referenced).
+ */
+export async function checkAgentCanBeDeleted(
+  client: GatewayBrowserClient,
+  agentId: string,
+): Promise<{ canDelete: boolean; reason?: string }> {
+  const normalizedAgentId = agentId.toLowerCase();
+
+  try {
+    // Get all sessions
+    const sessionsRes = await client.request<SessionsListResult>("sessions.list", {
+      activeMinutes: 0,
+      includeGlobal: true,
+      includeUnknown: true,
+    });
+
+    const sessions = sessionsRes?.sessions ?? [];
+
+    // Check if any session key contains the agentId
+    for (const session of sessions) {
+      const key = (session.key ?? "").toLowerCase();
+      // Fuzzy match: check if agentId appears anywhere in the session key
+      if (key.includes(normalizedAgentId)) {
+        return {
+          canDelete: false,
+          reason: `无法删除：该 Agent 被会话 "${session.label || session.displayName || session.key}" 引用`,
+        };
+      }
+    }
+
+    return { canDelete: true };
+  } catch (err) {
+    return {
+      canDelete: false,
+      reason: `检查引用失败: ${String(err)}`,
+    };
+  }
+}
 
 export type AgentsState = {
   client: GatewayBrowserClient | null;
@@ -19,8 +61,10 @@ export type AgentsState = {
   toolsCatalogLoading: boolean;
   toolsCatalogError: string | null;
   toolsCatalogResult: ToolsCatalogResult | null;
+  // Agent create state
   agentCreateBusy?: boolean;
   agentCreateError?: string | null;
+  agentCreateForm?: AgentCreateForm;
   agentDeleteBusy?: boolean;
   agentDeleteError?: string | null;
   // CLI Agent create state
@@ -122,6 +166,7 @@ export type CreateAgentParams = {
   agentId?: string;
   workspace: string;
   emoji?: string;
+  personalityId?: string | null;
 };
 
 export async function createAgent(state: AgentsState, params: CreateAgentParams): Promise<boolean> {
@@ -136,6 +181,7 @@ export async function createAgent(state: AgentsState, params: CreateAgentParams)
       ...(params.agentId?.trim() ? { agentId: params.agentId.trim() } : {}),
       workspace: params.workspace,
       ...(params.emoji ? { emoji: params.emoji } : {}),
+      ...(params.personalityId ? { personalityId: params.personalityId } : {}),
     });
     if (res?.ok) {
       await loadAgents(state);
@@ -440,6 +486,7 @@ export function showCliEditDialog(state: AgentsState, agentId: string): void {
     timeout: agent.timeout ? Math.round(agent.timeout / 1000) : 300,
     idleTimeout: 600, // Default value
     tailTrimMarker: agent.tailTrimMarker || "",
+    personalityId: (agent as { personalityId?: string }).personalityId || null,
   };
 
   state.agentCliEditAgentId = agentId;
@@ -583,14 +630,21 @@ export function closePersonalityViewDialog(state: AgentsState): void {
 }
 
 /**
- * Select a personality for the CLI Agent create form.
+ * Select a personality for the Agent create form (both regular and CLI).
  */
 export function selectPersonality(state: AgentsState, id: string | null): void {
   state.selectedPersonalityId = id;
+  // Update CLI Agent create form
   if (state.agentCliCreateForm) {
-    // Create new object reference to trigger re-render
     state.agentCliCreateForm = {
       ...state.agentCliCreateForm,
+      personalityId: id,
+    };
+  }
+  // Update regular Agent create form
+  if (state.agentCreateForm) {
+    state.agentCreateForm = {
+      ...state.agentCreateForm,
       personalityId: id,
     };
   }

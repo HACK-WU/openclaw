@@ -396,6 +396,8 @@ export type AgentsFilesSetResult = {
 export type GatewaySessionRow = {
   key: string;
   kind: "direct" | "group" | "global" | "unknown";
+  /** Group ID for group sessions (extracted from key when kind === "group") */
+  groupId?: string;
   label?: string;
   displayName?: string;
   surface?: string;

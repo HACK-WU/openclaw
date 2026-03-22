@@ -38,6 +38,8 @@ import {
   handleGroupTerminalEvent,
   handleGroupTerminalStatusEvent,
   loadGroupList,
+  enterGroupChat,
+  openGroupList,
   type GroupChatMessage,
   type GroupStreamPayload,
   type GroupSystemPayload,
@@ -114,6 +116,11 @@ type GatewayHost = {
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalError: string | null;
   updateAvailable: UpdateAvailable | null;
+  // Group chat navigation from URL ?group= parameter
+  pendingGroupId?: string | null;
+  // Group chat state
+  groupListOpen: boolean;
+  activeGroupId: string | null;
 };
 
 type SessionDefaultsSnapshot = {
@@ -246,6 +253,14 @@ export function connectGateway(host: GatewayHost) {
       void loadDevices(host as unknown as OpenClawApp, { quiet: true });
       void loadGroupList(host as unknown as Parameters<typeof loadGroupList>[0]);
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
+      // Handle pending group ID from URL ?group= parameter
+      if (host.pendingGroupId) {
+        const groupId = host.pendingGroupId;
+        host.pendingGroupId = null;
+        // Open group list and enter the specific group
+        openGroupList(host as unknown as Parameters<typeof openGroupList>[0]);
+        void enterGroupChat(host as unknown as Parameters<typeof enterGroupChat>[0], groupId);
+      }
     },
     onClose: ({ code, reason, error }) => {
       if (host.client !== client) {

@@ -153,6 +153,7 @@ export type GroupChatViewProps = {
   groupSending: boolean;
   groupDraft: string;
   groupError: string | null;
+  groupNotFound: boolean;
   groupCreateDialog: GroupCreateDialogState | null;
   groupAddMemberDialog: GroupAddMemberDialogState | null;
   groupRemoveMemberDialog: GroupRemoveMemberDialogState | null;
@@ -174,6 +175,7 @@ export type GroupChatViewProps = {
     project?: { directory?: string; docs?: string[] };
   }) => void;
   onDeleteGroup: (groupId: string) => void;
+  onDeleteOrphanSession: () => void;
   onOpenCreateDialog: () => void;
   onCloseCreateDialog: () => void;
   onOpenAddMemberDialog: () => void;
@@ -342,8 +344,29 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
     groupToolMessages,
     groupSending,
     groupError,
+    groupNotFound,
   } = props;
   if (!meta) {
+    if (groupNotFound && groupError) {
+      return html`
+        <div class="group-chat-room">
+          <div class="group-chat-room__header">
+            <div class="group-chat-room__header-info">
+              <span class="group-chat-room__header-name">👥 Group Not Found</span>
+            </div>
+          </div>
+          <div class="group-chat-room__error">
+            <span>${groupError}</span>
+            <button
+              class="group-chat-room__error-action"
+              @click=${() => props.onDeleteOrphanSession()}
+            >
+              Delete Session
+            </button>
+          </div>
+        </div>
+      `;
+    }
     return nothing;
   }
 

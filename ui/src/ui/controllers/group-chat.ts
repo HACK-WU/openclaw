@@ -8,6 +8,7 @@
 import { getBridgeTerminal } from "../components/bridge-terminal.ts";
 import { stripThinkingTags } from "../format.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
+import { loadSessions } from "./sessions.ts";
 
 // ─── Types ───
 
@@ -160,6 +161,8 @@ export type GroupChatState = {
   groupDraft: string;
   /** Error state */
   groupError: string | null;
+  /** Whether the current group was not found (deleted/expired) */
+  groupNotFound: boolean;
   /** Create dialog state */
   groupCreateDialog: GroupCreateDialogState | null;
   /** Add member dialog state */
@@ -245,6 +248,7 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   groupSending: false,
   groupDraft: "",
   groupError: null,
+  groupNotFound: false,
   groupCreateDialog: null,
   groupDisbandDialog: null,
   groupAddMemberDialog: null,
@@ -369,6 +373,7 @@ function resetGroupRoomState(host: GroupChatState): void {
   host.groupSending = false;
   host.groupDraft = "";
   host.groupError = null;
+  host.groupNotFound = false;
   host.groupAddMemberDialog = null;
   host.groupRemoveMemberDialog = null;
   host.groupDisbandDialog = null;
@@ -385,6 +390,29 @@ export function closeGroupChatView(host: GroupChatState): void {
   host.groupListOpen = false;
   host.groupCreateDialog = null;
   resetGroupRoomState(host);
+}
+
+// ─── URL sync helpers ───
+
+/** Update browser URL to include ?group=<groupId> parameter */
+function syncUrlWithGroup(groupId: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.delete("session");
+  url.searchParams.set("group", groupId);
+  window.history.replaceState({}, "", url.toString());
+}
+
+/** Remove ?group= parameter from browser URL */
+function clearUrlGroup(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.delete("group");
+  window.history.replaceState({}, "", url.toString());
 }
 
 // ─── @mention Detection & Auto-Forward ───
@@ -980,9 +1008,10 @@ export async function detectAndForwardMentions(
       });
       console.log(`[group-chat] pending mention saved: ${agentId} already triggered`);
     } else {
-      // First time being mentioned
-      firstTimeMentions.push(agentId);
+      // First time being mentioned - mark immediately to prevent race conditions
+      // when the same message is processed multiple times (e.g., due to WebSocket reconnect)
       addMentionedAgent(chain, agentId);
+      firstTimeMentions.push(agentId);
     }
   }
 
@@ -1177,7 +1206,14 @@ export async function loadGroupInfo(host: GroupHost, groupId: string): Promise<v
       }
     }
   } catch (err) {
-    host.groupError = `Failed to load group: ${String(err)}`;
+    const errMsg = String(err);
+    // Detect "Group not found" (backend code 404) to allow cleanup
+    if (errMsg.includes("Group not found") || errMsg.includes("404")) {
+      host.groupNotFound = true;
+      host.groupError = `Group "${groupId}" does not exist or has been deleted.`;
+    } else {
+      host.groupError = `Failed to load group: ${errMsg}`;
+    }
   } finally {
     host.groupChatLoading = false;
   }
@@ -1927,6 +1963,8 @@ export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSyste
     if (isActiveGroup) {
       openGroupList(host);
     }
+    // Refresh sessions list to remove group chat sessions from the management view
+    void loadSessions(groupHost as unknown as Parameters<typeof loadSessions>[0]);
   }
 
   // Handle messages cleared event
@@ -1980,11 +2018,16 @@ export async function enterGroupChat(host: GroupHost, groupId: string): Promise<
   host.groupPendingAgents = new Set();
   host.groupToolMessages = new Map();
   host.groupError = null;
+  host.groupNotFound = false;
   host.groupDraft = "";
   host.bridgeTerminalStatuses = new Map();
   // Clear stale stream buffers from the previous group to avoid ghost bubbles
   streamBuffers.clear();
   await Promise.all([loadGroupInfo(host, groupId), loadGroupHistory(host, groupId)]);
+  // Sync URL with group parameter after successfully entering
+  if (host.activeGroupId === groupId && !host.groupNotFound) {
+    syncUrlWithGroup(groupId);
+  }
 }
 
 /**
@@ -2024,6 +2067,7 @@ export async function exportGroupTranscript(host: GroupHost, groupId: string): P
 
 /** Leave group chat room and return to the group list view */
 export function leaveGroupChat(host: GroupChatState): void {
+  clearUrlGroup();
   openGroupList(host);
 }
 

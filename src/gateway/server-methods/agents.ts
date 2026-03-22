@@ -38,6 +38,7 @@ import { sameFileIdentity } from "../../infra/file-identity.js";
 import { SafeOpenError, readLocalFileSafely, writeFileWithinRoot } from "../../infra/fs-safe.js";
 import { assertNoPathAliasEscape } from "../../infra/path-alias-guards.js";
 import { isNotFoundPathError } from "../../infra/path-guards.js";
+import { getPersonalityContent } from "../../personalities/index.js";
 import { DEFAULT_AGENT_ID, normalizeAgentId } from "../../routing/session-key.js";
 import { resolveUserPath } from "../../utils.js";
 import {
@@ -77,6 +78,7 @@ const ALLOWED_FILE_NAMES = new Set<string>([
   ...BOOTSTRAP_FILE_NAMES,
   ...MEMORY_FILE_NAMES,
   DEFAULT_BRIDGE_FILENAME,
+  "PERSONALITY.md",
 ]);
 
 function resolveAgentWorkspaceFileOrRespondError(
@@ -552,6 +554,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     const safeName = sanitizeIdentityLine(rawName);
     const emoji = resolveOptionalStringParam(params.emoji);
     const avatar = resolveOptionalStringParam(params.avatar);
+    const personalityId = resolveOptionalStringParam(params.personalityId);
     const identityPath = path.join(workspaceDir, DEFAULT_IDENTITY_FILENAME);
     const lines = [
       "",
@@ -561,6 +564,13 @@ export const agentsHandlers: GatewayRequestHandlers = {
       "",
     ];
     await fs.appendFile(identityPath, lines.join("\n"), "utf-8");
+
+    // Write PERSONALITY.md if personalityId is provided
+    if (personalityId) {
+      const personalityContent = getPersonalityContent(personalityId);
+      const personalityPath = path.join(workspaceDir, "PERSONALITY.md");
+      await fs.writeFile(personalityPath, personalityContent, "utf-8");
+    }
 
     respond(true, { ok: true, agentId, name: rawName, workspace: workspaceDir }, undefined);
   },

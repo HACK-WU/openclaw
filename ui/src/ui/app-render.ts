@@ -37,6 +37,7 @@ import {
   selectPersonality,
   openPersonalityViewDialog,
   closePersonalityViewDialog,
+  checkAgentCanBeDeleted,
 } from "./controllers/agents.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
@@ -212,6 +213,35 @@ function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
     return candidate;
   }
   return identity?.avatarUrl;
+}
+
+/**
+ * Delete orphan group session(s) when a group no longer exists.
+ * Finds all sessions matching the given groupId and deletes them,
+ * then leaves the group view and refreshes sessions.
+ */
+async function deleteOrphanGroupSession(
+  state: AppViewState & {
+    client: { request: (method: string, params?: unknown) => Promise<unknown> } | null;
+  },
+  groupId: string,
+): Promise<void> {
+  if (!state.client) {
+    return;
+  }
+  try {
+    // Find sessions matching this group ID and delete them
+    const sessions = state.sessionsResult?.sessions ?? [];
+    for (const s of sessions) {
+      if (s.kind === "group" && s.groupId === groupId) {
+        await state.client.request("sessions.delete", { key: s.key, deleteTranscript: true });
+      }
+    }
+  } catch {
+    // Best-effort: individual delete failures are non-critical
+  }
+  leaveGroupChat(state as unknown as Parameters<typeof leaveGroupChat>[0]);
+  await loadSessions(state);
 }
 
 export function renderApp(state: AppViewState) {
@@ -784,6 +814,7 @@ export function renderApp(state: AppViewState) {
                 deleteBusy: state.agentDeleteBusy,
                 deleteError: state.agentDeleteError,
                 showDeleteConfirm: state.agentShowDeleteConfirm,
+                referenceCheckLoading: state.agentReferenceCheckLoading,
                 // CLI Agent create state
                 showCliCreateDialog: state.agentShowCliCreateDialog,
                 cliCreateForm: state.agentCliCreateForm,
@@ -1324,9 +1355,33 @@ export function renderApp(state: AppViewState) {
                 },
                 // CLI Agent delete callback
                 onDeleteCliAgent: async (agentId: string) => {
-                  const ok = await deleteCliAgent(state, agentId);
-                  if (ok) {
-                    await loadCliAgents(state);
+                  state.agentDeleteError = null;
+                  state.agentReferenceCheckLoading = true;
+
+                  try {
+                    if (!state.client || !state.connected) {
+                      state.agentDeleteError = "未连接到服务器";
+                      return;
+                    }
+
+                    // Check if agent is referenced in any session
+                    const result = await checkAgentCanBeDeleted(state.client, agentId);
+
+                    if (!result.canDelete) {
+                      // Agent is referenced, show error
+                      state.agentDeleteError = result.reason || "无法删除：该 Agent 被引用";
+                      return;
+                    }
+
+                    // Agent is not referenced, proceed with deletion
+                    const ok = await deleteCliAgent(state, agentId);
+                    if (ok) {
+                      await loadCliAgents(state);
+                    }
+                  } catch (err) {
+                    state.agentDeleteError = `检查引用失败: ${String(err)}`;
+                  } finally {
+                    state.agentReferenceCheckLoading = false;
                   }
                 },
                 // Personalities callbacks
@@ -1342,12 +1397,37 @@ export function renderApp(state: AppViewState) {
                 onClosePersonalityView: () => {
                   closePersonalityViewDialog(state);
                 },
-                onShowDeleteConfirm: (agentId) => {
+                onShowDeleteConfirm: async (agentId) => {
                   state.agentDeleteError = null;
-                  state.agentShowDeleteConfirm = agentId;
+                  state.agentReferenceCheckLoading = true;
+
+                  try {
+                    if (!state.client || !state.connected) {
+                      state.agentDeleteError = "未连接到服务器";
+                      return;
+                    }
+
+                    // Check if agent is referenced in any session
+                    const result = await checkAgentCanBeDeleted(state.client, agentId);
+
+                    if (!result.canDelete) {
+                      // Agent is referenced, show error and don't open confirm dialog
+                      state.agentDeleteError = result.reason || "无法删除：该 Agent 被引用";
+                      state.agentShowDeleteConfirm = null;
+                    } else {
+                      // Agent is not referenced, show confirm dialog
+                      state.agentShowDeleteConfirm = agentId;
+                    }
+                  } catch (err) {
+                    state.agentDeleteError = `检查引用失败: ${String(err)}`;
+                    state.agentShowDeleteConfirm = null;
+                  } finally {
+                    state.agentReferenceCheckLoading = false;
+                  }
                 },
                 onHideDeleteConfirm: () => {
                   state.agentShowDeleteConfirm = null;
+                  state.agentDeleteError = null;
                 },
                 onDeleteAgent: async (agentId) => {
                   const ok = await deleteAgent(state, agentId);
@@ -1718,6 +1798,13 @@ export function renderApp(state: AppViewState) {
                   void createGroup(state as unknown as Parameters<typeof createGroup>[0], opts),
                 onDeleteGroup: (groupId) =>
                   void deleteGroup(state as unknown as Parameters<typeof deleteGroup>[0], groupId),
+                onDeleteOrphanSession: () => {
+                  // Delete the orphan group session(s) and leave group view
+                  const groupId = state.activeGroupId;
+                  if (groupId) {
+                    void deleteOrphanGroupSession(state, groupId);
+                  }
+                },
                 onOpenCreateDialog: () => {
                   state.groupCreateDialog = {
                     name: "",

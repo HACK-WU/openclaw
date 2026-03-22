@@ -216,6 +216,7 @@ export class OpenClawApp extends LitElement {
   @state() groupSending = false;
   @state() groupDraft = "";
   @state() groupError: string | null = null;
+  @state() groupNotFound = false;
   @state() groupCreateDialog: GroupCreateDialogState | null = null;
   @state() groupAddMemberDialog: GroupAddMemberDialogState | null = null;
   @state() groupRemoveMemberDialog:
@@ -223,6 +224,9 @@ export class OpenClawApp extends LitElement {
     | null = null;
   @state() groupDisbandDialog:
     | import("./controllers/group-chat.js").GroupDisbandDialogState
+    | null = null;
+  @state() groupClearMessagesDialog:
+    | import("./controllers/group-chat.js").GroupClearMessagesDialogState
     | null = null;
   @state() groupInfoPanelOpen = false;
   @state() groupAnnouncementEditor: { open: boolean; draft: string; preview: boolean } = {
@@ -316,6 +320,7 @@ export class OpenClawApp extends LitElement {
   @state() agentDeleteBusy = false;
   @state() agentDeleteError: string | null = null;
   @state() agentShowDeleteConfirm: string | null = null;
+  @state() agentReferenceCheckLoading = false;
   // CLI Agent create state
   @state() agentShowCliCreateDialog = false;
   @state() agentCliCreateForm: import("./views/agents.ts").CliAgentCreateForm = {

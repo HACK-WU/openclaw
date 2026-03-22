@@ -32,10 +32,10 @@ export function renderPersonalitySelector(props: PersonalitySelectorProps) {
             : error
               ? html`<div class="personality-selector__error">${error}</div>`
               : html`
-                <div class="personality-selector__dropdown-row" style="display: flex; gap: 8px; align-items: flex-start;">
+                <div class="personality-selector__dropdown-row" style="display: flex; gap: 8px; align-items: flex-start; flex-wrap: nowrap;">
                   <select
                     class="field personality-selector__select"
-                    style="flex: 1;"
+                    style="flex: 1; min-width: 0; max-width: 100%;"
                     .value=${selectedId ?? ""}
                     @change=${(e: Event) => {
                       const value = (e.target as HTMLSelectElement).value;
@@ -46,7 +46,7 @@ export function renderPersonalitySelector(props: PersonalitySelectorProps) {
                     ${personalities.map(
                       (p) => html`
                         <option value=${p.id} ?selected=${selectedId === p.id}>
-                          ${p.name} - ${p.description}
+                          ${p.name}
                         </option>
                       `,
                     )}

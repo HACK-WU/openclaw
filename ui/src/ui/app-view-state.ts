@@ -174,6 +174,7 @@ export type AppViewState = {
   agentDeleteBusy: boolean;
   agentDeleteError: string | null;
   agentShowDeleteConfirm: string | null;
+  agentReferenceCheckLoading: boolean;
   // CLI Agent create state
   agentShowCliCreateDialog: boolean;
   agentCliCreateForm: import("./views/agents.ts").CliAgentCreateForm;
@@ -330,9 +331,13 @@ export type AppViewState = {
     groupSending: boolean;
     groupDraft: string;
     groupError: string | null;
+    groupNotFound: boolean;
     groupCreateDialog: GroupCreateDialogState | null;
     groupAddMemberDialog: import("./controllers/group-chat.js").GroupAddMemberDialogState | null;
     groupDisbandDialog: import("./controllers/group-chat.js").GroupDisbandDialogState | null;
+    groupClearMessagesDialog:
+      | import("./controllers/group-chat.js").GroupClearMessagesDialogState
+      | null;
     groupInfoPanelOpen: boolean;
     handleDeleteSessionConfirm: () => Promise<void>;
     handleDeleteSessionCancel: () => void;

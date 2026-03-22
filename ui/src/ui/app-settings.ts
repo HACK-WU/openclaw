@@ -59,6 +59,8 @@ type SettingsHost = {
   themeMedia: MediaQueryList | null;
   themeMediaHandler: ((event: MediaQueryListEvent) => void) | null;
   pendingGatewayUrl?: string | null;
+  // Group chat navigation from URL ?group= parameter
+  pendingGroupId?: string | null;
   // Session-related fields for ensureDefaultSession
   sessionsResult?: import("./types.ts").SessionsListResult | null;
   chatStream?: string | null;
@@ -152,6 +154,19 @@ export function applySettingsFromUrl(host: SettingsHost) {
         });
       }
     }
+  }
+
+  // Handle ?group= parameter for group chat navigation
+  const groupRaw = params.get("group") ?? hashParams.get("group");
+  if (groupRaw != null) {
+    const groupId = groupRaw.trim();
+    if (groupId) {
+      host.pendingGroupId = groupId;
+    }
+    // Clean up the group parameter from URL
+    params.delete("group");
+    hashParams.delete("group");
+    shouldCleanUrl = true;
   }
 
   if (gatewayUrlRaw != null) {

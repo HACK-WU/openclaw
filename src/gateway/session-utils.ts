@@ -812,6 +812,7 @@ export function listSessionsFromStore(params: {
         key,
         entry,
         kind: classifySessionKey(key, entry),
+        groupId: id,
         label: entry?.label,
         displayName,
         channel,

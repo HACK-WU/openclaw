@@ -47,6 +47,7 @@ export type CliAgentsListResult = {
     env?: Record<string, string>;
     timeout?: number;
     tailTrimMarker?: string;
+    personalityId?: string;
   }>;
 };
 
@@ -73,6 +74,8 @@ export type AgentCreateForm = {
   workspacePathError?: string;
   workspacePathWarning?: string;
   isCheckingPath: boolean;
+  /** Selected personality ID (e.g., "architect", "implementer"). null means no personality selected. */
+  personalityId: string | null;
 };
 
 export type CliType = "claude-code" | "opencode" | "codebuddy" | "qwen" | "custom";
@@ -162,6 +165,7 @@ export type AgentsProps = {
   deleteBusy: boolean;
   deleteError: string | null;
   showDeleteConfirm: string | null;
+  referenceCheckLoading: boolean;
   // CLI Agent create state
   showCliCreateDialog: boolean;
   cliCreateForm: CliAgentCreateForm;
@@ -226,7 +230,7 @@ export type AgentsProps = {
   // Create/Delete callbacks
   onShowCreateDialog: () => void;
   onHideCreateDialog: () => void;
-  onCreateFormChange: (field: keyof AgentCreateForm, value: string) => void;
+  onCreateFormChange: (field: keyof AgentCreateForm, value: string | null) => void;
   onCheckWorkspacePath: (path: string) => void;
   onCreateAgent: () => void;
   // CLI Agent create callbacks
@@ -523,7 +527,7 @@ export function renderAgents(props: AgentsProps) {
                   () => props.onSetDefaultAgent(selectedAgent!.id),
                 )}
                 ${
-                  props.deleteError && props.showDeleteConfirm === selectedAgent!.id
+                  props.deleteError && !props.showDeleteConfirm
                     ? html`<div class="callout danger" style="margin-top: -8px;">${props.deleteError}</div>`
                     : nothing
                 }
@@ -691,10 +695,11 @@ function renderCliAgentDetail(props: AgentsProps, agent: CliAgentsListResult["ag
         >Edit</button>
         <button
           class="btn btn--sm danger"
-          ?disabled=${props.deleteBusy}
+          ?disabled=${props.deleteBusy || props.referenceCheckLoading}
           @click=${() => props.onDeleteCliAgent(agent.id)}
-        >Delete</button>
+        >${props.referenceCheckLoading ? "检查中..." : "Delete"}</button>
       </div>
+      ${props.deleteError ? html`<div class="callout danger" style="margin-top: 8px;">${props.deleteError}</div>` : nothing}
     </section>
 
     <!-- CLI Agent Tabs -->
@@ -1457,10 +1462,11 @@ function renderCreateAgentDialog(props: AgentsProps) {
           </label>
           <label class="field">
             <span>Workspace Path <span class="required">*</span></span>
-            <div class="input-with-status">
+            <div class="input-with-status" style="display: flex; gap: 8px; align-items: center;">
               <input
                 type="text"
                 class=${statusClass}
+                style="flex: 1; width: 100%;"
                 .value=${createForm.workspace}
                 placeholder="e.g. ~/agents/researcher"
                 ?disabled=${createBusy}
@@ -1471,7 +1477,7 @@ function renderCreateAgentDialog(props: AgentsProps) {
                   }
                 }}
               />
-              ${statusIcon ? html`<span class="status-icon ${statusClass}">${statusIcon}</span>` : nothing}
+              ${statusIcon ? html`<span class="status-icon ${statusClass}" style="flex-shrink: 0;">${statusIcon}</span>` : nothing}
             </div>
             ${
               createForm.isCheckingPath
@@ -1497,6 +1503,15 @@ function renderCreateAgentDialog(props: AgentsProps) {
               @input=${(e: Event) => props.onCreateFormChange("emoji", (e.target as HTMLInputElement).value)}
             />
           </label>
+          <!-- Personality Selection -->
+          ${renderPersonalitySelector({
+            personalities: props.personalitiesList ?? [],
+            selectedId: createForm.personalityId,
+            loading: props.personalitiesLoading ?? false,
+            error: props.personalitiesError ?? null,
+            onSelect: props.onSelectPersonality,
+            onView: props.onViewPersonality,
+          })}
         </div>
         <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 16px;">
           <button class="btn btn--sm" ?disabled=${createBusy} @click=${props.onHideCreateDialog}>
