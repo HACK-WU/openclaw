@@ -321,9 +321,11 @@ async function ensureGitRepo(dir: string, isBrandNewWorkspace: boolean) {
 
 export async function ensureAgentWorkspace(params?: {
   dir?: string;
+  identityDir?: string;
   ensureBootstrapFiles?: boolean;
 }): Promise<{
   dir: string;
+  identityDir?: string;
   agentsPath?: string;
   soulPath?: string;
   toolsPath?: string;
@@ -336,25 +338,31 @@ export async function ensureAgentWorkspace(params?: {
   const dir = resolveUserPath(rawDir);
   await fs.mkdir(dir, { recursive: true });
 
-  if (!params?.ensureBootstrapFiles) {
-    return { dir };
+  // Use identityDir for core files when provided, otherwise fall back to workspace dir
+  const coreDir = params?.identityDir ? resolveUserPath(params.identityDir.trim()) : dir;
+  if (params?.identityDir) {
+    await fs.mkdir(coreDir, { recursive: true });
   }
 
-  const agentsPath = path.join(dir, DEFAULT_AGENTS_FILENAME);
-  const soulPath = path.join(dir, DEFAULT_SOUL_FILENAME);
-  const toolsPath = path.join(dir, DEFAULT_TOOLS_FILENAME);
-  const identityPath = path.join(dir, DEFAULT_IDENTITY_FILENAME);
-  const userPath = path.join(dir, DEFAULT_USER_FILENAME);
-  const heartbeatPath = path.join(dir, DEFAULT_HEARTBEAT_FILENAME);
-  const bootstrapPath = path.join(dir, DEFAULT_BOOTSTRAP_FILENAME);
-  const statePath = resolveWorkspaceStatePath(dir);
+  if (!params?.ensureBootstrapFiles) {
+    return { dir, identityDir: params?.identityDir ? coreDir : undefined };
+  }
+
+  const agentsPath = path.join(coreDir, DEFAULT_AGENTS_FILENAME);
+  const soulPath = path.join(coreDir, DEFAULT_SOUL_FILENAME);
+  const toolsPath = path.join(coreDir, DEFAULT_TOOLS_FILENAME);
+  const identityPath = path.join(coreDir, DEFAULT_IDENTITY_FILENAME);
+  const userPath = path.join(coreDir, DEFAULT_USER_FILENAME);
+  const heartbeatPath = path.join(coreDir, DEFAULT_HEARTBEAT_FILENAME);
+  const bootstrapPath = path.join(coreDir, DEFAULT_BOOTSTRAP_FILENAME);
+  const statePath = resolveWorkspaceStatePath(coreDir);
 
   const isBrandNewWorkspace = await (async () => {
     const templatePaths = [agentsPath, soulPath, toolsPath, identityPath, userPath, heartbeatPath];
     const userContentPaths = [
-      path.join(dir, "memory"),
-      path.join(dir, DEFAULT_MEMORY_FILENAME),
-      path.join(dir, ".git"),
+      path.join(coreDir, "memory"),
+      path.join(coreDir, DEFAULT_MEMORY_FILENAME),
+      path.join(coreDir, ".git"),
     ];
     const paths = [...templatePaths, ...userContentPaths];
     const existing = await Promise.all(
@@ -410,9 +418,9 @@ export async function ensureAgentWorkspace(params?: {
     ]);
     const hasUserContent = await (async () => {
       const indicators = [
-        path.join(dir, "memory"),
-        path.join(dir, DEFAULT_MEMORY_FILENAME),
-        path.join(dir, ".git"),
+        path.join(coreDir, "memory"),
+        path.join(coreDir, DEFAULT_MEMORY_FILENAME),
+        path.join(coreDir, ".git"),
       ];
       for (const indicator of indicators) {
         try {
@@ -445,10 +453,11 @@ export async function ensureAgentWorkspace(params?: {
   if (stateDirty) {
     await writeWorkspaceOnboardingState(statePath, state);
   }
-  await ensureGitRepo(dir, isBrandNewWorkspace);
+  await ensureGitRepo(coreDir, isBrandNewWorkspace);
 
   return {
     dir,
+    identityDir: params?.identityDir ? coreDir : undefined,
     agentsPath,
     soulPath,
     toolsPath,
@@ -496,8 +505,12 @@ async function resolveMemoryBootstrapEntries(
   return deduped;
 }
 
-export async function loadWorkspaceBootstrapFiles(dir: string): Promise<WorkspaceBootstrapFile[]> {
+export async function loadWorkspaceBootstrapFiles(
+  dir: string,
+  identityDir?: string,
+): Promise<WorkspaceBootstrapFile[]> {
   const resolvedDir = resolveUserPath(dir);
+  const resolvedIdentityDir = identityDir ? resolveUserPath(identityDir) : undefined;
 
   const entries: Array<{
     name: WorkspaceBootstrapFileName;
@@ -505,41 +518,44 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
   }> = [
     {
       name: DEFAULT_AGENTS_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_AGENTS_FILENAME),
+      filePath: path.join(resolvedIdentityDir ?? resolvedDir, DEFAULT_AGENTS_FILENAME),
     },
     {
       name: DEFAULT_SOUL_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_SOUL_FILENAME),
+      filePath: path.join(resolvedIdentityDir ?? resolvedDir, DEFAULT_SOUL_FILENAME),
     },
     {
       name: DEFAULT_TOOLS_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_TOOLS_FILENAME),
+      filePath: path.join(resolvedIdentityDir ?? resolvedDir, DEFAULT_TOOLS_FILENAME),
     },
     {
       name: DEFAULT_IDENTITY_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_IDENTITY_FILENAME),
+      filePath: path.join(resolvedIdentityDir ?? resolvedDir, DEFAULT_IDENTITY_FILENAME),
     },
     {
       name: DEFAULT_USER_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_USER_FILENAME),
+      filePath: path.join(resolvedIdentityDir ?? resolvedDir, DEFAULT_USER_FILENAME),
     },
     {
       name: DEFAULT_HEARTBEAT_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_HEARTBEAT_FILENAME),
+      filePath: path.join(resolvedIdentityDir ?? resolvedDir, DEFAULT_HEARTBEAT_FILENAME),
     },
     {
       name: DEFAULT_BOOTSTRAP_FILENAME,
-      filePath: path.join(resolvedDir, DEFAULT_BOOTSTRAP_FILENAME),
+      filePath: path.join(resolvedIdentityDir ?? resolvedDir, DEFAULT_BOOTSTRAP_FILENAME),
     },
   ];
 
-  entries.push(...(await resolveMemoryBootstrapEntries(resolvedDir)));
+  entries.push(...(await resolveMemoryBootstrapEntries(resolvedIdentityDir ?? resolvedDir)));
+
+  // The rootDir for boundary checking is the identityDir when it's the primary source.
+  const primaryRoot = resolvedIdentityDir ?? resolvedDir;
 
   const result: WorkspaceBootstrapFile[] = [];
   for (const entry of entries) {
     const loaded = await readWorkspaceFileWithGuards({
       filePath: entry.filePath,
-      workspaceDir: resolvedDir,
+      workspaceDir: primaryRoot,
     });
     if (loaded.ok) {
       result.push({
@@ -548,6 +564,23 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
         content: loaded.content,
         missing: false,
       });
+    } else if (resolvedIdentityDir && resolvedIdentityDir !== resolvedDir) {
+      // Backward compatibility: fall back to workspaceDir if identityDir file is missing
+      const fallbackPath = path.join(resolvedDir, entry.name);
+      const fallbackLoaded = await readWorkspaceFileWithGuards({
+        filePath: fallbackPath,
+        workspaceDir: resolvedDir,
+      });
+      if (fallbackLoaded.ok) {
+        result.push({
+          name: entry.name,
+          path: fallbackPath,
+          content: fallbackLoaded.content,
+          missing: false,
+        });
+      } else {
+        result.push({ name: entry.name, path: entry.filePath, missing: true });
+      }
     } else {
       result.push({ name: entry.name, path: entry.filePath, missing: true });
     }

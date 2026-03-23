@@ -63,6 +63,7 @@ function applyContextModeFilter(params: {
 
 export async function resolveBootstrapFilesForRun(params: {
   workspaceDir: string;
+  identityDir?: string;
   config?: OpenClawConfig;
   sessionKey?: string;
   sessionId?: string;
@@ -75,9 +76,10 @@ export async function resolveBootstrapFilesForRun(params: {
   const rawFiles = params.sessionKey
     ? await getOrLoadBootstrapFiles({
         workspaceDir: params.workspaceDir,
+        identityDir: params.identityDir,
         sessionKey: params.sessionKey,
       })
-    : await loadWorkspaceBootstrapFiles(params.workspaceDir);
+    : await loadWorkspaceBootstrapFiles(params.workspaceDir, params.identityDir);
   const bootstrapFiles = applyContextModeFilter({
     files: filterBootstrapFilesForSession(rawFiles, sessionKey),
     contextMode: params.contextMode,
@@ -97,6 +99,7 @@ export async function resolveBootstrapFilesForRun(params: {
 
 export async function resolveBootstrapContextForRun(params: {
   workspaceDir: string;
+  identityDir?: string;
   config?: OpenClawConfig;
   sessionKey?: string;
   sessionId?: string;

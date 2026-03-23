@@ -63,6 +63,8 @@ export type AgentConfig = {
   default?: boolean;
   name?: string;
   workspace?: string;
+  /** Optional identity directory for core files (IDENTITY.md, SOUL.md, etc.). Defaults to {stateDir}/agents/{id}/. */
+  identityDir?: string;
   agentDir?: string;
   model?: AgentModelConfig;
   /** Optional allowlist of skills for this agent (omit = all skills; empty = none). */

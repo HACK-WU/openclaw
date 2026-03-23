@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   writeConfigFile: vi.fn(async () => {}),
   ensureAgentWorkspace: vi.fn(async () => {}),
   resolveAgentDir: vi.fn(() => "/agents/test-agent"),
+  resolveAgentIdentityDir: vi.fn(() => "/workspace/test-agent"),
   resolveAgentWorkspaceDir: vi.fn(() => "/workspace/test-agent"),
   resolveSessionTranscriptsDirForAgent: vi.fn(() => "/transcripts/test-agent"),
   listAgentsForGateway: vi.fn(() => ({
@@ -49,6 +50,7 @@ vi.mock("../../commands/agents.config.js", () => ({
 vi.mock("../../agents/agent-scope.js", () => ({
   listAgentIds: () => ["main"],
   resolveAgentDir: mocks.resolveAgentDir,
+  resolveAgentIdentityDir: mocks.resolveAgentIdentityDir,
   resolveAgentWorkspaceDir: mocks.resolveAgentWorkspaceDir,
 }));
 

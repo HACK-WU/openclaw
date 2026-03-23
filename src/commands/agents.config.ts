@@ -1,6 +1,7 @@
 import {
   listAgentEntries,
   resolveAgentDir,
+  resolveAgentIdentityDir,
   resolveAgentWorkspaceDir,
   resolveDefaultAgentId,
 } from "../agents/agent-scope.js";
@@ -98,7 +99,11 @@ export function buildAgentSummaries(cfg: OpenClawConfig): AgentSummary[] {
 
   return ordered.map((id) => {
     const workspace = resolveAgentWorkspaceDir(cfg, id);
-    const identity = loadAgentIdentity(workspace);
+    const identityDir = resolveAgentIdentityDir(cfg, id);
+    // Try identityDir first, fall back to workspace for backward compatibility
+    const identity =
+      loadAgentIdentity(identityDir) ??
+      (identityDir !== workspace ? loadAgentIdentity(workspace) : null);
     const configIdentity = configuredAgents.find(
       (agent) => normalizeAgentId(agent.id) === id,
     )?.identity;

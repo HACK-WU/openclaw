@@ -1,5 +1,6 @@
 import {
   resolveAgentDir,
+  resolveAgentIdentityDir,
   resolveAgentWorkspaceDir,
   resolveSessionAgentId,
   resolveAgentSkillsFilter,
@@ -108,8 +109,10 @@ export async function getReplyFromConfig(
   }
 
   const workspaceDirRaw = resolveAgentWorkspaceDir(cfg, agentId) ?? DEFAULT_AGENT_WORKSPACE_DIR;
+  const identityDirRaw = resolveAgentIdentityDir(cfg, agentId);
   const workspace = await ensureAgentWorkspace({
     dir: workspaceDirRaw,
+    identityDir: identityDirRaw,
     ensureBootstrapFiles: !agentCfg?.skipBootstrap && !isFastTestEnv,
   });
   const workspaceDir = workspace.dir;

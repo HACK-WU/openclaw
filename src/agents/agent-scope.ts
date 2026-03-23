@@ -28,6 +28,7 @@ type AgentEntry = NonNullable<NonNullable<OpenClawConfig["agents"]>["list"]>[num
 type ResolvedAgentConfig = {
   name?: string;
   workspace?: string;
+  identityDir?: string;
   agentDir?: string;
   model?: AgentEntry["model"];
   skills?: AgentEntry["skills"];
@@ -127,6 +128,10 @@ export function resolveAgentConfig(
   return {
     name: typeof entry.name === "string" ? entry.name : undefined,
     workspace: typeof entry.workspace === "string" ? entry.workspace : undefined,
+    identityDir:
+      typeof (entry as Record<string, unknown>).identityDir === "string"
+        ? ((entry as Record<string, unknown>).identityDir as string)
+        : undefined,
     agentDir: typeof entry.agentDir === "string" ? entry.agentDir : undefined,
     model:
       typeof entry.model === "string" || (entry.model && typeof entry.model === "object")
@@ -251,6 +256,28 @@ export function resolveEffectiveModelFallbacks(params: {
   }
   const defaultFallbacks = resolveAgentModelFallbackValues(params.cfg.agents?.defaults?.model);
   return agentFallbacksOverride ?? defaultFallbacks;
+}
+
+/**
+ * Resolve the identity directory for a general agent.
+ * Identity files (IDENTITY.md, SOUL.md, AGENTS.md, etc.) are stored here,
+ * separate from the workspace (working directory).
+ *
+ * Priority:
+ * 1. Agent config `identityDir` field (if set)
+ * 2. Default: {stateDir}/agents/{agentId}/
+ *
+ * For the default agent, falls back to legacy workspace if identityDir is empty.
+ */
+export function resolveAgentIdentityDir(cfg: OpenClawConfig, agentId: string): string {
+  const id = normalizeAgentId(agentId);
+  const entry = resolveAgentConfig(cfg, id);
+  const configured = typeof entry?.identityDir === "string" ? entry.identityDir.trim() : "";
+  if (configured) {
+    return stripNullBytes(resolveUserPath(configured));
+  }
+  const stateDir = resolveStateDir(process.env);
+  return stripNullBytes(path.join(stateDir, "agents", id));
 }
 
 export function resolveAgentWorkspaceDir(cfg: OpenClawConfig, agentId: string) {

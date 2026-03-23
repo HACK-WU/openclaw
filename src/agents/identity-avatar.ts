@@ -9,7 +9,7 @@ import {
   isSupportedLocalAvatarExtension,
 } from "../shared/avatar-policy.js";
 import { resolveUserPath } from "../utils.js";
-import { resolveAgentWorkspaceDir } from "./agent-scope.js";
+import { resolveAgentIdentityDir, resolveAgentWorkspaceDir } from "./agent-scope.js";
 import { loadAgentIdentityFromWorkspace } from "./identity-file.js";
 import { resolveAgentIdentity } from "./identity.js";
 
@@ -29,9 +29,18 @@ function resolveAvatarSource(cfg: OpenClawConfig, agentId: string): string | nul
   if (fromConfig) {
     return fromConfig;
   }
+  // Try identityDir first, then fall back to workspace dir
+  const identityDir = resolveAgentIdentityDir(cfg, agentId);
+  const fromIdentityDir = normalizeAvatarValue(loadAgentIdentityFromWorkspace(identityDir)?.avatar);
+  if (fromIdentityDir) {
+    return fromIdentityDir;
+  }
   const workspace = resolveAgentWorkspaceDir(cfg, agentId);
-  const fromIdentity = normalizeAvatarValue(loadAgentIdentityFromWorkspace(workspace)?.avatar);
-  return fromIdentity;
+  if (workspace !== identityDir) {
+    const fromWorkspace = normalizeAvatarValue(loadAgentIdentityFromWorkspace(workspace)?.avatar);
+    return fromWorkspace;
+  }
+  return null;
 }
 
 function resolveExistingPath(value: string): string {

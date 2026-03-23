@@ -4,6 +4,7 @@ const cache = new Map<string, WorkspaceBootstrapFile[]>();
 
 export async function getOrLoadBootstrapFiles(params: {
   workspaceDir: string;
+  identityDir?: string;
   sessionKey: string;
 }): Promise<WorkspaceBootstrapFile[]> {
   const existing = cache.get(params.sessionKey);
@@ -11,7 +12,7 @@ export async function getOrLoadBootstrapFiles(params: {
     return existing;
   }
 
-  const files = await loadWorkspaceBootstrapFiles(params.workspaceDir);
+  const files = await loadWorkspaceBootstrapFiles(params.workspaceDir, params.identityDir);
   cache.set(params.sessionKey, files);
   return files;
 }

@@ -1,6 +1,7 @@
 import {
   resolveAgentConfig,
   resolveAgentDir,
+  resolveAgentIdentityDir,
   resolveAgentModelFallbacksOverride,
   resolveAgentWorkspaceDir,
   resolveDefaultAgentId,
@@ -238,9 +239,11 @@ export async function runCronIsolatedAgentTurn(params: {
   const agentSessionKey = resolveCronAgentSessionKey({ sessionKey: baseSessionKey, agentId });
 
   const workspaceDirRaw = resolveAgentWorkspaceDir(params.cfg, agentId);
+  const identityDirRaw = resolveAgentIdentityDir(params.cfg, agentId);
   const agentDir = resolveAgentDir(params.cfg, agentId);
   const workspace = await ensureAgentWorkspace({
     dir: workspaceDirRaw,
+    identityDir: identityDirRaw,
     ensureBootstrapFiles: !agentCfg?.skipBootstrap && !isFastTestEnv,
   });
   const workspaceDir = workspace.dir;
