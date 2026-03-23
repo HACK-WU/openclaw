@@ -858,7 +858,8 @@ function renderNavSessionItem(
 
         ${
           // 当会话总数大于 1 时才显示删除按钮，避免删除最后一个会话
-          totalSessions <= 1
+          // 群聊会话（kind === "group"）不显示删除按钮，因为群聊会话由多个 agent 共享，不能直接删除
+          totalSessions <= 1 || session.kind === "group"
             ? nothing
             : html`
               <!-- 删除按钮 -->

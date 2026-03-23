@@ -320,9 +320,13 @@ function renderRow(
         </select>
       </div>
       <div>
-        <button class="btn danger" ?disabled=${disabled} @click=${() => onDelete(row.key)}>
-          Delete
-        </button>
+        ${
+          row.kind === "group"
+            ? nothing
+            : html`<button class="btn danger" ?disabled=${disabled} @click=${() => onDelete(row.key)}>
+              Delete
+            </button>`
+        }
       </div>
     </div>
   `;
