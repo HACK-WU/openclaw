@@ -1384,7 +1384,10 @@ export async function deleteGroup(host: GroupHost, groupId: string): Promise<voi
     if (host.activeGroupId === groupId) {
       openGroupList(host);
     }
-    await loadGroupList(host);
+    await Promise.all([
+      loadGroupList(host),
+      loadSessions(host as unknown as Parameters<typeof loadSessions>[0]),
+    ]);
   } catch (err) {
     host.groupError = `Failed to delete group: ${String(err)}`;
   }

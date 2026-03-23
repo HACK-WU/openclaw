@@ -13,24 +13,29 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { STATE_DIR } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths.js";
 import type { BridgeConfig, ContextConfig } from "./bridge-types.js";
 import type { GroupIndexEntry, GroupMember, GroupSessionEntry } from "./types.js";
 
 // ─── Path resolution ───
+// Use dynamic resolveStateDir() instead of the module-level STATE_DIR constant
+// to ensure the correct state directory is used when running under a CLI profile
+// (e.g. --dev → ~/.openclaw-dev instead of ~/.openclaw).
 
-const GROUP_CHATS_DIR = path.join(STATE_DIR, "group-chats");
+function resolveGroupChatsRoot(): string {
+  return path.join(resolveStateDir(), "group-chats");
+}
 
 export function resolveGroupChatsDir(): string {
-  return GROUP_CHATS_DIR;
+  return resolveGroupChatsRoot();
 }
 
 export function resolveGroupDir(groupId: string): string {
-  return path.join(GROUP_CHATS_DIR, groupId);
+  return path.join(resolveGroupChatsRoot(), groupId);
 }
 
 export function resolveGroupIndexPath(): string {
-  return path.join(GROUP_CHATS_DIR, "index.json");
+  return path.join(resolveGroupChatsRoot(), "index.json");
 }
 
 export function resolveGroupMetaPath(groupId: string): string {

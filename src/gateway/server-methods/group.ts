@@ -8,8 +8,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { findCliAgentEntry } from "../../commands/cli-agents.config.js";
-import { loadConfig } from "../../config/config.js";
-import { resolveStorePath } from "../../config/sessions/paths.js";
 import { updateSessionStore } from "../../config/sessions/store.js";
 import { triggerAgentReasoning } from "../../group-chat/agent-trigger.js";
 import {
@@ -200,28 +198,79 @@ const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, conte
   // Cleanup all Bridge Agent PTY processes before deleting
   await cleanupGroupBridgeAgents(groupId, context.broadcast);
 
-  // Broadcast deleted event before actual deletion (so clients can clean up state)
-  broadcastGroupSystem(context.broadcast, groupId, "deleted", {});
+  // Read group meta BEFORE deleting the group directory — we need the member list
+  // to locate the correct session store files for cleanup.
+  const groupMeta = loadGroupMeta(groupId);
 
   // Actually delete the group directory (including transcript.jsonl)
   await deleteGroup(groupId);
 
-  // Delete all session store entries for this group.
-  // Session keys for group chats are stored as agent:<agentId>:group:<groupId>:<memberAgentId>
-  // We need to find and delete all entries containing :group:<groupId>:
+  // Delete all session store entries and transcript files for this group.
+  // Session keys for group chats look like: agent:<assistantAgentId>:group:<groupId>:<memberAgentId>
+  // We pattern-match `:group:<groupId>:` across all agent session stores to find and remove them.
   try {
-    const cfg = loadConfig();
-    const storePath = resolveStorePath(cfg.session?.store);
+    const { loadConfig: loadCfg } = await import("../../config/config.js");
+    const {
+      loadCombinedSessionStoreForGateway,
+      resolveGatewaySessionStoreTarget,
+      archiveSessionTranscripts,
+    } = await import("../session-utils.js");
+
+    const cfg = loadCfg();
     const groupKeyPattern = `:group:${groupId}:`;
-    await updateSessionStore(storePath, (store) => {
-      const keysToDelete = Object.keys(store).filter((key) => key.includes(groupKeyPattern));
-      for (const key of keysToDelete) {
-        delete store[key];
+
+    // Load combined store (merges all agent stores) to find all matching keys
+    const { store: combinedStore } = loadCombinedSessionStoreForGateway(cfg);
+    const keysToDelete = Object.keys(combinedStore).filter((key) => key.includes(groupKeyPattern));
+
+    // If the combined store scan found no keys but we have group meta,
+    // build expected keys from the member list so we can still clean up.
+    if (keysToDelete.length === 0 && groupMeta) {
+      const { resolveDefaultAgentId } = await import("../../agents/agent-scope.js");
+      const { normalizeAgentId } = await import("../../routing/session-key.js");
+      const defaultAgentId = normalizeAgentId(resolveDefaultAgentId(cfg));
+      for (const member of groupMeta.members) {
+        keysToDelete.push(`agent:${defaultAgentId}:group:${groupId}:${member.agentId}`);
       }
-    });
+    }
+
+    for (const key of keysToDelete) {
+      try {
+        // Resolve actual store path for this key
+        const target = resolveGatewaySessionStoreTarget({ cfg, key });
+        const entry = combinedStore[key];
+
+        // Archive transcript files if session has a sessionId
+        if (entry?.sessionId) {
+          archiveSessionTranscripts({
+            sessionId: entry.sessionId,
+            storePath: target.storePath,
+            sessionFile: entry.sessionFile,
+            agentId: target.agentId,
+            reason: "deleted",
+          });
+        }
+
+        // Delete session store entry
+        await updateSessionStore(target.storePath, (store) => {
+          // Delete all key variants (canonical + legacy)
+          for (const storeKey of target.storeKeys) {
+            if (store[storeKey]) {
+              delete store[storeKey];
+              log.info(`[GROUP_DELETE] Deleted session entry: ${storeKey}`);
+            }
+          }
+        });
+      } catch {
+        // Best-effort: continue with other keys
+      }
+    }
   } catch {
     // Best-effort cleanup; don't fail the delete if session store cleanup fails
   }
+
+  // Broadcast deleted only after group data + session entries are fully cleaned up.
+  broadcastGroupSystem(context.broadcast, groupId, "deleted", {});
 
   respond(true, { ok: true });
 };
