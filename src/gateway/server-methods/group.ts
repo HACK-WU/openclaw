@@ -20,18 +20,18 @@ import {
 } from "../../group-chat/bridge-pty.js";
 import type { BridgeConfig, ContextConfig } from "../../group-chat/bridge-types.js";
 import {
-  initChainState,
-  atomicCheckAndIncrement,
-  getDefaultChainTimeout,
-  startChainMonitor,
-  setChainMonitor,
-  removeChainMonitor,
-  incrementPendingAgents,
-  decrementPendingAgents,
-  getPendingAgentCount,
   atomicAgentForwardCheck,
-  getChainState,
+  atomicCheckAndIncrement,
   clearChainState,
+  decrementPendingAgents,
+  getChainState,
+  getDefaultChainTimeout,
+  getPendingAgentCount,
+  incrementPendingAgents,
+  initChainState,
+  removeChainMonitor,
+  setChainMonitor,
+  startChainMonitor,
 } from "../../group-chat/chain-state-store.js";
 import { buildGroupSessionKey } from "../../group-chat/group-session-key.js";
 import {
@@ -43,21 +43,24 @@ import {
 } from "../../group-chat/group-store.js";
 import { resolveDispatchTargets } from "../../group-chat/message-dispatch.js";
 import {
+  abortGroupRun,
   broadcastGroupMessage,
   broadcastGroupSystem,
   registerGroupAbort,
   unregisterGroupAbort,
-  abortGroupRun,
 } from "../../group-chat/parallel-stream.js";
 import {
   appendGroupMessage,
   appendSystemMessage,
-  readGroupMessages,
-  getTranscriptSnapshot,
   clearGroupMessages,
+  getTranscriptSnapshot,
+  readGroupMessages,
 } from "../../group-chat/transcript.js";
-import type { GroupIndexEntry as RawGroupIndexEntry } from "../../group-chat/types.js";
-import type { GroupChatMessage, MessageSender } from "../../group-chat/types.js";
+import type {
+  GroupChatMessage,
+  MessageSender,
+  GroupIndexEntry as RawGroupIndexEntry,
+} from "../../group-chat/types.js";
 import { getLogger } from "../../logging.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 
@@ -198,6 +201,9 @@ const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, conte
   // Cleanup all Bridge Agent PTY processes before deleting
   await cleanupGroupBridgeAgents(groupId, context.broadcast);
 
+  // Clear in-memory chain state (roundCount, pending count, monitor timer)
+  clearChainState(groupId);
+
   // Read group meta BEFORE deleting the group directory — we need the member list
   // to locate the correct session store files for cleanup.
   const groupMeta = loadGroupMeta(groupId);
@@ -206,8 +212,10 @@ const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, conte
   await deleteGroup(groupId);
 
   // Delete all session store entries and transcript files for this group.
-  // Session keys for group chats look like: agent:<assistantAgentId>:group:<groupId>:<memberAgentId>
-  // We pattern-match `:group:<groupId>:` across all agent session stores to find and remove them.
+  // Session keys for group chats have two formats after canonicalization:
+  //   - Per-member:  agent:<agentId>:group:<groupId>:<memberAgentId>
+  //   - Shared/old:  agent:<agentId>:group:<groupId>  (no trailing member)
+  // We match both by looking for `:group:<groupId>` (without requiring a trailing colon).
   try {
     const { loadConfig: loadCfg } = await import("../../config/config.js");
     const {
@@ -215,9 +223,19 @@ const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, conte
       resolveGatewaySessionStoreTarget,
       archiveSessionTranscripts,
     } = await import("../session-utils.js");
+    const { clearSessionQueues } = await import("../../auto-reply/reply/queue.js");
+    const { stopSubagentsForRequester } = await import("../../auto-reply/reply/abort.js");
+    const { abortEmbeddedPiRun } = await import("../../agents/pi-embedded.js");
+    const { clearBootstrapSnapshot } = await import("../../agents/bootstrap-cache.js");
+    const { closeTrackedBrowserTabsForSessions } =
+      await import("../../browser/session-tab-registry.js");
+    const { unbindThreadBindingsBySessionKey } =
+      await import("../../discord/monitor/thread-bindings.js");
+    const { getAcpSessionManager } = await import("../../acp/control-plane/manager.js");
 
     const cfg = loadCfg();
-    const groupKeyPattern = `:group:${groupId}:`;
+    // Match `:group:<groupId>` — covers both `...:group:<groupId>` and `...:group:<groupId>:<member>`
+    const groupKeyPattern = `:group:${groupId}`;
 
     // Load combined store (merges all agent stores) to find all matching keys
     const { store: combinedStore } = loadCombinedSessionStoreForGateway(cfg);
@@ -229,18 +247,83 @@ const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, conte
       const { resolveDefaultAgentId } = await import("../../agents/agent-scope.js");
       const { normalizeAgentId } = await import("../../routing/session-key.js");
       const defaultAgentId = normalizeAgentId(resolveDefaultAgentId(cfg));
+      // Add the shared key (no member suffix)
+      keysToDelete.push(`agent:${defaultAgentId}:group:${groupId}`);
+      // Add per-member keys
       for (const member of groupMeta.members) {
         keysToDelete.push(`agent:${defaultAgentId}:group:${groupId}:${member.agentId}`);
       }
     }
 
+    // ── Runtime cleanup for each session key ──
+    // Clean up runtime resources (queues, browser tabs, sub-agents, embedded runs,
+    // ACP runtimes, thread bindings) before deleting session store entries.
     for (const key of keysToDelete) {
       try {
-        // Resolve actual store path for this key
         const target = resolveGatewaySessionStoreTarget({ cfg, key });
         const entry = combinedStore[key];
 
-        // Archive transcript files if session has a sessionId
+        // Clear message queues and stop sub-agents
+        const queueKeys = new Set<string>(target.storeKeys);
+        queueKeys.add(target.canonicalKey);
+        if (entry?.sessionId) {
+          queueKeys.add(entry.sessionId);
+        }
+        clearSessionQueues([...queueKeys]);
+        stopSubagentsForRequester({ cfg, requesterSessionKey: target.canonicalKey });
+
+        // Abort any embedded Pi run and clear bootstrap snapshot cache
+        if (entry?.sessionId) {
+          abortEmbeddedPiRun(entry.sessionId);
+        }
+        clearBootstrapSnapshot(target.canonicalKey);
+
+        // Close tracked browser tabs
+        const closeKeys = new Set<string>([
+          key,
+          target.canonicalKey,
+          ...target.storeKeys,
+          entry?.sessionId ?? "",
+        ]);
+        await closeTrackedBrowserTabsForSessions({
+          sessionKeys: [...closeKeys],
+        }).catch(() => {});
+
+        // Close ACP runtime if active
+        if (entry?.acp) {
+          const acpManager = getAcpSessionManager();
+          const sessionKey = target.canonicalKey ?? key;
+          await acpManager
+            .cancelSession({ cfg, sessionKey, reason: "session-delete" })
+            .catch(() => {});
+          await acpManager
+            .closeSession({
+              cfg,
+              sessionKey,
+              reason: "session-delete",
+              requireAcpSession: false,
+              allowBackendUnavailable: true,
+            })
+            .catch(() => {});
+        }
+
+        // Unbind thread bindings and emit lifecycle hook
+        unbindThreadBindingsBySessionKey({
+          targetSessionKey: target.canonicalKey ?? key,
+          targetKind: "acp",
+          reason: "session-delete",
+          sendFarewell: true,
+        });
+      } catch {
+        // Best-effort: continue with other keys
+      }
+    }
+
+    // Archive transcripts for all matched session entries.
+    for (const key of keysToDelete) {
+      try {
+        const target = resolveGatewaySessionStoreTarget({ cfg, key });
+        const entry = combinedStore[key];
         if (entry?.sessionId) {
           archiveSessionTranscripts({
             sessionId: entry.sessionId,
@@ -250,19 +333,44 @@ const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, conte
             reason: "deleted",
           });
         }
+      } catch {
+        // Best-effort: continue with other keys
+      }
+    }
 
-        // Delete session store entry
-        await updateSessionStore(target.storePath, (store) => {
-          // Delete all key variants (canonical + legacy)
-          for (const storeKey of target.storeKeys) {
-            if (store[storeKey]) {
+    // Collect unique store paths so we update each file at most once.
+    const storePathSet = new Set<string>();
+    for (const key of keysToDelete) {
+      try {
+        const target = resolveGatewaySessionStoreTarget({ cfg, key });
+        storePathSet.add(target.storePath);
+      } catch {
+        // ignore
+      }
+    }
+
+    // Delete group session keys directly from each store file.
+    // The on-disk store may use raw keys (e.g. `group:<id>` or `group:<id>:<member>`)
+    // while the combined store uses canonicalized keys (e.g. `agent:main:group:<id>:...`).
+    // Matching by both canonical key set and raw key pattern ensures we catch both formats.
+    const rawGroupPrefix = `group:${groupId}`;
+    const canonicalGroupPattern = `:group:${groupId}`;
+    for (const storePath of storePathSet) {
+      try {
+        await updateSessionStore(storePath, (store) => {
+          for (const storeKey of Object.keys(store)) {
+            const matches =
+              storeKey === rawGroupPrefix ||
+              storeKey.startsWith(`${rawGroupPrefix}:`) ||
+              storeKey.includes(canonicalGroupPattern);
+            if (matches) {
               delete store[storeKey];
               log.info(`[GROUP_DELETE] Deleted session entry: ${storeKey}`);
             }
           }
         });
       } catch {
-        // Best-effort: continue with other keys
+        // Best-effort: continue with other stores
       }
     }
   } catch {
