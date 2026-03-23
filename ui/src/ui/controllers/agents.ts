@@ -23,7 +23,6 @@ export async function checkAgentCanBeDeleted(
   try {
     // Get all sessions
     const sessionsRes = await client.request<SessionsListResult>("sessions.list", {
-      activeMinutes: 0,
       includeGlobal: true,
       includeUnknown: true,
     });

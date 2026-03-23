@@ -1153,6 +1153,23 @@ export function renderApp(state: AppViewState) {
                   state.agentShowAddMenu = false;
                   // Load personalities list
                   await loadPersonalities(state);
+                  // Auto-validate the default workspace path so the Create button is not disabled
+                  if (defaultPath.trim()) {
+                    const result = await checkWorkspacePath(state, defaultPath);
+                    if (result) {
+                      state.agentCreateForm = {
+                        ...state.agentCreateForm,
+                        isCheckingPath: false,
+                        workspacePathStatus: result.valid
+                          ? result.needsCreation
+                            ? "info"
+                            : "valid"
+                          : "error",
+                        workspacePathError: result.error,
+                        workspacePathWarning: result.warning,
+                      };
+                    }
+                  }
                 },
                 onHideCreateDialog: () => {
                   state.agentShowCreateDialog = false;

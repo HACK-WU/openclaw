@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   listAgentIds,
   resolveAgentDir,
+  resolveAgentIdentityDir,
   resolveAgentWorkspaceDir,
 } from "../../agents/agent-scope.js";
 import {
@@ -88,6 +89,7 @@ function resolveAgentWorkspaceFileOrRespondError(
   cfg: ReturnType<typeof loadConfig>;
   agentId: string;
   workspaceDir: string;
+  identityDir: string;
   name: string;
 } | null {
   const cfg = loadConfig();
@@ -109,7 +111,8 @@ function resolveAgentWorkspaceFileOrRespondError(
     return null;
   }
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
-  return { cfg, agentId, workspaceDir, name };
+  const identityDir = resolveAgentIdentityDir(cfg, agentId);
+  return { cfg, agentId, workspaceDir, identityDir, name };
 }
 
 type FileMeta = {
@@ -531,6 +534,10 @@ export const agentsHandlers: GatewayRequestHandlers = {
     }
 
     const workspaceDir = resolveUserPath(String(params.workspace ?? "").trim());
+    const identityDir = resolveAgentIdentityDir(
+      { ...cfg, agents: { ...cfg.agents, list: [...listAgentEntries(cfg), { id: agentId }] } },
+      agentId,
+    );
 
     // Resolve agentDir against the config we're about to persist (vs the pre-write config),
     // so subsequent resolutions can't disagree about the agent's directory.
@@ -545,7 +552,11 @@ export const agentsHandlers: GatewayRequestHandlers = {
     // Ensure workspace & transcripts exist BEFORE writing config so a failure
     // here does not leave a broken config entry behind.
     const skipBootstrap = Boolean(nextConfig.agents?.defaults?.skipBootstrap);
-    await ensureAgentWorkspace({ dir: workspaceDir, ensureBootstrapFiles: !skipBootstrap });
+    await ensureAgentWorkspace({
+      dir: workspaceDir,
+      identityDir,
+      ensureBootstrapFiles: !skipBootstrap,
+    });
     await fs.mkdir(resolveSessionTranscriptsDirForAgent(agentId), { recursive: true });
 
     await writeConfigFile(nextConfig);
@@ -555,7 +566,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     const emoji = resolveOptionalStringParam(params.emoji);
     const avatar = resolveOptionalStringParam(params.avatar);
     const personalityId = resolveOptionalStringParam(params.personalityId);
-    const identityPath = path.join(workspaceDir, DEFAULT_IDENTITY_FILENAME);
+    const identityPath = path.join(identityDir, DEFAULT_IDENTITY_FILENAME);
     const lines = [
       "",
       `- Name: ${safeName}`,
@@ -568,11 +579,15 @@ export const agentsHandlers: GatewayRequestHandlers = {
     // Write PERSONALITY.md if personalityId is provided
     if (personalityId) {
       const personalityContent = getPersonalityContent(personalityId);
-      const personalityPath = path.join(workspaceDir, "PERSONALITY.md");
+      const personalityPath = path.join(identityDir, "PERSONALITY.md");
       await fs.writeFile(personalityPath, personalityContent, "utf-8");
     }
 
-    respond(true, { ok: true, agentId, name: rawName, workspace: workspaceDir }, undefined);
+    respond(
+      true,
+      { ok: true, agentId, name: rawName, workspace: workspaceDir, identityDir },
+      undefined,
+    );
   },
   "agents.update": async ({ params, respond }) => {
     if (!validateAgentsUpdateParams(params)) {
@@ -608,13 +623,18 @@ export const agentsHandlers: GatewayRequestHandlers = {
 
     if (workspaceDir) {
       const skipBootstrap = Boolean(nextConfig.agents?.defaults?.skipBootstrap);
-      await ensureAgentWorkspace({ dir: workspaceDir, ensureBootstrapFiles: !skipBootstrap });
+      const updatedIdentityDir = resolveAgentIdentityDir(nextConfig, agentId);
+      await ensureAgentWorkspace({
+        dir: workspaceDir,
+        identityDir: updatedIdentityDir,
+        ensureBootstrapFiles: !skipBootstrap,
+      });
     }
 
     if (avatar) {
-      const workspace = workspaceDir ?? resolveAgentWorkspaceDir(nextConfig, agentId);
-      await fs.mkdir(workspace, { recursive: true });
-      const identityPath = path.join(workspace, DEFAULT_IDENTITY_FILENAME);
+      const updatedIdentityDir = resolveAgentIdentityDir(nextConfig, agentId);
+      await fs.mkdir(updatedIdentityDir, { recursive: true });
+      const identityPath = path.join(updatedIdentityDir, DEFAULT_IDENTITY_FILENAME);
       await fs.appendFile(identityPath, `\n- Avatar: ${sanitizeIdentityLine(avatar)}\n`, "utf-8");
     }
 
@@ -643,6 +663,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
 
     const deleteFiles = typeof params.deleteFiles === "boolean" ? params.deleteFiles : true;
     const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+    const identityDir = resolveAgentIdentityDir(cfg, agentId);
     const agentDir = resolveAgentDir(cfg, agentId);
     const sessionsDir = resolveSessionTranscriptsDirForAgent(agentId);
 
@@ -652,6 +673,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     if (deleteFiles) {
       await Promise.all([
         moveToTrashBestEffort(workspaceDir),
+        moveToTrashBestEffort(identityDir),
         moveToTrashBestEffort(agentDir),
         moveToTrashBestEffort(sessionsDir),
       ]);
@@ -727,20 +749,23 @@ export const agentsHandlers: GatewayRequestHandlers = {
       return;
     }
 
-    const { homedir } = await import("node:os");
-    const { dirname, join } = await import("node:path");
     const { sanitizeDirName } = await import("../../utils/path-validator.js");
+    const { resolveUserPath } = await import("../../utils.js");
+    const { DEFAULT_AGENT_WORKSPACE_DIR } = await import("../../agents/workspace.js");
 
     const cfg = loadConfig();
-    const agentEntries = listAgentEntries(cfg);
-    const defaultEntry = agentEntries.find((e) => e.default);
-    const currentWorkspace = defaultEntry?.workspace || homedir();
-    const parentDir = dirname(currentWorkspace);
+
+    // Use agents.defaults.workspace if configured, otherwise use DEFAULT_AGENT_WORKSPACE_DIR
+    const configuredDefault = cfg.agents?.defaults?.workspace?.trim();
+    const defaultPath = configuredDefault
+      ? resolveUserPath(configuredDefault)
+      : DEFAULT_AGENT_WORKSPACE_DIR;
 
     const name = typeof params.name === "string" ? params.name.trim() : "";
-    const dirName = name ? sanitizeDirName(name) : "new-agent";
+    // If name is provided, append it as a subdirectory; otherwise return the default path as-is
+    const resultPath = name ? `${defaultPath}/${sanitizeDirName(name)}` : defaultPath;
 
-    respond(true, { path: join(parentDir, dirName) }, undefined);
+    respond(true, { path: resultPath }, undefined);
   },
   "agents.files.list": async ({ params, respond }) => {
     if (!validateAgentsFilesListParams(params)) {
@@ -763,14 +788,20 @@ export const agentsHandlers: GatewayRequestHandlers = {
       return;
     }
     const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+    const identityDir = resolveAgentIdentityDir(cfg, agentId);
     let hideBootstrap = false;
     try {
-      hideBootstrap = await isWorkspaceOnboardingCompleted(workspaceDir);
+      hideBootstrap = await isWorkspaceOnboardingCompleted(identityDir);
     } catch {
-      // Fall back to showing BOOTSTRAP if workspace state cannot be read.
+      // Fall back to checking workspace dir for backward compatibility
+      try {
+        hideBootstrap = await isWorkspaceOnboardingCompleted(workspaceDir);
+      } catch {
+        // Fall back to showing BOOTSTRAP if workspace state cannot be read.
+      }
     }
-    const files = await listAgentFiles(workspaceDir, { hideBootstrap });
-    respond(true, { agentId, workspace: workspaceDir, files }, undefined);
+    const files = await listAgentFiles(identityDir, { hideBootstrap });
+    respond(true, { agentId, workspace: workspaceDir, identityDir, files }, undefined);
   },
   "agents.files.get": async ({ params, respond }) => {
     if (!validateAgentsFilesGetParams(params)) {
@@ -781,18 +812,59 @@ export const agentsHandlers: GatewayRequestHandlers = {
     if (!resolved) {
       return;
     }
-    const { agentId, workspaceDir, name } = resolved;
-    const filePath = path.join(workspaceDir, name);
+    const { agentId, workspaceDir, identityDir, name } = resolved;
+    const filePath = path.join(identityDir, name);
     const resolvedPath = await resolveWorkspaceFilePathOrRespond({
       respond,
-      workspaceDir,
+      workspaceDir: identityDir,
       name,
     });
     if (!resolvedPath) {
       return;
     }
     if (resolvedPath.kind === "missing") {
-      respondWorkspaceFileMissing({ respond, agentId, workspaceDir, name, filePath });
+      // Backward compatibility: fall back to workspaceDir if identityDir file is missing
+      if (identityDir !== workspaceDir) {
+        const fallbackPath = await resolveWorkspaceFilePathOrRespond({
+          respond,
+          workspaceDir,
+          name,
+        });
+        if (fallbackPath && fallbackPath.kind === "ready") {
+          let safeRead: Awaited<ReturnType<typeof readLocalFileSafely>>;
+          try {
+            safeRead = await readLocalFileSafely({ filePath: fallbackPath.ioPath });
+          } catch {
+            respondWorkspaceFileMissing({
+              respond,
+              agentId,
+              workspaceDir: identityDir,
+              name,
+              filePath,
+            });
+            return;
+          }
+          respond(
+            true,
+            {
+              agentId,
+              workspace: workspaceDir,
+              identityDir,
+              file: {
+                name,
+                path: path.join(workspaceDir, name),
+                missing: false,
+                size: safeRead.stat.size,
+                updatedAtMs: Math.floor(safeRead.stat.mtimeMs),
+                content: safeRead.buffer.toString("utf-8"),
+              },
+            },
+            undefined,
+          );
+          return;
+        }
+      }
+      respondWorkspaceFileMissing({ respond, agentId, workspaceDir: identityDir, name, filePath });
       return;
     }
     let safeRead: Awaited<ReturnType<typeof readLocalFileSafely>>;
@@ -800,7 +872,13 @@ export const agentsHandlers: GatewayRequestHandlers = {
       safeRead = await readLocalFileSafely({ filePath: resolvedPath.ioPath });
     } catch (err) {
       if (err instanceof SafeOpenError && err.code === "not-found") {
-        respondWorkspaceFileMissing({ respond, agentId, workspaceDir, name, filePath });
+        respondWorkspaceFileMissing({
+          respond,
+          agentId,
+          workspaceDir: identityDir,
+          name,
+          filePath,
+        });
         return;
       }
       respondWorkspaceFileUnsafe(respond, name);
@@ -811,6 +889,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       {
         agentId,
         workspace: workspaceDir,
+        identityDir,
         file: {
           name,
           path: filePath,
@@ -832,12 +911,12 @@ export const agentsHandlers: GatewayRequestHandlers = {
     if (!resolved) {
       return;
     }
-    const { agentId, workspaceDir, name } = resolved;
-    await fs.mkdir(workspaceDir, { recursive: true });
-    const filePath = path.join(workspaceDir, name);
+    const { agentId, workspaceDir, identityDir, name } = resolved;
+    await fs.mkdir(identityDir, { recursive: true });
+    const filePath = path.join(identityDir, name);
     const resolvedPath = await resolveWorkspaceFilePathOrRespond({
       respond,
-      workspaceDir,
+      workspaceDir: identityDir,
       name,
     });
     if (!resolvedPath) {
@@ -871,6 +950,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
         ok: true,
         agentId,
         workspace: workspaceDir,
+        identityDir,
         file: {
           name,
           path: filePath,
