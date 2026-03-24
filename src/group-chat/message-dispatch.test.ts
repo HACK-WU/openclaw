@@ -13,7 +13,7 @@ function makeMeta(overrides?: Partial<GroupSessionEntry>): GroupSessionEntry {
     ],
     memberRolePrompts: [],
     groupSkills: [],
-    maxRounds: 10,
+    maxRounds: 20,
     maxConsecutive: 3,
     historyLimit: 50,
     createdAt: 0,

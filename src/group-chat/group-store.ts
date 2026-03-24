@@ -185,7 +185,7 @@ export async function createGroup(params: {
     members,
     memberRolePrompts: [],
     groupSkills: [],
-    maxRounds: 10,
+    maxRounds: 20,
     maxConsecutive: 3,
     historyLimit: 50,
     compaction: { enabled: true, maxHistoryShare: 0.5, reserveTokensFloor: 20_000 },

@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { canTriggerAgent, createChainState, updateChainState } from "./anti-loop.js";
 import {
-  initChainState,
-  atomicCheckAndIncrement,
-  getChainState,
-  clearChainState,
-  checkAndIncrementSync,
   _test,
+  atomicCheckAndIncrement,
+  checkAndIncrementSync,
+  clearChainState,
+  getChainState,
+  initChainState,
 } from "./chain-state-store.js";
 import type { ConversationChainState, GroupSessionEntry } from "./types.js";
 
@@ -20,7 +20,7 @@ function makeMeta(overrides?: Partial<GroupSessionEntry>): GroupSessionEntry {
     ],
     memberRolePrompts: [],
     groupSkills: [],
-    maxRounds: 10,
+    maxRounds: 20,
     maxConsecutive: 3, // deprecated but kept for backward compat
     historyLimit: 50,
     createdAt: 0,

@@ -296,9 +296,9 @@ export const en: Record<string, string> = {
   "chat.group.generating": "Generating",
   "chat.group.thinkingLevel": "Thinking Level",
   "chat.group.thinkingLevelPlaceholder": "Select thinking level...",
-  "chat.group.maxRounds": "Max Rounds",
+  "chat.group.maxRounds": "Max Conversation Turns",
   "chat.group.maxRoundsHint":
-    "Maximum number of conversation rounds in a single group chat turn. Each round allows agents to respond once.",
+    "Maximum number of agent responses in a single group chat conversation.",
   "chat.group.maxConsecutive": "Max Consecutive",
   "chat.group.maxConsecutiveHint":
     "Maximum number of consecutive responses a single agent can make before yielding to others.",

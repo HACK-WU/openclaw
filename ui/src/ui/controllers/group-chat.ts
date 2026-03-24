@@ -47,9 +47,9 @@ export type GroupSessionMeta = {
   maxRounds: number;
   /** @deprecated Removed from anti-loop mechanism, kept for backward compatibility */
   maxConsecutive?: number;
-  /** Chain timeout in milliseconds (default: 300000 = 5 min, range: 60000-1800000) */
+  /** Chain timeout in milliseconds (default: unicast 900000 = 15 min / broadcast 480000 = 8 min, range: 60000-1800000) */
   chainTimeout?: number;
-  /** CLI execution timeout in milliseconds (default: 120000 = 2 min, range: 30000-600000) */
+  /** CLI execution timeout in milliseconds (default: 300000 = 5 min, range: 30000-600000) */
   cliTimeout?: number;
   archived: boolean;
   createdAt: number;
@@ -1913,7 +1913,7 @@ export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSyste
         id: `sys-${Date.now()}`,
         groupId: payload.groupId,
         role: "system",
-        content: `已达到最大轮数限制，对话链结束`,
+        content: `已达到最大对话次数限制，对话链结束`,
         sender: { type: "system" },
         serverSeq: 0,
         timestamp: Date.now(),

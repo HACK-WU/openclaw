@@ -10,7 +10,7 @@ import { repeat } from "lit/directives/repeat.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { renderInlineToolCards } from "../chat/grouped-render.ts";
 import { extractThinkingCached, formatReasoningMarkdown } from "../chat/message-extract.ts";
-import { extractToolCards, classifyToolCards } from "../chat/tool-cards.ts";
+import { classifyToolCards, extractToolCards } from "../chat/tool-cards.ts";
 import { typewriter } from "../chat/typewriter-directive.ts";
 import {
   BridgeTerminalResizeEvent,
@@ -18,18 +18,17 @@ import {
   BridgeTerminalStreamUpdateEvent,
 } from "../components/bridge-terminal.ts";
 import type {
-  GroupChatMessage,
-  GroupSessionMeta,
-  GroupIndexEntry,
-  GroupCreateDialogState,
   GroupAddMemberDialogState,
-  GroupRemoveMemberDialogState,
-  GroupDisbandDialogState,
+  GroupChatMessage,
   GroupClearMessagesDialogState,
+  GroupCreateDialogState,
+  GroupDisbandDialogState,
+  GroupIndexEntry,
+  GroupRemoveMemberDialogState,
+  GroupSessionMeta,
   GroupToolMessage,
 } from "../controllers/group-chat.ts";
-import { getMentionedAgents } from "../controllers/group-chat.ts";
-import { isBridgeAssistantAgent } from "../controllers/group-chat.ts";
+import { getMentionedAgents, isBridgeAssistantAgent } from "../controllers/group-chat.ts";
 import { stripThinkingTags } from "../format.ts";
 import { t } from "../i18n/index.ts";
 import { icons } from "../icons.ts";
@@ -1196,7 +1195,7 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
                     type="number"
                     class="field group-info-panel__setting-input"
                     style="width: 80px;"
-                    .value=${String(Math.floor((meta.chainTimeout ?? 300000) / 60000))}
+                    .value=${String(Math.floor((meta.chainTimeout ?? (meta.messageMode === "unicast" ? 900000 : 480000)) / 60000))}
                     min="1"
                     max="30"
                     @change=${(e: Event) => {
@@ -1219,7 +1218,7 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
                     type="number"
                     class="field group-info-panel__setting-input"
                     style="width: 80px;"
-                    .value=${String(Math.floor((meta.cliTimeout ?? 120000) / 60000))}
+                    .value=${String(Math.floor((meta.cliTimeout ?? 300000) / 60000))}
                     min="1"
                     max="10"
                     step="0.5"

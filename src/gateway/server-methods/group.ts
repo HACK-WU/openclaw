@@ -805,7 +805,7 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
           if (check.maxRoundsExhausted) {
             await appendSystemMessage(
               groupId,
-              `已达到最大轮数限制（${meta.maxRounds} 轮），对话链结束`,
+              `已达到最大对话次数限制（${meta.maxRounds} 次），对话链结束`,
             );
             broadcastGroupSystem(context.broadcast, groupId, "round_limit", {
               reason: check.reason,

@@ -1,4 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  GroupChatMessage,
+  GroupChatState,
+  GroupHost,
+  GroupStreamPayload,
+} from "./group-chat.ts";
 import {
   DEFAULT_GROUP_CHAT_STATE,
   cancelSummary,
@@ -11,12 +17,6 @@ import {
   resetChainState,
   sendGroupMessage,
   triggerSummary,
-} from "./group-chat.ts";
-import type {
-  GroupChatMessage,
-  GroupChatState,
-  GroupHost,
-  GroupStreamPayload,
 } from "./group-chat.ts";
 
 // Setup fake timers
@@ -51,7 +51,7 @@ const DEFAULT_TEST_META = {
   messageMode: "broadcast" as const,
   announcement: "",
   groupSkills: [] as string[],
-  maxRounds: 10,
+  maxRounds: 20,
   maxConsecutive: 3,
   archived: false,
   createdAt: 1,
@@ -643,7 +643,7 @@ describe("group-chat controller", () => {
       handleGroupSystemEvent(state, { groupId: "g1", action: "round_limit" });
       expect(state.groupMessages).toHaveLength(1);
       expect(state.groupMessages[0].role).toBe("system");
-      expect(state.groupMessages[0].content).toContain("最大轮数限制");
+      expect(state.groupMessages[0].content).toContain("最大对话次数限制");
     });
 
     it("ignores system events for non-active groups", () => {

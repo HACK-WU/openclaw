@@ -58,12 +58,12 @@ export type GroupSessionEntry = {
   memberRolePrompts: GroupMemberRolePrompt[];
   announcement?: string; // max 2000 chars
   groupSkills: string[]; // skill name references
-  maxRounds: number; // default 10
+  maxRounds: number; // default 20
   /** @deprecated No longer used - maxRounds controls all agent triggers globally */
   maxConsecutive: number; // default 3 (kept for backward compatibility)
-  /** Chain timeout in ms - max duration of a conversation chain (default: 300000 = 5min) */
+  /** Chain timeout in ms - max duration of a conversation chain (default: unicast 900000 = 15min / broadcast 480000 = 8min) */
   chainTimeout?: number;
-  /** CLI execution timeout in ms - max time for a single CLI command (default: 120000 = 2min) */
+  /** CLI execution timeout in ms - max time for a single CLI command (default: 300000 = 5min) */
   cliTimeout?: number;
   historyLimit: number; // default 50
   compaction?: GroupCompactionConfig;
