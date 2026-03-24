@@ -21,22 +21,51 @@ export async function checkAgentCanBeDeleted(
   const normalizedAgentId = agentId.toLowerCase();
 
   try {
-    // Get all sessions
-    const sessionsRes = await client.request<SessionsListResult>("sessions.list", {
-      includeGlobal: true,
-      includeUnknown: true,
-    });
+    // 并行获取 session 列表和群聊列表
+    const [sessionsRes, groupListRes] = await Promise.all([
+      client.request<SessionsListResult>("sessions.list", {
+        includeGlobal: true,
+        includeUnknown: true,
+      }),
+      client.request<Array<{ groupId: string; name?: string }>>("group.list", {}).catch(() => null),
+    ]);
 
     const sessions = sessionsRes?.sessions ?? [];
+
+    // 构建 groupId → groupName 映射
+    const groupNameMap = new Map<string, string>();
+    if (Array.isArray(groupListRes)) {
+      for (const g of groupListRes) {
+        if (g.groupId && g.name) {
+          groupNameMap.set(g.groupId.toLowerCase(), g.name);
+        }
+      }
+    }
 
     // Check if any session key contains the agentId
     for (const session of sessions) {
       const key = (session.key ?? "").toLowerCase();
       // Fuzzy match: check if agentId appears anywhere in the session key
       if (key.includes(normalizedAgentId)) {
+        const isGroup = session.kind === "group" || key.includes(":group:");
+
+        if (isGroup) {
+          // 从 key 中提取 groupId（格式: ...group:<groupId>... 或 ...group:<groupId>:<agentId>）
+          const groupIdMatch = key.match(/:group:([^:]+)/)?.[1] ?? session.groupId;
+          const groupName = groupIdMatch ? groupNameMap.get(groupIdMatch.toLowerCase()) : undefined;
+          // 群聊：优先显示名称，没有则显示群聊 ID 前 8 位
+          const groupLabel = groupName || (groupIdMatch ? groupIdMatch.slice(0, 8) : session.key);
+          return {
+            canDelete: false,
+            reason: `无法删除：该 Agent 被群聊 "${groupLabel}" 引用，请先解散该群聊后再试`,
+          };
+        }
+
+        // 普通对话：优先显示标题，没有则显示 session key
+        const directLabel = session.label || session.displayName || session.key;
         return {
           canDelete: false,
-          reason: `无法删除：该 Agent 被会话 "${session.label || session.displayName || session.key}" 引用`,
+          reason: `无法删除：该 Agent 被对话 "${directLabel}" 引用，请先删除该对话后再试`,
         };
       }
     }
