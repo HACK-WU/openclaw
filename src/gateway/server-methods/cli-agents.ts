@@ -26,7 +26,11 @@ import { loadConfig } from "../../config/config.js";
 import type { CliAgentEntry } from "../../config/types.cli-agents.js";
 import type { CliType } from "../../group-chat/bridge-types.js";
 import { getLogger } from "../../logging.js";
-import { getPersonality, listPersonalities } from "../../personalities/index.js";
+import {
+  getPersonality,
+  getPersonalityContent,
+  listPersonalities,
+} from "../../personalities/index.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 
 const log = getLogger("cli-agents:handler");
@@ -229,9 +233,24 @@ const handleCliAgentsUpdate: GatewayRequestHandler = async ({ params, respond })
     ...(optionalString(params, "tailTrimMarker") !== undefined
       ? { tailTrimMarker: optionalString(params, "tailTrimMarker") }
       : {}),
+    ...(optionalString(params, "personalityId") !== undefined
+      ? { personalityId: optionalString(params, "personalityId") }
+      : {}),
   };
 
   await upsertCliAgentEntry(updated);
+
+  // If personalityId changed, update PERSONALITY.md in workspace
+  if (optionalString(params, "personalityId") !== undefined) {
+    const personalityId = optionalString(params, "personalityId");
+    const content = personalityId ? getPersonalityContent(personalityId) : "";
+    try {
+      await writeCliAgentFile(agentId, "PERSONALITY.md", content);
+    } catch {
+      // Best-effort: workspace dir may not exist yet
+    }
+  }
+
   log.info("[CLI_AGENT_UPDATED]", { agentId });
   respond(true, { ok: true, agentId });
 };

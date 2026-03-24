@@ -1,9 +1,9 @@
 import { html, nothing } from "lit";
+import "../components/cli-test-terminal.ts";
 import {
   renderPersonalitySelector,
   renderPersonalityViewDialog,
 } from "../components/personality-selector.ts";
-import "../components/cli-test-terminal.ts";
 import type {
   AgentIdentityResult,
   AgentsFilesListResult,
@@ -15,11 +15,11 @@ import type {
   ToolsCatalogResult,
 } from "../types.ts";
 import {
-  renderAgentFiles,
   renderAgentChannels,
   renderAgentCron,
+  renderAgentFiles,
 } from "./agents-panels-status-files.ts";
-import { renderAgentTools, renderAgentSkills } from "./agents-panels-tools-skills.ts";
+import { renderAgentSkills, renderAgentTools } from "./agents-panels-tools-skills.ts";
 import {
   agentBadgeText,
   buildAgentContext,
@@ -2082,6 +2082,16 @@ function renderEditCliAgentDialog(props: AgentsProps) {
             />
             <span class="field-hint">CLI 启动时的工作目录（也是 Agent 工作空间）${!cliCreateForm.workspace && defaultWorkspace ? "（已自动填入默认值）" : ""}</span>
           </label>
+
+          <!-- Personality Selection -->
+          ${renderPersonalitySelector({
+            personalities: props.personalitiesList ?? [],
+            selectedId: cliCreateForm.personalityId,
+            loading: props.personalitiesLoading ?? false,
+            error: props.personalitiesError ?? null,
+            onSelect: props.onSelectPersonality,
+            onView: props.onViewPersonality,
+          })}
 
           <!-- Environment Variables -->
           <div class="field">

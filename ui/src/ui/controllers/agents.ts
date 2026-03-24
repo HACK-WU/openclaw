@@ -7,8 +7,8 @@ import type {
   CliTestResult,
   CliType,
 } from "../views/agents.ts";
-import { saveConfig } from "./config.ts";
 import type { ConfigState } from "./config.ts";
+import { saveConfig } from "./config.ts";
 
 /**
  * Check if an agent is referenced in any session.
@@ -538,6 +538,7 @@ export async function updateCliAgent(state: AgentsState): Promise<boolean> {
       timeout: cliCreateForm.timeout * 1000,
       emoji: cliCreateForm.emoji || "🔧",
       tailTrimMarker: cliCreateForm.tailTrimMarker || undefined,
+      personalityId: cliCreateForm.personalityId || undefined,
     });
 
     await loadCliAgents(state);
