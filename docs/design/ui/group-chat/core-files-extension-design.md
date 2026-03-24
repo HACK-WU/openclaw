@@ -289,7 +289,7 @@ Core Files 存储在 CLI Agent 的**身份文件存储目录**，这是一个固
 | 3      | `~/.openclaw`                 | 默认状态目录           |
 | 4      | `~/.clawdbot` 等              | 兼容旧版目录（如存在） |
 
-> **注意**：开发模式下可能使用不同的状态目录路径。使用 `resolveCliAgentWorkspaceDir(agentId)` 函数获取实际路径。
+> **注意**：开发模式下可能使用不同的状态目录路径。使用 `resolveCliAgentIdentityDir(agentId)` 函数获取实际路径。
 
 **关键区别**：
 
@@ -344,7 +344,7 @@ const CLI_AGENT_ALLOWED_FILES = new Set<string>(["IDENTITY.md", "AGENTS.md"]);
 | `listCliAgentFiles(agentId)` | 第 155 行 | 列出工作空间中的文件 |
 | `readCliAgentFile(agentId, name)` | 第 178 行 | 读取文件内容 |
 | `writeCliAgentFile(agentId, name, content)` | 第 199 行 | 写入文件内容 |
-| `generateCliAgentWorkspaceFiles(entry)` | 第 220 行 | 创建 Agent 时生成默认文件 |
+| `generateCliAgentIdentityFiles(entry)` | 第 220 行 | 创建 Agent 时生成默认文件 |
 
 **Gateway RPC 方法**: `src/gateway/server-methods/cli-agents.ts`
 | 方法 | 行号 | 作用 |
@@ -404,14 +404,14 @@ const CLI_AGENT_ALLOWED_FILES = new Set<string>([
 
 **文件**: `src/commands/cli-agents.config.ts`
 
-修改 `generateCliAgentWorkspaceFiles()` 函数（第 220 行），新增 SOUL.md 和 TOOLS.md 的生成逻辑：
+修改 `generateCliAgentIdentityFiles()` 函数（第 220 行），新增 SOUL.md 和 TOOLS.md 的生成逻辑：
 
 ```typescript
-export async function generateCliAgentWorkspaceFiles(
+export async function generateCliAgentIdentityFiles(
   entry: CliAgentEntry,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
-  const workspaceDir = resolveCliAgentWorkspaceDir(entry.id, env);
+  const workspaceDir = resolveCliAgentIdentityDir(entry.id, env);
   ensureDir(workspaceDir);
 
   // IDENTITY.md（现有，保持不变）
@@ -586,12 +586,12 @@ function buildSoulMdTemplate(): string {
 
 ### 10.1 必须修改
 
-| 文件                                | 修改内容                                                                                                                              | 优先级 |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| `src/commands/cli-agents.config.ts` | 1. 扩展 `CLI_AGENT_ALLOWED_FILES` 添加 PERSONALITY.md、SOUL.md、TOOLS.md<br>2. 修改 `generateCliAgentWorkspaceFiles()` 生成新文件模板 | P0     |
-| `ui/src/ui/i18n/locales/zh-CN.ts`   | 添加 core files 相关中文文案（含性格相关）                                                                                            | P1     |
-| `ui/src/ui/i18n/locales/en.ts`      | 添加 core files 相关英文文案（含性格相关）                                                                                            | P1     |
-| `ui/src/ui/i18n/locales/zh-TW.ts`   | 添加 core files 相关繁体中文文案（含性格相关）                                                                                        | P1     |
+| 文件                                | 修改内容                                                                                                                             | 优先级 |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| `src/commands/cli-agents.config.ts` | 1. 扩展 `CLI_AGENT_ALLOWED_FILES` 添加 PERSONALITY.md、SOUL.md、TOOLS.md<br>2. 修改 `generateCliAgentIdentityFiles()` 生成新文件模板 | P0     |
+| `ui/src/ui/i18n/locales/zh-CN.ts`   | 添加 core files 相关中文文案（含性格相关）                                                                                           | P1     |
+| `ui/src/ui/i18n/locales/en.ts`      | 添加 core files 相关英文文案（含性格相关）                                                                                           | P1     |
+| `ui/src/ui/i18n/locales/zh-TW.ts`   | 添加 core files 相关繁体中文文案（含性格相关）                                                                                       | P1     |
 
 ### 10.2 可选优化
 

@@ -454,8 +454,8 @@ updateCliAgent(state)
 ```typescript
 // 需要实现目录迁移逻辑
 async function migrateCliAgentWorkspace(oldId: string, newId: string) {
-  const oldDir = resolveCliAgentWorkspaceDir(oldId);
-  const newDir = resolveCliAgentWorkspaceDir(newId);
+  const oldDir = resolveCliAgentIdentityDir(oldId);
+  const newDir = resolveCliAgentIdentityDir(newId);
   await fs.rename(oldDir, newDir);
 }
 ```

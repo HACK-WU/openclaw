@@ -1,12 +1,12 @@
 # CLI Agent 核心文件注入实现方案
 
-> 本文档描述 CLI Agent 首次交互时注入核心文件说明的后台实现方案。
+> 本文档描述 CLI Agent 核心文件注入的后台实现方案。
 
 ## 1. 功能概述
 
 ### 1.1 目标
 
-在 CLI Agent **首次交互**时，告知 CLI 以下核心文件路径及其作用：
+在 CLI Agent 交互时注入核心文件信息：
 
 | 文件             | 作用                                      |
 | ---------------- | ----------------------------------------- |
@@ -16,17 +16,19 @@
 | `AGENTS.md`      | 项目规范与开发指南                        |
 | `TOOLS.md`       | 环境特定配置与设备信息                    |
 
-### 1.2 注入时机
+### 1.2 注入策略
 
-- **首次交互**：CLI Agent 被首次 @mention 时注入完整的核心文件说明
-- **后续交互**：不重复注入，避免冗余
+| 交互类型         | 注入内容                                                         | 说明                                          |
+| ---------------- | ---------------------------------------------------------------- | --------------------------------------------- |
+| **首次启动**     | 读取并注入 `PERSONALITY.md`、`SOUL.md`、`AGENTS.md` **文件内容** | 让 CLI 立即了解自己的性格、行为准则和项目规范 |
+| **后续每次对话** | 注入核心文件**路径说明**（不读取内容）                           | 提醒 CLI 这些文件的位置，需要时可自行读取     |
 
 ### 1.3 注入位置
 
-核心文件说明位于**系统上下文上方**，消息结构如下：
+核心文件信息位于**系统上下文上方**，消息结构如下：
 
 ```
-核心文件说明
+核心文件信息（首次：内容 / 后续：路径）
     ↓
 系统上下文
     ↓
@@ -63,7 +65,7 @@
 
 ### 2.2 目录解析函数
 
-使用现有的 `resolveCliAgentWorkspaceDir()` 函数获取核心文件存储目录：
+使用现有的 `resolveCliAgentIdentityDir()` 函数获取核心文件存储目录：
 
 ```typescript
 // src/agents/cli-agent-scope.ts
@@ -72,7 +74,7 @@
  * 解析 CLI Agent 身份文件存储目录
  * 返回: {stateDir}/cli-agents/{agentId}/
  */
-export function resolveCliAgentWorkspaceDir(
+export function resolveCliAgentIdentityDir(
   agentId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
@@ -85,96 +87,184 @@ export function resolveCliAgentWorkspaceDir(
 ```typescript
 // src/group-chat/bridge-context.ts
 
-import { resolveCliAgentWorkspaceDir } from "../agents/cli-agent-scope.js";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { resolveCliAgentIdentityDir } from "../agents/cli-agent-scope.js";
+import { getLogger } from "../logging.js";
+
+const logger = getLogger("bridge-context");
 
 /**
- * 构建核心文件说明区块
+ * 需要在首次交互时读取内容的核心文件列表
+ */
+const FIRST_INTERACTION_CONTENT_FILES = ["PERSONALITY.md", "SOUL.md", "AGENTS.md"] as const;
+
+/**
+ * 所有核心文件列表
+ */
+const ALL_CORE_FILES = [
+  "IDENTITY.md",
+  "PERSONALITY.md",
+  "SOUL.md",
+  "AGENTS.md",
+  "TOOLS.md",
+] as const;
+
+/**
+ * 读取单个核心文件内容
+ *
+ * @param identityDir - CLI Agent 身份文件存储目录
+ * @param fileName - 文件名
+ * @returns 文件内容，如果文件不存在则返回 null
+ */
+async function readCoreFileContent(identityDir: string, fileName: string): Promise<string | null> {
+  const filePath = path.join(identityDir, fileName);
+  try {
+    const content = await fs.readFile(filePath, "utf-8");
+    return content.trim() || null;
+  } catch (error) {
+    // 文件不存在或读取失败，返回 null
+    logger.debug(`Core file not found or unreadable: ${filePath}`);
+    return null;
+  }
+}
+
+/**
+ * 构建首次交互的核心文件内容区块
+ *
+ * 读取 PERSONALITY.md、SOUL.md、AGENTS.md 的内容并注入
  *
  * @param agentId - CLI Agent ID
  * @param env - 环境变量（用于解析状态目录）
  */
-export function buildCoreFilesSection(
+export async function buildCoreFilesContentSection(
+  agentId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<string> {
+  // 获取 CLI Agent 身份文件存储目录（注意：这是身份文件目录，不是工作目录 cwd）
+  const identityDir = resolveCliAgentIdentityDir(agentId, env);
+  const lines: string[] = [];
+
+  lines.push(
+    "# ================================================================================",
+    "# 核心文件内容（定义你的性格、行为准则和项目规范）",
+    "# ================================================================================",
+    "",
+  );
+
+  // 读取并注入 PERSONALITY.md、SOUL.md、AGENTS.md 的内容
+  for (const fileName of FIRST_INTERACTION_CONTENT_FILES) {
+    const content = await readCoreFileContent(identityDir, fileName);
+    const fileTitle = getFileTitle(fileName);
+
+    lines.push(`# ─── ${fileName} — ${fileTitle} ───`);
+    lines.push(`# 路径：${identityDir}/${fileName}`);
+    lines.push("");
+
+    if (content) {
+      // 将文件内容每行添加 # 前缀
+      const contentLines = content.split("\n").map((line) => `# ${line}`);
+      lines.push(...contentLines);
+    } else {
+      lines.push(`# [文件不存在或为空]`);
+    }
+    lines.push("");
+  }
+
+  lines.push("# ================================================================================");
+
+  return lines.join("\n");
+}
+
+/**
+ * 构建后续交互的核心文件路径区块
+ *
+ * 仅注入文件路径说明，不读取文件内容
+ *
+ * @param agentId - CLI Agent ID
+ * @param env - 环境变量（用于解析状态目录）
+ */
+export function buildCoreFilesPathSection(
   agentId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  // 获取 CLI Agent 身份文件存储目录
-  const workspaceDir = resolveCliAgentWorkspaceDir(agentId, env);
+  // 获取 CLI Agent 身份文件存储目录（注意：这是身份文件目录，不是工作目录 cwd）
+  const identityDir = resolveCliAgentIdentityDir(agentId, env);
 
   const lines = [
     "# ================================================================================",
-    "# 核心文件说明（这些是你需要了解的关键文件）",
+    "# 核心文件路径（需要时可自行读取）",
     "# ================================================================================",
     "",
     "# ─── 身份与记忆 ───",
     "",
     "# IDENTITY.md — 你是谁",
-    `# 路径：${workspaceDir}/IDENTITY.md`,
-    "# 作用：定义你的身份信息（名称、类型、风格、emoji、头像）",
-    "#       这是你的"身份证"，帮助你建立自我认知",
+    `# 路径：${identityDir}/IDENTITY.md`,
     "",
     "# PERSONALITY.md — 你的性格",
-    `# 路径：${workspaceDir}/PERSONALITY.md`,
-    "# 作用：定义你的性格特征（思维方式、沟通风格、决策倾向）",
-    "#       让你拥有独特的工作风格和视角",
+    `# 路径：${identityDir}/PERSONALITY.md`,
     "",
     "# SOUL.md — 你的灵魂",
-    `# 路径：${workspaceDir}/SOUL.md`,
-    "# 作用：定义你的核心价值观和行为准则",
-    "#       这是你作为"真正的助手"而非"聊天机器人"的指南",
+    `# 路径：${identityDir}/SOUL.md`,
     "",
     "# ─── 项目与工具 ───",
     "",
     "# AGENTS.md — 项目指南",
-    `# 路径：${workspaceDir}/AGENTS.md`,
-    "# 作用：项目级别的开发规范和指南",
-    "#       这是你理解项目工作方式的主要参考",
+    `# 路径：${identityDir}/AGENTS.md`,
     "",
     "# TOOLS.md — 工具与环境笔记",
-    `# 路径：${workspaceDir}/TOOLS.md`,
-    "# 作用：存储环境特定的配置和设备信息",
-    "#       这是你的"本地速查表"，帮助你适应特定环境",
-    "",
-    "# ─── 建议 ───",
-    "",
-    "# 首次进入新项目时，建议按以下顺序阅读：",
-    "# 1. IDENTITY.md → 了解自己的身份",
-    "# 2. PERSONALITY.md → 理解自己的性格特征",
-    "# 3. SOUL.md → 掌握行为准则",
-    "# 4. AGENTS.md → 掌握项目规范",
-    "# 5. TOOLS.md → 熟悉环境配置",
+    `# 路径：${identityDir}/TOOLS.md`,
     "",
     "# ================================================================================",
   ];
 
   return lines.join("\n");
 }
+
+/**
+ * 获取文件的中文标题
+ */
+function getFileTitle(fileName: string): string {
+  const titles: Record<string, string> = {
+    "IDENTITY.md": "你是谁",
+    "PERSONALITY.md": "你的性格",
+    "SOUL.md": "你的灵魂",
+    "AGENTS.md": "项目指南",
+    "TOOLS.md": "工具与环境笔记",
+  };
+  return titles[fileName] ?? fileName;
+}
 ```
 
 ### 2.4 集成到上下文构建流程
 
-在 `buildCliContextMessage()` 函数中集成核心文件说明：
+在 `buildCliContextMessage()` 函数中集成核心文件注入：
 
 ```typescript
 // src/group-chat/bridge-trigger.ts
 
-import { buildCoreFilesSection } from "./bridge-context.js";
+import { buildCoreFilesContentSection, buildCoreFilesPathSection } from "./bridge-context.js";
 
-function buildCliContextMessage(params: {
+async function buildCliContextMessage(params: {
   meta: GroupSessionEntry;
   groupId: string;
   agentId: string;
   transcriptSnapshot: GroupChatMessage[];
   isFirstInteraction: boolean;
   bridgeConfig: BridgeConfig;
-}): { contextMessage: string; requestContent: string; roleReminderSent: boolean } {
+}): Promise<{ contextMessage: string; requestContent: string; roleReminderSent: boolean }> {
   const { meta, groupId, agentId, transcriptSnapshot, isFirstInteraction } = params;
 
   const sections: string[] = [];
   let roleReminderSent = false;
 
-  // ─── 首次交互：核心文件说明 ───
+  // ─── 核心文件注入 ───
   if (isFirstInteraction) {
-    sections.push(buildCoreFilesSection(agentId));
+    // 首次交互：读取并注入文件内容
+    sections.push(await buildCoreFilesContentSection(agentId));
+  } else {
+    // 后续交互：仅注入路径说明
+    sections.push(buildCoreFilesPathSection(agentId));
   }
 
   // ─── 系统上下文 ───
@@ -203,17 +293,17 @@ function buildCliContextMessage(params: {
 
 ### 3.1 需要修改的文件
 
-| 文件                               | 修改内容                                         |
-| ---------------------------------- | ------------------------------------------------ |
-| `src/group-chat/bridge-context.ts` | 新增 `buildCoreFilesSection()` 函数              |
-| `src/group-chat/bridge-trigger.ts` | 修改 `buildCliContextMessage()` 集成核心文件说明 |
+| 文件                               | 修改内容                                                                    |
+| ---------------------------------- | --------------------------------------------------------------------------- |
+| `src/group-chat/bridge-context.ts` | 新增 `buildCoreFilesContentSection()` 和 `buildCoreFilesPathSection()` 函数 |
+| `src/group-chat/bridge-trigger.ts` | 修改 `buildCliContextMessage()` 集成核心文件注入逻辑                        |
 
 ### 3.2 已有的依赖
 
-| 文件                            | 用途                                 |
-| ------------------------------- | ------------------------------------ |
-| `src/agents/cli-agent-scope.ts` | `resolveCliAgentWorkspaceDir()` 函数 |
-| `src/config/paths.ts`           | `resolveStateDir()` 函数             |
+| 文件                            | 用途                                |
+| ------------------------------- | ----------------------------------- |
+| `src/agents/cli-agent-scope.ts` | `resolveCliAgentIdentityDir()` 函数 |
+| `src/config/paths.ts`           | `resolveStateDir()` 函数            |
 
 ---
 
@@ -224,16 +314,63 @@ function buildCliContextMessage(params: {
 ```typescript
 // src/group-chat/bridge-context.test.ts
 
-import { buildCoreFilesSection } from "./bridge-context.js";
-import { resolveCliAgentWorkspaceDir } from "../agents/cli-agent-scope.js";
+import { buildCoreFilesContentSection, buildCoreFilesPathSection } from "./bridge-context.js";
+import { resolveCliAgentIdentityDir } from "../agents/cli-agent-scope.js";
+import { promises as fs } from "node:fs";
 
 vi.mock("../agents/cli-agent-scope.js", () => ({
-  resolveCliAgentWorkspaceDir: vi.fn((agentId: string) => `/mock-state/cli-agents/${agentId}`),
+  resolveCliAgentIdentityDir: vi.fn((agentId: string) => `/mock-state/cli-agents/${agentId}`),
 }));
 
-describe("buildCoreFilesSection", () => {
-  it("should include agent workspace directory in paths", () => {
-    const result = buildCoreFilesSection("test-agent");
+vi.mock("node:fs", () => ({
+  promises: {
+    readFile: vi.fn(),
+  },
+}));
+
+describe("buildCoreFilesContentSection", () => {
+  it("should read and include PERSONALITY.md, SOUL.md, AGENTS.md content", async () => {
+    const mockFs = vi.mocked(fs.readFile);
+    mockFs.mockImplementation(async (path: string) => {
+      if (path.includes("PERSONALITY.md")) return "性格内容";
+      if (path.includes("SOUL.md")) return "灵魂内容";
+      if (path.includes("AGENTS.md")) return "项目指南内容";
+      throw new Error("File not found");
+    });
+
+    const result = await buildCoreFilesContentSection("test-agent");
+
+    expect(result).toContain("PERSONALITY.md");
+    expect(result).toContain("SOUL.md");
+    expect(result).toContain("AGENTS.md");
+    expect(result).toContain("性格内容");
+    expect(result).toContain("灵魂内容");
+    expect(result).toContain("项目指南内容");
+  });
+
+  it("should handle missing files gracefully", async () => {
+    const mockFs = vi.mocked(fs.readFile);
+    mockFs.mockRejectedValue(new Error("File not found"));
+
+    const result = await buildCoreFilesContentSection("test-agent");
+
+    expect(result).toContain("[文件不存在或为空]");
+  });
+
+  it("should not include IDENTITY.md and TOOLS.md content", async () => {
+    const result = await buildCoreFilesContentSection("test-agent");
+
+    // IDENTITY.md 和 TOOLS.md 不在首次内容注入中
+    expect(result).not.toContain("IDENTITY.md — 你是谁");
+    expect(result).not.toContain("TOOLS.md — 工具与环境笔记");
+  });
+});
+
+describe("buildCoreFilesPathSection", () => {
+  it("should include all five core file paths", () => {
+    const result = buildCoreFilesPathSection("test-agent");
+
+    // 验证路径使用的是身份文件存储目录，而非工作目录
     expect(result).toContain("/mock-state/cli-agents/test-agent/IDENTITY.md");
     expect(result).toContain("/mock-state/cli-agents/test-agent/PERSONALITY.md");
     expect(result).toContain("/mock-state/cli-agents/test-agent/SOUL.md");
@@ -241,35 +378,29 @@ describe("buildCoreFilesSection", () => {
     expect(result).toContain("/mock-state/cli-agents/test-agent/TOOLS.md");
   });
 
-  it("should include all five core files", () => {
-    const result = buildCoreFilesSection("test-agent");
-    expect(result).toContain("IDENTITY.md");
-    expect(result).toContain("PERSONALITY.md");
-    expect(result).toContain("SOUL.md");
-    expect(result).toContain("AGENTS.md");
-    expect(result).toContain("TOOLS.md");
-  });
+  it("should not read file contents", () => {
+    const mockFs = vi.mocked(fs.readFile);
 
-  it("should include file descriptions", () => {
-    const result = buildCoreFilesSection("test-agent");
-    expect(result).toContain("你是谁");
-    expect(result).toContain("你的性格");
-    expect(result).toContain("你的灵魂");
-    expect(result).toContain("项目指南");
-    expect(result).toContain("工具与环境笔记");
+    buildCoreFilesPathSection("test-agent");
+
+    // 不应该调用文件读取
+    expect(mockFs).not.toHaveBeenCalled();
   });
 });
 ```
 
 ### 4.2 集成测试
 
-- 验证首次交互时核心文件说明出现在系统上下文上方
-- 验证后续交互不包含核心文件说明
-- 验证路径使用 `resolveCliAgentWorkspaceDir()` 正确解析
+- 验证首次交互时注入 `PERSONALITY.md`、`SOUL.md`、`AGENTS.md` 的文件内容
+- 验证后续交互时仅注入核心文件路径说明
+- 验证路径使用 `resolveCliAgentIdentityDir()` 正确解析
+- 验证文件不存在时的优雅降级
 
 ---
 
-## 5. 关键区别：身份文件目录 vs 工作目录
+## 5. 关键区别
+
+### 5.1 身份文件目录 vs 工作目录
 
 | 概念                   | 路径                               | 用途                                 |
 | ---------------------- | ---------------------------------- | ------------------------------------ |
@@ -277,6 +408,14 @@ describe("buildCoreFilesSection", () => {
 | **CLI Agent 工作目录** | 用户配置的 `cwd` 或群聊项目目录    | CLI 进程启动的工作目录，用于执行任务 |
 
 **重要**：这两个目录是**独立的**，身份文件始终存储在固定的状态目录下，不受 `cwd` 配置影响。
+
+### 5.2 首次注入 vs 后续注入
+
+| 维度         | 首次启动                                      | 后续对话                   |
+| ------------ | --------------------------------------------- | -------------------------- |
+| **注入内容** | `PERSONALITY.md`、`SOUL.md`、`AGENTS.md` 内容 | 所有核心文件路径说明       |
+| **是否读取** | 是（异步读取文件内容）                        | 否（仅构建路径字符串）     |
+| **目的**     | 让 CLI 立即了解自己的性格、行为准则和项目规范 | 提醒文件位置，供需要时读取 |
 
 ---
 

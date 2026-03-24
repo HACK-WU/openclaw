@@ -198,7 +198,7 @@ export function resolveCliBridgeConfigPath(env: NodeJS.ProcessEnv = process.env)
  * 解析单个 CLI Agent 的工作空间目录。
  * 即 ~/.openclaw-dev/cli-agents/{agentId}/
  */
-export function resolveCliAgentWorkspaceDir(
+export function resolveCliAgentIdentityDir(
   agentId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
@@ -730,7 +730,7 @@ GroupMember = { agentId, name（Agent 名称）, bridge: BridgeConfig }
 | ------------------------------------------ | ------------------------------------------------------------------------------------- |
 | `src/config/types.cli-agents.ts`           | CliAgentEntry / CliBridgeConfig 类型定义                                              |
 | `src/commands/cli-agents.config.ts`        | CLI Agent 配置 CRUD（list/find/upsert/remove）                                        |
-| `src/agents/cli-agent-scope.ts`            | CLI Agent 目录解析（resolveCliAgentsRootDir / resolveCliAgentWorkspaceDir）           |
+| `src/agents/cli-agent-scope.ts`            | CLI Agent 目录解析（resolveCliAgentsRootDir / resolveCliAgentIdentityDir）            |
 | `src/agents/agent-id-validation.ts`        | AgentID 格式校验（isValidAgentId / canAutoGenerateAgentId / validateAgentUniqueness） |
 | `src/gateway/server-methods/cli-agents.ts` | `cliAgents.*` RPC 方法实现                                                            |
 
