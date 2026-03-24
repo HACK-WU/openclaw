@@ -1,7 +1,11 @@
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import {
-  buildBootstrapInjectionStats,
+  resolveAgentIdentityDir,
+  resolveAgentWorkspaceDir,
+  resolveDefaultAgentId,
+} from "../agents/agent-scope.js";
+import {
   analyzeBootstrapBudget,
+  buildBootstrapInjectionStats,
 } from "../agents/bootstrap-budget.js";
 import { resolveBootstrapContextForRun } from "../agents/bootstrap-files.js";
 import {
@@ -31,11 +35,14 @@ function formatCauses(causes: Array<"per-file-limit" | "total-limit">): string {
 }
 
 export async function noteBootstrapFileSize(cfg: OpenClawConfig) {
-  const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
+  const defaultAgentId = resolveDefaultAgentId(cfg);
+  const workspaceDir = resolveAgentWorkspaceDir(cfg, defaultAgentId);
+  const identityDir = resolveAgentIdentityDir(cfg, defaultAgentId);
   const bootstrapMaxChars = resolveBootstrapMaxChars(cfg);
   const bootstrapTotalMaxChars = resolveBootstrapTotalMaxChars(cfg);
   const { bootstrapFiles, contextFiles } = await resolveBootstrapContextForRun({
     workspaceDir,
+    identityDir,
     config: cfg,
   });
   const stats = buildBootstrapInjectionStats({

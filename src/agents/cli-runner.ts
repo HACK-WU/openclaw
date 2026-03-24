@@ -9,7 +9,7 @@ import { enqueueSystemEvent } from "../infra/system-events.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
 import { scopedHeartbeatWakeOptions } from "../routing/session-key.js";
-import { resolveSessionAgentIds } from "./agent-scope.js";
+import { resolveAgentIdentityDir, resolveSessionAgentIds } from "./agent-scope.js";
 import {
   analyzeBootstrapBudget,
   buildBootstrapInjectionStats,
@@ -20,8 +20,8 @@ import { makeBootstrapWarn, resolveBootstrapContextForRun } from "./bootstrap-fi
 import { resolveCliBackendConfig } from "./cli-backends.js";
 import {
   appendImagePathsToPrompt,
-  buildCliSupervisorScopeKey,
   buildCliArgs,
+  buildCliSupervisorScopeKey,
   buildSystemPrompt,
   enqueueCliRun,
   normalizeCliModel,
@@ -105,8 +105,14 @@ export async function runCliAgent(params: {
     .join("\n");
 
   const sessionLabel = params.sessionKey ?? params.sessionId;
+  // 解析身份目录，确保 bootstrap 文件从正确的 identityDir 加载
+  const identityDir =
+    params.config && params.agentId
+      ? resolveAgentIdentityDir(params.config, params.agentId)
+      : undefined;
   const { bootstrapFiles, contextFiles } = await resolveBootstrapContextForRun({
     workspaceDir,
+    identityDir,
     config: params.config,
     sessionKey: params.sessionKey,
     sessionId: params.sessionId,

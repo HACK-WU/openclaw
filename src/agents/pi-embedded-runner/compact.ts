@@ -20,7 +20,11 @@ import { getMachineDisplayName } from "../../infra/machine-name.js";
 import { generateSecureToken } from "../../infra/secure-random.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { type enqueueCommand, enqueueCommandInLane } from "../../process/command-queue.js";
-import { isCronSessionKey, isSubagentSessionKey } from "../../routing/session-key.js";
+import {
+  isCronSessionKey,
+  isSubagentSessionKey,
+  resolveAgentIdFromSessionKey,
+} from "../../routing/session-key.js";
 import { resolveSignalReactionLevel } from "../../signal/reaction-level.js";
 import { resolveTelegramInlineButtonsScope } from "../../telegram/inline-buttons.js";
 import { resolveTelegramReactionLevel } from "../../telegram/reaction-level.js";
@@ -29,7 +33,7 @@ import { resolveUserPath } from "../../utils.js";
 import { normalizeMessageChannel } from "../../utils/message-channel.js";
 import { isReasoningTagProvider } from "../../utils/provider-utils.js";
 import { resolveOpenClawAgentDir } from "../agent-paths.js";
-import { resolveSessionAgentIds } from "../agent-scope.js";
+import { resolveAgentIdentityDir, resolveSessionAgentIds } from "../agent-scope.js";
 import type { ExecElevatedDefaults } from "../bash-tools.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "../bootstrap-files.js";
 import { listChannelSupportedActions, resolveChannelMessageToolHints } from "../channel-tools.js";
@@ -399,8 +403,14 @@ export async function compactEmbeddedPiSessionDirect(
 
     const sessionLabel = params.sessionKey ?? params.sessionId;
     const resolvedMessageProvider = params.messageChannel ?? params.messageProvider;
+    // 解析身份目录，确保 bootstrap 文件从正确的 identityDir 加载
+    const compactAgentId = resolveAgentIdFromSessionKey(params.sessionKey);
+    const identityDir = params.config
+      ? resolveAgentIdentityDir(params.config, compactAgentId)
+      : undefined;
     const { contextFiles } = await resolveBootstrapContextForRun({
       workspaceDir: effectiveWorkspace,
+      identityDir,
       config: params.config,
       sessionKey: params.sessionKey,
       sessionId: params.sessionId,

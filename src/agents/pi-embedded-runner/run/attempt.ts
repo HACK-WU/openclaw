@@ -29,13 +29,13 @@ import { resolveUserPath } from "../../../utils.js";
 import { normalizeMessageChannel } from "../../../utils/message-channel.js";
 import { isReasoningTagProvider } from "../../../utils/provider-utils.js";
 import { resolveOpenClawAgentDir } from "../../agent-paths.js";
-import { resolveSessionAgentIds } from "../../agent-scope.js";
+import { resolveAgentIdentityDir, resolveSessionAgentIds } from "../../agent-scope.js";
 import { createAnthropicPayloadLogger } from "../../anthropic-payload-log.js";
 import {
   analyzeBootstrapBudget,
+  buildBootstrapInjectionStats,
   buildBootstrapPromptWarning,
   buildBootstrapTruncationReportMeta,
-  buildBootstrapInjectionStats,
 } from "../../bootstrap-budget.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "../../bootstrap-files.js";
 import { createCacheTrace } from "../../cache-trace.js";
@@ -795,9 +795,15 @@ export async function runEmbeddedAttempt(
     });
 
     const sessionLabel = params.sessionKey ?? params.sessionId;
+    // 解析身份目录，确保 bootstrap 文件从正确的 identityDir 加载
+    const identityDir =
+      params.config && params.agentId
+        ? resolveAgentIdentityDir(params.config, params.agentId)
+        : undefined;
     const { bootstrapFiles: hookAdjustedBootstrapFiles, contextFiles } =
       await resolveBootstrapContextForRun({
         workspaceDir: effectiveWorkspace,
+        identityDir,
         config: params.config,
         sessionKey: params.sessionKey,
         sessionId: params.sessionId,

@@ -1,5 +1,5 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { resolveSessionAgentIds } from "../../agents/agent-scope.js";
+import { resolveAgentIdentityDir, resolveSessionAgentIds } from "../../agents/agent-scope.js";
 import { resolveBootstrapContextForRun } from "../../agents/bootstrap-files.js";
 import { resolveDefaultModelForAgent } from "../../agents/model-selection.js";
 import type { EmbeddedContextFile } from "../../agents/pi-embedded-helpers.js";
@@ -28,8 +28,12 @@ export async function resolveCommandsSystemPromptBundle(
   params: HandleCommandsParams,
 ): Promise<CommandsSystemPromptBundle> {
   const workspaceDir = params.workspaceDir;
+  // 解析身份目录，确保 bootstrap 文件从正确的 identityDir 加载
+  const identityDir =
+    params.cfg && params.agentId ? resolveAgentIdentityDir(params.cfg, params.agentId) : undefined;
   const { bootstrapFiles, contextFiles: injectedFiles } = await resolveBootstrapContextForRun({
     workspaceDir,
+    identityDir,
     config: params.cfg,
     sessionKey: params.sessionKey,
     sessionId: params.sessionEntry?.sessionId,
