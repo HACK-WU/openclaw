@@ -18,6 +18,7 @@ import type { GatewayBroadcastFn } from "../gateway/server-broadcast.js";
 import { getLogger } from "../logging.js";
 import type { TriggerAgentParams, TriggerAgentResult } from "./agent-trigger.js";
 import { updateChainState } from "./anti-loop.js";
+import { buildCoreFilesContentSection, buildCoreFilesPathSection } from "./bridge-context.js";
 import {
   clearFrontendExtractedText,
   createBridgePty,
@@ -176,7 +177,7 @@ export async function triggerBridgeAgent(
     }
 
     // 2. Build hidden context + visible request for the CLI.
-    const { contextMessage, requestContent, roleReminderSent } = buildCliContextMessage({
+    const { contextMessage, requestContent, roleReminderSent } = await buildCliContextMessage({
       meta,
       groupId,
       agentId,
@@ -343,14 +344,14 @@ export async function triggerBridgeAgent(
  * (CLI treats # as comments), while the actual request is typed separately so
  * the terminal behaves more like the test flow.
  */
-function buildCliContextMessage(params: {
+async function buildCliContextMessage(params: {
   meta: GroupSessionEntry;
   groupId: string;
   agentId: string;
   transcriptSnapshot: GroupChatMessage[];
   isFirstInteraction: boolean;
   bridgeConfig: BridgeConfig;
-}): { contextMessage: string; requestContent: string; roleReminderSent: boolean } {
+}): Promise<{ contextMessage: string; requestContent: string; roleReminderSent: boolean }> {
   const {
     meta,
     groupId,
@@ -370,6 +371,16 @@ function buildCliContextMessage(params: {
 
   const sections: string[] = [];
   let roleReminderSent = false;
+
+  // ─── 核心文件注入 ───
+  if (isFirstInteraction) {
+    // 首次交互：① 注入文件内容 ② 注入所有文件路径说明
+    sections.push(await buildCoreFilesContentSection(agentId));
+    sections.push(buildCoreFilesPathSection(agentId));
+  } else {
+    // 后续交互：仅注入路径说明
+    sections.push(buildCoreFilesPathSection(agentId));
+  }
 
   if (isFirstInteraction) {
     // Full context for first interaction
