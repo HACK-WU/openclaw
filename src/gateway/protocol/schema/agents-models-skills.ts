@@ -52,6 +52,8 @@ export const AgentsCreateParamsSchema = Type.Object(
     avatar: Type.Optional(Type.String()),
     /** Optional explicit AgentID. When omitted, auto-generated from name. */
     agentId: Type.Optional(NonEmptyString),
+    /** Optional personality ID (e.g., "architect", "implementer"). */
+    personalityId: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );

@@ -60,6 +60,8 @@ export const CliAgentsCreateParamsSchema = Type.Object(
     timeout: Type.Optional(Type.Integer({ minimum: 1000 })),
     emoji: Type.Optional(Type.String()),
     tailTrimMarker: Type.Optional(Type.String()),
+    /** Optional personality ID (e.g., "architect", "implementer"). */
+    personalityId: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
