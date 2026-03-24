@@ -14,15 +14,16 @@ import {
 import { handleAgentEvent, resetToolStream, type AgentEventPayload } from "./app-tool-stream.ts";
 import type { OpenClawApp } from "./app.ts";
 import { shouldReloadHistoryForFinalEvent } from "./chat-event-reload.ts";
-import { loadAgents, loadToolsCatalog, loadCliAgents } from "./controllers/agents.ts";
+import { loadAgents, loadCliAgents, loadToolsCatalog } from "./controllers/agents.ts";
 import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
 import {
-  loadChatHistory,
-  flushChatStream,
   clearChatStreamThrottle,
+  flushChatStream,
+  handleChatEvent,
+  loadChatHistory,
   updateChatStreamFromAssistantText,
+  type ChatEventPayload,
 } from "./controllers/chat.ts";
-import { handleChatEvent, type ChatEventPayload } from "./controllers/chat.ts";
 import { loadDevices } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import {
@@ -32,35 +33,35 @@ import {
   removeExecApproval,
 } from "./controllers/exec-approval.ts";
 import {
+  enterGroupChat,
   handleGroupMessageEvent,
   handleGroupStreamEvent,
   handleGroupSystemEvent,
   handleGroupTerminalEvent,
   handleGroupTerminalStatusEvent,
   loadGroupList,
-  enterGroupChat,
   openGroupList,
   type GroupChatMessage,
+  type GroupChatState,
   type GroupStreamPayload,
   type GroupSystemPayload,
-  type GroupChatState,
   type GroupTerminalPayload,
   type GroupTerminalStatusPayload,
 } from "./controllers/group-chat.ts";
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import {
+  GatewayBrowserClient,
   resolveGatewayErrorDetailCode,
   type GatewayEventFrame,
   type GatewayHelloOk,
 } from "./gateway.ts";
-import { GatewayBrowserClient } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import type { UiSettings } from "./storage.ts";
 import type {
   AgentsListResult,
-  PresenceEntry,
   HealthSnapshot,
+  PresenceEntry,
   StatusSummary,
   UpdateAvailable,
 } from "./types.ts";
@@ -252,6 +253,10 @@ export function connectGateway(host: GatewayHost) {
       void loadNodes(host as unknown as OpenClawApp, { quiet: true });
       void loadDevices(host as unknown as OpenClawApp, { quiet: true });
       void loadGroupList(host as unknown as Parameters<typeof loadGroupList>[0]);
+      // 无条件加载 sessions，确保导航栏对话列表在所有 tab 下都能显示。
+      // refreshActiveTab 仅在 overview/sessions/chat tab 下加载 sessions，
+      // 其余 tab（如 agents、skills、nodes 等）不会加载，导致对话列表为空。
+      void loadSessions(host as unknown as OpenClawApp);
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
       // Handle pending group ID from URL ?group= parameter
       if (host.pendingGroupId) {
