@@ -4,16 +4,16 @@
  * Implements all `cliAgents.*` gateway methods.
  * CLI Agents are fully independent from general Agents:
  * - Stored in `cli-agents/bridge.json` (not `openclaw.json`)
- * - Workspace at `cli-agents/{agentId}/` (not `agents/{agentId}/`)
+ * - Identity dir at `cli-agents/{agentId}/` (not `agents/{agentId}/`)
  * - No model/skills/channels configuration
  */
 
 import { describeAgentIdError, validateAgentUniqueness } from "../../agents/agent-id-validation.js";
-import { resolveCliAgentWorkspaceDir } from "../../agents/cli-agent-scope.js";
+import { resolveCliAgentIdentityDir } from "../../agents/cli-agent-scope.js";
 import { listAgentEntries } from "../../commands/agents.config.js";
 import {
   findCliAgentEntry,
-  generateCliAgentWorkspaceFiles,
+  generateCliAgentIdentityFiles,
   isAllowedCliAgentFile,
   listCliAgentEntries,
   listCliAgentFiles,
@@ -173,13 +173,13 @@ const handleCliAgentsCreate: GatewayRequestHandler = async ({ params, respond })
     personalityId: optionalString(params, "personalityId"),
   };
 
-  // Write to bridge.json + create workspace files
+  // Write to bridge.json + create identity files
   await upsertCliAgentEntry(entry);
-  await generateCliAgentWorkspaceFiles(entry);
+  await generateCliAgentIdentityFiles(entry);
 
-  const workspace = resolveCliAgentWorkspaceDir(agentId);
-  log.info("[CLI_AGENT_CREATED]", { agentId, name, cliType: cliTypeRaw, workspace });
-  respond(true, { ok: true, agentId, workspace });
+  const identityDir = resolveCliAgentIdentityDir(agentId);
+  log.info("[CLI_AGENT_CREATED]", { agentId, name, cliType: cliTypeRaw, identityDir });
+  respond(true, { ok: true, agentId, identityDir });
 };
 
 const handleCliAgentsUpdate: GatewayRequestHandler = async ({ params, respond }) => {
@@ -240,14 +240,14 @@ const handleCliAgentsUpdate: GatewayRequestHandler = async ({ params, respond })
 
   await upsertCliAgentEntry(updated);
 
-  // If personalityId changed, update PERSONALITY.md in workspace
+  // If personalityId changed, update PERSONALITY.md in identity directory
   if (optionalString(params, "personalityId") !== undefined) {
     const personalityId = optionalString(params, "personalityId");
     const content = personalityId ? getPersonalityContent(personalityId) : "";
     try {
       await writeCliAgentFile(agentId, "PERSONALITY.md", content);
     } catch {
-      // Best-effort: workspace dir may not exist yet
+      // Best-effort: identity dir may not exist yet
     }
   }
 
@@ -286,8 +286,8 @@ const handleCliAgentsFilesList: GatewayRequestHandler = async ({ params, respond
   }
 
   const files = await listCliAgentFiles(agentId);
-  const workspace = resolveCliAgentWorkspaceDir(agentId);
-  respond(true, { agentId, workspace, files });
+  const identityDir = resolveCliAgentIdentityDir(agentId);
+  respond(true, { agentId, identityDir, files });
 };
 
 const handleCliAgentsFilesGet: GatewayRequestHandler = async ({ params, respond }) => {
@@ -300,7 +300,7 @@ const handleCliAgentsFilesGet: GatewayRequestHandler = async ({ params, respond 
 
   if (!isAllowedCliAgentFile(name)) {
     respond(false, undefined, {
-      message: `File "${name}" is not allowed for CLI Agent workspace`,
+      message: `File "${name}" is not allowed for CLI Agent identity directory`,
       code: 400,
     });
     return;
@@ -313,23 +313,23 @@ const handleCliAgentsFilesGet: GatewayRequestHandler = async ({ params, respond 
   }
 
   const result = await readCliAgentFile(agentId, name);
-  const workspace = resolveCliAgentWorkspaceDir(agentId);
+  const identityDir = resolveCliAgentIdentityDir(agentId);
 
   if (!result) {
     respond(true, {
       agentId,
-      workspace,
-      file: { name, path: `${workspace}/${name}`, missing: true },
+      identityDir,
+      file: { name, path: `${identityDir}/${name}`, missing: true },
     });
     return;
   }
 
   respond(true, {
     agentId,
-    workspace,
+    identityDir,
     file: {
       name,
-      path: `${workspace}/${name}`,
+      path: `${identityDir}/${name}`,
       missing: false,
       size: result.size,
       content: result.content,
@@ -347,7 +347,7 @@ const handleCliAgentsFilesSet: GatewayRequestHandler = async ({ params, respond 
 
   if (!isAllowedCliAgentFile(name)) {
     respond(false, undefined, {
-      message: `File "${name}" is not allowed for CLI Agent workspace`,
+      message: `File "${name}" is not allowed for CLI Agent identity directory`,
       code: 400,
     });
     return;
@@ -366,12 +366,12 @@ const handleCliAgentsFilesSet: GatewayRequestHandler = async ({ params, respond 
     return;
   }
 
-  const workspace = resolveCliAgentWorkspaceDir(agentId);
+  const identityDir = resolveCliAgentIdentityDir(agentId);
   respond(true, {
     ok: true,
     agentId,
-    workspace,
-    file: { name, path: `${workspace}/${name}`, missing: false, content },
+    identityDir,
+    file: { name, path: `${identityDir}/${name}`, missing: false, content },
   });
 };
 

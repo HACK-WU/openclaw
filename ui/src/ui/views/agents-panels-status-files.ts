@@ -348,7 +348,7 @@ export function renderAgentFiles(params: {
       </div>
       ${
         list
-          ? html`<div class="muted mono" style="margin-top: 8px;">Workspace: ${list.workspace}</div>`
+          ? html`<div class="muted mono" style="margin-top: 8px;">Identity Directory: ${list.identityDir}</div>`
           : nothing
       }
       ${
@@ -360,7 +360,7 @@ export function renderAgentFiles(params: {
         !list
           ? html`
               <div class="callout info" style="margin-top: 12px">
-                Load the agent workspace files to edit core instructions.
+                Load the agent identity files to edit core instructions.
               </div>
             `
           : html`
@@ -409,7 +409,7 @@ export function renderAgentFiles(params: {
                             activeEntry.missing
                               ? html`
                                   <div class="callout info" style="margin-top: 10px">
-                                    This file is missing. Saving will create it in the agent workspace.
+                                    This file is missing. Saving will create it in the agent identity directory.
                                   </div>
                                 `
                               : nothing

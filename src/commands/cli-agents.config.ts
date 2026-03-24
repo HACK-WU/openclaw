@@ -6,14 +6,14 @@
  *
  * Storage layout:
  *   ~/.openclaw/cli-agents/bridge.json    — global registry (this module)
- *   ~/.openclaw/cli-agents/{agentId}/     — per-agent workspace (IDENTITY.md, AGENTS.md)
+ *   ~/.openclaw/cli-agents/{agentId}/     — per-agent identity dir (IDENTITY.md, AGENTS.md)
  */
 
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  resolveCliAgentWorkspaceDir,
+  resolveCliAgentIdentityDir,
   resolveCliBridgeConfigPath,
 } from "../agents/cli-agent-scope.js";
 import type { CliAgentEntry, CliBridgeConfig } from "../config/types.cli-agents.js";
@@ -110,7 +110,7 @@ export async function upsertCliAgentEntry(
 }
 
 /**
- * Remove a CLI Agent from the global registry and delete its workspace directory.
+ * Remove a CLI Agent from the global registry and delete its identity directory.
  */
 export async function removeCliAgentEntry(
   agentId: string,
@@ -126,10 +126,10 @@ export async function removeCliAgentEntry(
 
   await saveCliBridgeConfig(config, env);
 
-  // Clean up workspace directory
-  const workspaceDir = resolveCliAgentWorkspaceDir(agentId, env);
+  // Clean up identity directory
+  const identityDir = resolveCliAgentIdentityDir(agentId, env);
   try {
-    await fs.promises.rm(workspaceDir, { recursive: true, force: true });
+    await fs.promises.rm(identityDir, { recursive: true, force: true });
   } catch {
     // Best-effort cleanup; directory may not exist
   }
@@ -139,7 +139,7 @@ export async function removeCliAgentEntry(
 
 // ─── Workspace File Management ───
 
-/** Allowed files in a CLI Agent workspace sub-directory. */
+/** Allowed files in a CLI Agent identity directory. */
 const CLI_AGENT_ALLOWED_FILES = new Set<string>([
   "IDENTITY.md",
   "PERSONALITY.md",
@@ -149,24 +149,24 @@ const CLI_AGENT_ALLOWED_FILES = new Set<string>([
 ]);
 
 /**
- * Check whether a filename is allowed in CLI Agent workspace operations.
+ * Check whether a filename is allowed in CLI Agent identity directory operations.
  */
 export function isAllowedCliAgentFile(name: string): boolean {
   return CLI_AGENT_ALLOWED_FILES.has(name);
 }
 
 /**
- * List files in a CLI Agent workspace directory.
+ * List files in a CLI Agent identity directory.
  */
 export async function listCliAgentFiles(
   agentId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<Array<{ name: string; path: string; missing: boolean; size?: number }>> {
-  const workspaceDir = resolveCliAgentWorkspaceDir(agentId, env);
+  const identityDir = resolveCliAgentIdentityDir(agentId, env);
   const files: Array<{ name: string; path: string; missing: boolean; size?: number }> = [];
 
   for (const name of CLI_AGENT_ALLOWED_FILES) {
-    const filePath = path.join(workspaceDir, name);
+    const filePath = path.join(identityDir, name);
     try {
       const stat = await fs.promises.stat(filePath);
       files.push({ name, path: filePath, missing: false, size: stat.size });
@@ -179,7 +179,7 @@ export async function listCliAgentFiles(
 }
 
 /**
- * Read a file from CLI Agent workspace.
+ * Read a file from CLI Agent identity directory.
  */
 export async function readCliAgentFile(
   agentId: string,
@@ -189,7 +189,7 @@ export async function readCliAgentFile(
   if (!CLI_AGENT_ALLOWED_FILES.has(name)) {
     return null;
   }
-  const filePath = path.join(resolveCliAgentWorkspaceDir(agentId, env), name);
+  const filePath = path.join(resolveCliAgentIdentityDir(agentId, env), name);
   try {
     const content = await fs.promises.readFile(filePath, "utf-8");
     const stat = await fs.promises.stat(filePath);
@@ -200,7 +200,7 @@ export async function readCliAgentFile(
 }
 
 /**
- * Write a file to CLI Agent workspace.
+ * Write a file to CLI Agent identity directory.
  */
 export async function writeCliAgentFile(
   agentId: string,
@@ -211,9 +211,9 @@ export async function writeCliAgentFile(
   if (!CLI_AGENT_ALLOWED_FILES.has(name)) {
     return false;
   }
-  const workspaceDir = resolveCliAgentWorkspaceDir(agentId, env);
-  ensureDir(workspaceDir);
-  const filePath = path.join(workspaceDir, name);
+  const identityDir = resolveCliAgentIdentityDir(agentId, env);
+  ensureDir(identityDir);
+  const filePath = path.join(identityDir, name);
   await fs.promises.writeFile(filePath, content, { encoding: "utf-8", mode: 0o600 });
   return true;
 }
@@ -287,14 +287,14 @@ function buildSoulMdTemplate(): string {
 }
 
 /**
- * Generate default workspace files for a new CLI Agent.
+ * Generate default identity files for a new CLI Agent.
  */
-export async function generateCliAgentWorkspaceFiles(
+export async function generateCliAgentIdentityFiles(
   entry: CliAgentEntry,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
-  const workspaceDir = resolveCliAgentWorkspaceDir(entry.id, env);
-  ensureDir(workspaceDir);
+  const identityDir = resolveCliAgentIdentityDir(entry.id, env);
+  ensureDir(identityDir);
 
   // IDENTITY.md
   const identityContent = [
@@ -305,7 +305,7 @@ export async function generateCliAgentWorkspaceFiles(
     "",
   ].join("\n");
 
-  await fs.promises.writeFile(path.join(workspaceDir, "IDENTITY.md"), identityContent, {
+  await fs.promises.writeFile(path.join(identityDir, "IDENTITY.md"), identityContent, {
     encoding: "utf-8",
     mode: 0o600,
   });
@@ -315,14 +315,14 @@ export async function generateCliAgentWorkspaceFiles(
     ? (await import("../personalities/index.js")).getPersonalityContent(entry.personalityId)
     : "";
 
-  await fs.promises.writeFile(path.join(workspaceDir, "PERSONALITY.md"), personalityContent, {
+  await fs.promises.writeFile(path.join(identityDir, "PERSONALITY.md"), personalityContent, {
     encoding: "utf-8",
     mode: 0o600,
   });
 
   // SOUL.md
   const soulContent = buildSoulMdTemplate();
-  await fs.promises.writeFile(path.join(workspaceDir, "SOUL.md"), soulContent, {
+  await fs.promises.writeFile(path.join(identityDir, "SOUL.md"), soulContent, {
     encoding: "utf-8",
     mode: 0o600,
   });
@@ -342,13 +342,13 @@ export async function generateCliAgentWorkspaceFiles(
     "",
   ].join("\n");
 
-  await fs.promises.writeFile(path.join(workspaceDir, "AGENTS.md"), agentsContent, {
+  await fs.promises.writeFile(path.join(identityDir, "AGENTS.md"), agentsContent, {
     encoding: "utf-8",
     mode: 0o600,
   });
 
   // TOOLS.md - empty by default
-  await fs.promises.writeFile(path.join(workspaceDir, "TOOLS.md"), "", {
+  await fs.promises.writeFile(path.join(identityDir, "TOOLS.md"), "", {
     encoding: "utf-8",
     mode: 0o600,
   });

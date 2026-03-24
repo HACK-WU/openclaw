@@ -4,7 +4,7 @@
  * Resolves paths for CLI Agent storage:
  * - Root directory: ~/.openclaw/cli-agents/
  * - Bridge config: ~/.openclaw/cli-agents/bridge.json
- * - Agent workspace: ~/.openclaw/cli-agents/{agentId}/
+ * - Agent identity dir: ~/.openclaw/cli-agents/{agentId}/
  */
 
 import path from "node:path";
@@ -31,10 +31,13 @@ export function resolveCliBridgeConfigPath(env: NodeJS.ProcessEnv = process.env)
 }
 
 /**
- * Resolve a single CLI Agent's workspace directory.
+ * Resolve a single CLI Agent's identity directory.
  * i.e. ~/.openclaw/cli-agents/{agentId}/
+ *
+ * This is NOT the working directory (cwd) for the CLI process.
+ * It stores identity/persona files (IDENTITY.md, SOUL.md, etc.).
  */
-export function resolveCliAgentWorkspaceDir(
+export function resolveCliAgentIdentityDir(
   agentId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string {

@@ -2,9 +2,9 @@ export type UpdateAvailable = import("../../../src/infra/update-startup.js").Upd
 import type { CronJobBase } from "../../../src/cron/types-shared.js";
 import type { ConfigUiHints } from "../../../src/shared/config-ui-hints-types.js";
 import type {
-  GatewayAgentRow as SharedGatewayAgentRow,
   SessionsListResultBase,
   SessionsPatchResultBase,
+  GatewayAgentRow as SharedGatewayAgentRow,
 } from "../../../src/shared/session-types.js";
 export type { ConfigUiHints } from "../../../src/shared/config-ui-hints-types.js";
 
@@ -376,20 +376,20 @@ export type AgentFileEntry = {
 
 export type AgentsFilesListResult = {
   agentId: string;
-  workspace: string;
+  identityDir: string;
   files: AgentFileEntry[];
 };
 
 export type AgentsFilesGetResult = {
   agentId: string;
-  workspace: string;
+  identityDir: string;
   file: AgentFileEntry;
 };
 
 export type AgentsFilesSetResult = {
   ok: true;
   agentId: string;
-  workspace: string;
+  identityDir: string;
   file: AgentFileEntry;
 };
 

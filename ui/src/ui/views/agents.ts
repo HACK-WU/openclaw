@@ -1127,7 +1127,7 @@ function renderAgentOverview(params: {
   const isDefault = Boolean(params.defaultId && agent.id === params.defaultId);
   const config = resolveAgentConfig(configForm, agent.id);
   const workspaceFromFiles =
-    agentFilesList && agentFilesList.agentId === agent.id ? agentFilesList.workspace : null;
+    agentFilesList && agentFilesList.agentId === agent.id ? agentFilesList.identityDir : null;
   const workspace =
     workspaceFromFiles || config.entry?.workspace || config.defaults?.workspace || "default";
   const defaultModel = resolveModelLabel(config.defaults?.model);
