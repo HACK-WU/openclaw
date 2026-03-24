@@ -14,6 +14,7 @@ import {
   DEFAULT_IDENTITY_FILENAME,
   DEFAULT_MEMORY_ALT_FILENAME,
   DEFAULT_MEMORY_FILENAME,
+  DEFAULT_PERSONALITY_FILENAME,
   DEFAULT_SOUL_FILENAME,
   DEFAULT_TOOLS_FILENAME,
   DEFAULT_USER_FILENAME,
@@ -63,6 +64,7 @@ import type { GatewayRequestHandlers, RespondFn } from "./types.js";
 const BOOTSTRAP_FILE_NAMES = [
   DEFAULT_AGENTS_FILENAME,
   DEFAULT_SOUL_FILENAME,
+  DEFAULT_PERSONALITY_FILENAME,
   DEFAULT_TOOLS_FILENAME,
   DEFAULT_IDENTITY_FILENAME,
   DEFAULT_USER_FILENAME,
@@ -79,7 +81,7 @@ const ALLOWED_FILE_NAMES = new Set<string>([
   ...BOOTSTRAP_FILE_NAMES,
   ...MEMORY_FILE_NAMES,
   DEFAULT_BRIDGE_FILENAME,
-  "PERSONALITY.md",
+  DEFAULT_PERSONALITY_FILENAME,
 ]);
 
 function resolveAgentWorkspaceFileOrRespondError(
@@ -579,7 +581,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     // Write PERSONALITY.md if personalityId is provided
     if (personalityId) {
       const personalityContent = getPersonalityContent(personalityId);
-      const personalityPath = path.join(identityDir, "PERSONALITY.md");
+      const personalityPath = path.join(identityDir, DEFAULT_PERSONALITY_FILENAME);
       await fs.writeFile(personalityPath, personalityContent, "utf-8");
     }
 
