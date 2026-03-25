@@ -407,7 +407,7 @@ function syncUrlWithGroup(groupId: string): void {
 
 /** Remove ?group= parameter from browser URL */
 function clearUrlGroup(): void {
-  if (typeof window === "undefined") {
+  if (typeof window === "undefined" || !window.location?.href) {
     return;
   }
   const url = new URL(window.location.href);

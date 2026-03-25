@@ -57,6 +57,7 @@ import {
   readGroupMessages,
 } from "../../group-chat/transcript.js";
 import type {
+  ConversationChainState,
   GroupChatMessage,
   MessageSender,
   GroupIndexEntry as RawGroupIndexEntry,
@@ -748,15 +749,36 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
   }
 
   try {
+    // skipTranscript owner messages (summary/delivery from frontend) bypass
+    // atomicCheckAndIncrement because the target agents were already triggered
+    // earlier in this chain. The frontend summary mechanism intentionally
+    // re-triggers initiators; the per-agent dedup in atomicCheckAndIncrement
+    // would incorrectly block them. Safety limits (timeout, maxRounds) were
+    // already verified by atomicAgentForwardCheck above.
+    const bypassAtomicCheck = skipTranscript && resolvedSender.type === "owner";
+
     if (dispatch.mode === "broadcast") {
       // Parallel trigger all targets using atomic check-and-increment
       const transcriptSnapshot = getTranscriptSnapshot(groupId);
       const promises = dispatch.targets.map(async (target) => {
-        // Atomic check and increment roundCount
-        const check = await atomicCheckAndIncrement(groupId, meta, target.agentId);
-        if (!check.allowed) {
-          log.info(`[BROADCAST_BLOCKED] Agent ${target.agentId} blocked: ${check.reason}`);
-          return { agentId: target.agentId, blocked: true, reason: check.reason };
+        let chainState: ConversationChainState;
+
+        if (bypassAtomicCheck) {
+          // 跳过去重检查，直接获取链状态并触发 agent
+          const state = getChainState(groupId);
+          if (!state) {
+            log.info(`[BROADCAST_BYPASS] No chain state for ${target.agentId}, skipping`);
+            return { agentId: target.agentId, blocked: true, reason: "no_chain_state" };
+          }
+          chainState = { ...state, triggeredAgents: [...state.triggeredAgents] };
+        } else {
+          // Atomic check and increment roundCount
+          const check = await atomicCheckAndIncrement(groupId, meta, target.agentId);
+          if (!check.allowed) {
+            log.info(`[BROADCAST_BLOCKED] Agent ${target.agentId} blocked: ${check.reason}`);
+            return { agentId: target.agentId, blocked: true, reason: check.reason };
+          }
+          chainState = check.newState;
         }
 
         // Track pending agent
@@ -770,7 +792,7 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
             meta,
             transcriptSnapshot,
             triggerMessage: savedMsg,
-            chainState: check.newState,
+            chainState,
             broadcast: context.broadcast,
             signal: abortController.signal,
           });
@@ -797,21 +819,34 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
     } else {
       // Serial trigger for unicast/mention
       for (const target of dispatch.targets) {
-        // Atomic check and increment roundCount
-        const check = await atomicCheckAndIncrement(groupId, meta, target.agentId);
-        if (!check.allowed) {
-          // Only send system message for maxRounds exhaustion.
-          // Timeout is already handled by onTimeout callback — don't double-notify.
-          if (check.maxRoundsExhausted) {
-            await appendSystemMessage(
-              groupId,
-              `已达到最大对话次数限制（${meta.maxRounds} 次），对话链结束`,
-            );
-            broadcastGroupSystem(context.broadcast, groupId, "round_limit", {
-              reason: check.reason,
-            });
+        let chainState: ConversationChainState;
+
+        if (bypassAtomicCheck) {
+          // 跳过去重检查，直接获取链状态并触发 agent
+          const state = getChainState(groupId);
+          if (!state) {
+            log.info(`[MENTION_BYPASS] No chain state for ${target.agentId}, skipping`);
+            break;
           }
-          break;
+          chainState = { ...state, triggeredAgents: [...state.triggeredAgents] };
+        } else {
+          // Atomic check and increment roundCount
+          const check = await atomicCheckAndIncrement(groupId, meta, target.agentId);
+          if (!check.allowed) {
+            // Only send system message for maxRounds exhaustion.
+            // Timeout is already handled by onTimeout callback — don't double-notify.
+            if (check.maxRoundsExhausted) {
+              await appendSystemMessage(
+                groupId,
+                `已达到最大对话次数限制（${meta.maxRounds} 次），对话链结束`,
+              );
+              broadcastGroupSystem(context.broadcast, groupId, "round_limit", {
+                reason: check.reason,
+              });
+            }
+            break;
+          }
+          chainState = check.newState;
         }
 
         incrementPendingAgents(groupId);
@@ -822,7 +857,7 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
             meta,
             transcriptSnapshot: getTranscriptSnapshot(groupId),
             triggerMessage: savedMsg,
-            chainState: check.newState,
+            chainState,
             broadcast: context.broadcast,
             signal: abortController.signal,
           });
