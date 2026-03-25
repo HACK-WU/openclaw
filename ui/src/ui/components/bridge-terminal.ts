@@ -16,7 +16,7 @@
  *       Install: `pnpm add @xterm/xterm`
  *       The component degrades to plain-text mode if xterm is unavailable.
  */
-import { LitElement, html, css } from "lit";
+import { LitElement, css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { stripAnsiEscapes } from "../chat/tool-helpers.ts";
 
@@ -900,8 +900,6 @@ export class BridgeTerminal extends LitElement {
     if (this.status !== "working" && this.status !== "ready") {
       return;
     }
-
-    console.log("[bridge-terminal] Frontend idle timeout — freezing stream bubble");
 
     // Extract text before resetting stream state — this is the final output
     // that needs to be sent to the backend for transcript persistence.

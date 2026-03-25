@@ -607,11 +607,9 @@ function requestSummaryCheck(host: GroupHost, groupId: string): void {
 function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
   const chain = groupChainStates.get(groupId);
   if (!chain) {
-    console.log(`[group-chat] scheduleSummaryCheck: no chain for ${groupId}`);
     return;
   }
   if (chain.initiators.length === 0) {
-    console.log(`[group-chat] scheduleSummaryCheck: no initiators for ${groupId}`);
     return;
   }
 
@@ -619,12 +617,6 @@ function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
   const activeStreamCount = getGroupActiveStreamCount(groupId);
   const hasActiveStreams = activeStreamCount > 0;
   const isConversationBusy = hasPendingAgents || hasActiveStreams;
-
-  console.log(
-    `[group-chat] scheduleSummaryCheck: group=${groupId} initiators=[${chain.initiators.join(",")}] ` +
-      `pendingAgents=[${[...chain.pendingAgents].join(",")}] ` +
-      `busy=${isConversationBusy} (pending=${hasPendingAgents}, streams=${activeStreamCount})`,
-  );
 
   cancelSummaryTimer(groupId);
 
@@ -640,8 +632,6 @@ function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
   const elapsed = now - chain.lastMessageAt;
   const totalWait = now - chain.startedAt;
   const delay = totalWait >= MAX_PENDING_WAIT_MS ? 0 : Math.max(0, SUMMARY_DELAY_MS - elapsed);
-
-  console.log(`[group-chat] scheduleSummaryCheck: scheduling summary in ${delay}ms`);
 
   const timer = window.setTimeout(() => {
     void executeSummaryFlow(host, groupId);
@@ -662,10 +652,8 @@ async function executeSummaryFlow(host: GroupHost, groupId: string): Promise<voi
     return;
   }
 
-  console.log(`[group-chat] executeSummaryFlow: starting for ${groupId}`);
   const chain = groupChainStates.get(groupId);
   if (!chain) {
-    console.log(`[group-chat] executeSummaryFlow: no chain for ${groupId}`);
     return;
   }
 
@@ -680,9 +668,6 @@ async function executeSummaryFlow(host: GroupHost, groupId: string): Promise<voi
       // Re-enter the scheduling loop so we wait for those replies before summarizing.
       // pendingMentions for non-initiators are already cleared in deliverPendingMentions,
       // so the next executeSummaryFlow invocation won't re-deliver them.
-      console.log(
-        `[group-chat] executeSummaryFlow: delivered pending mentions, re-entering wait loop`,
-      );
       return; // finally block will clear summaryInFlight and re-schedule
     }
 
@@ -752,9 +737,6 @@ async function deliverPendingMentions(host: GroupHost, groupId: string): Promise
         sender: { type: "owner" },
         skipTranscript: true,
       });
-      console.log(
-        `[group-chat] delivered pending mentions to ${agentId}: ${pendings.length} messages`,
-      );
     } catch (err) {
       console.error(`[group-chat] failed to deliver pending mentions to ${agentId}:`, err);
     }
@@ -785,7 +767,6 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
 
   const rounds = summaryRounds.get(groupId) ?? 0;
   if (rounds >= MAX_SUMMARY_ROUNDS) {
-    console.log(`[group-chat] summary rounds limit: group=${groupId} rounds=${rounds}`);
     return;
   }
 
@@ -851,8 +832,6 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
       mentionedAgents: [],
       pendingMentions: [],
     });
-
-    console.log(`[group-chat] summary sent: group=${groupId} to=[${validInitiators.join(",")}]`);
   } catch (err) {
     console.error(`[group-chat] summary failed: group=${groupId}`, err);
   }
@@ -860,9 +839,6 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
 
 /** Reset chain state — new conversation round */
 export function resetChainState(groupId: string): void {
-  if (groupChainStates.has(groupId)) {
-    console.log(`[group-chat] chain state reset: group=${groupId}`);
-  }
   groupChainStates.delete(groupId);
   cancelSummaryTimer(groupId);
   summaryInFlight.delete(groupId);
@@ -933,12 +909,8 @@ export async function detectAndForwardMentions(
 
   if (dedicatedMentions.length === 0) {
     const chain = groupChainStates.get(message.groupId);
-    console.log(
-      `[group-chat] no dedicated mentions, chain exists: ${!!chain}, initiators: [${chain?.initiators.join(",") ?? "none"}]`,
-    );
     if (chain && chain.initiators.length > 0) {
       chain.lastMessageAt = Date.now();
-      console.log(`[group-chat] scheduling summary check due to no mentions`);
       requestSummaryCheck(host, message.groupId);
       return;
     }
@@ -997,9 +969,6 @@ export async function detectAndForwardMentions(
   // Track initiator (agent who @mentioned others)
   if (senderAgentId) {
     addInitiator(chain, senderAgentId);
-    console.log(
-      `[group-chat] added initiator: ${senderAgentId}, current initiators: [${chain.initiators.join(",")}]`,
-    );
   }
 
   // Separate first-time mentions from repeated mentions
@@ -1013,7 +982,6 @@ export async function detectAndForwardMentions(
         message,
         fromAgentId: senderAgentId ?? "unknown",
       });
-      console.log(`[group-chat] pending mention saved: ${agentId} already triggered`);
     } else {
       // First time being mentioned - mark immediately to prevent race conditions
       // when the same message is processed multiple times (e.g., due to WebSocket reconnect)
@@ -1061,10 +1029,6 @@ export async function detectAndForwardMentions(
     return !isAllMentions;
   });
   const forwardedText = contentLines.join("\n");
-
-  console.log(
-    `[group-chat] auto-forward: group=${message.groupId} from=${senderAgentId} to=[${firstTimeMentions.join(",")}] chain=${chain.count}/${MAX_CHAIN_FORWARDS}`,
-  );
 
   // Show auto-forward notification
   appendSystemMessageToUI(host, message.groupId, `🔄 触发 @${firstTimeMentions.join(" @")}`);
@@ -1704,25 +1668,10 @@ export function handleGroupMessageEvent(
   host: GroupChatState,
   payload: { groupId: string } & GroupChatMessage,
 ): void {
-  console.log("[GROUP_CHAT_DEBUG] RECEIVED_MESSAGE", {
-    timestamp: new Date().toISOString(),
-    groupId: payload.groupId,
-    messageId: payload.id,
-    sender: payload.sender,
-    role: payload.role,
-    serverSeq: payload.serverSeq,
-    messageTimestamp: payload.timestamp,
-    contentLength: payload.content.length,
-    contentPreview: payload.content.slice(0, 100),
-    mentions: payload.mentions,
-  });
-
   const isActiveGroup = payload.groupId === host.activeGroupId;
   if (isActiveGroup) {
     if (host.groupMessages.some((m) => m.id === payload.id)) {
-      console.log("[GROUP_CHAT_DEBUG] DUPLICATE_MESSAGE_SKIPPED", {
-        messageId: payload.id,
-      });
+      // duplicate message, skip
     } else {
       host.groupMessages = [...host.groupMessages, payload];
     }
@@ -1768,18 +1717,6 @@ const streamBuffers = new Map<string, string>();
 let streamSyncTimer: number | null = null;
 
 export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStreamPayload): void {
-  console.log("[GROUP_CHAT_DEBUG] RECEIVED_STREAM", {
-    timestamp: new Date().toISOString(),
-    groupId: payload.groupId,
-    agentId: payload.agentId,
-    runId: payload.runId,
-    state: payload.state,
-    contentLength: payload.content?.length ?? 0,
-    hasMessage: !!payload.message,
-    messageSender: payload.message?.sender,
-    messageContent: payload.message?.content?.slice(0, 100),
-  });
-
   const isActiveGroup = payload.groupId === host.activeGroupId;
   const deltaText = payload.content ?? payload.text;
 
