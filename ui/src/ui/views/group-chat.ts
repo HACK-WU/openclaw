@@ -13,20 +13,20 @@ import { extractThinkingCached, formatReasoningMarkdown } from "../chat/message-
 import { classifyToolCards, extractToolCards } from "../chat/tool-cards.ts";
 import { typewriter } from "../chat/typewriter-directive.ts";
 import {
-  BridgeTerminalResizeEvent,
-  BridgeTerminalStreamEndEvent,
-  BridgeTerminalStreamUpdateEvent,
+    BridgeTerminalResizeEvent,
+    BridgeTerminalStreamEndEvent,
+    BridgeTerminalStreamUpdateEvent,
 } from "../components/bridge-terminal.ts";
 import type {
-  GroupAddMemberDialogState,
-  GroupChatMessage,
-  GroupClearMessagesDialogState,
-  GroupCreateDialogState,
-  GroupDisbandDialogState,
-  GroupIndexEntry,
-  GroupRemoveMemberDialogState,
-  GroupSessionMeta,
-  GroupToolMessage,
+    GroupAddMemberDialogState,
+    GroupChatMessage,
+    GroupClearMessagesDialogState,
+    GroupCreateDialogState,
+    GroupDisbandDialogState,
+    GroupIndexEntry,
+    GroupRemoveMemberDialogState,
+    GroupSessionMeta,
+    GroupToolMessage,
 } from "../controllers/group-chat.ts";
 import { getMentionedAgents, isBridgeAssistantAgent } from "../controllers/group-chat.ts";
 import { stripThinkingTags } from "../format.ts";
@@ -204,15 +204,16 @@ function updateMentionDropdownSelection(selectedIndex: number) {
   });
 }
 
-function getSelectedMention(): { agentId: string; agentName: string } | null {
+function getSelectedMention(agentsList?: GroupChatViewProps["agentsList"]): { agentId: string; agentName: string } | null {
   const displayItems = getDisplayItems(mentionDropdownState.members).filter(
-    (m) => m.agentId.toLowerCase().includes(mentionDropdownState.filter) || m.agentId === "all",
+    (m) => m.agentId.toLowerCase().includes(mentionDropdownState.filter) || m.agentId === "all" ||
+      (agentsList ? resolveAgentName(m.agentId, agentsList) : m.agentId).toLowerCase().includes(mentionDropdownState.filter),
   );
   const selected = displayItems[mentionDropdownState.selectedIndex];
   if (!selected) {
     return null;
   }
-  const displayName = selected.agentId === "all" ? "全体成员" : selected.agentId;
+  const displayName = selected.agentId === "all" ? "全体成员" : (agentsList ? resolveAgentName(selected.agentId, agentsList) : selected.agentId);
   return { agentId: selected.agentId, agentName: displayName };
 }
 
@@ -559,20 +560,23 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
               const toolKey = `${agentId}:${stream.runId}`;
               const tools = toolMessages.get(toolKey);
               const isBridgeStream = stream.runId.startsWith("__bridge__");
-              return renderGroupStreamBubble(
-                agentId,
-                stream,
-                meta,
-                props.agentsList,
-                tools,
-                props.showThinking,
-                props.onOpenSidebar,
-                isBridgeStream,
-                stream.frozen,
-              );
+              return html`
+                ${renderGroupStreamBubble(
+                  agentId,
+                  stream,
+                  meta,
+                  props.agentsList,
+                  tools,
+                  props.showThinking,
+                  props.onOpenSidebar,
+                  isBridgeStream,
+                  stream.frozen,
+                )}
+                ${isBridgeStream ? renderBridgeTerminalForAgent(agentId, meta, props) : nothing}
+              `;
             })}
 
-            ${renderActiveBridgeTerminals(meta, props)}
+            ${renderOrphanBridgeTerminals(meta, props, groupStreams)}
 
             ${pendingOnly.map((agentId) =>
               renderPendingAgentIndicator(agentId, meta, props.agentsList),
@@ -603,7 +607,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                       }
                       if (e.key === "Enter") {
                         e.preventDefault();
-                        const selected = getSelectedMention();
+                        const selected = getSelectedMention(props.agentsList);
                         if (selected && mentionDropdownState.onSelect) {
                           const cursorPos = (e.target as HTMLTextAreaElement).selectionStart;
                           const textBefore = props.groupDraft.slice(0, cursorPos);
@@ -642,7 +646,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                     e.preventDefault();
                     const hasGroupAttachments = (props.groupAttachments?.length ?? 0) > 0;
                     if (props.groupDraft.trim() || hasGroupAttachments) {
-                      const { text, mentions } = parseMentions(props.groupDraft, meta.members);
+                      const { text, mentions } = parseMentions(props.groupDraft, meta.members, props.agentsList);
                       props.onSendMessage(text, mentions, props.groupAttachments);
                       // Scroll to bottom after sending
                       scrollGroupChatToBottom(true);
@@ -682,7 +686,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                   @paste=${(e: ClipboardEvent) => handleGroupPaste(e, props)}
                 ></textarea>
               </label>
-              ${renderMentionDropdown()}
+              ${renderMentionDropdown(props.agentsList)}
               <div class="chat-compose__actions">
                 ${
                   hasActiveStreams || hasPendingAgents
@@ -711,7 +715,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                   @click=${() => {
                     const hasGroupAttachments = (props.groupAttachments?.length ?? 0) > 0;
                     if (props.groupDraft.trim() || hasGroupAttachments) {
-                      const { text, mentions } = parseMentions(props.groupDraft, meta.members);
+                      const { text, mentions } = parseMentions(props.groupDraft, meta.members, props.agentsList);
                       props.onSendMessage(text, mentions, props.groupAttachments);
                       // Scroll to bottom after sending
                       scrollGroupChatToBottom(true);
@@ -959,11 +963,70 @@ function renderGroupStreamBubble(
 }
 
 /**
- * Render active Bridge (CLI) Agent terminals in the message area.
- * Shows a bridge-terminal component for each Bridge Agent that has
- * an active terminal status (working/idle/error/disconnected).
+ * Render a bridge terminal for a specific agent, placed inline with its stream bubble.
+ * This ensures the terminal card follows the agent's message position instead of
+ * being fixed at the bottom of the message list.
  */
-function renderActiveBridgeTerminals(meta: GroupSessionMeta, props: GroupChatViewProps) {
+function renderBridgeTerminalForAgent(
+  agentId: string,
+  meta: GroupSessionMeta,
+  props: GroupChatViewProps,
+) {
+  const statuses = props.bridgeTerminalStatuses;
+  if (!statuses || !statuses.has(agentId)) {
+    return nothing;
+  }
+
+  const member = meta.members.find(
+    (m) => m.agentId === agentId && m.bridge && !isBridgeAssistantAgent(m.agentId),
+  );
+  if (!member) {
+    return nothing;
+  }
+
+  const status = statuses.get(agentId) ?? "idle";
+  const senderName = resolveSenderName(
+    { type: "agent", agentId },
+    meta,
+    props.agentsList,
+  );
+  const senderEmoji = resolveSenderEmoji(
+    { type: "agent", agentId },
+    meta,
+    props.agentsList,
+  );
+
+  return html`
+    <div class="chat-group assistant">
+      <div class="chat-avatar assistant">${senderEmoji}</div>
+      <div class="chat-group-messages">
+        <bridge-terminal
+          .groupId=${meta.groupId}
+          .agentId=${agentId}
+          .cliType=${member.bridge?.cliType ?? "custom"}
+          .status=${status}
+          .replayBuffer=${props.bridgeTerminalReplayBuffers?.get(agentId)}
+          .tailTrimMarker=${member.bridge?.tailTrimMarker ?? ""}
+        ></bridge-terminal>
+        <div class="chat-group-footer">
+          <span class="chat-sender-name">${senderName}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render bridge terminals for agents that have an active terminal status
+ * but do NOT have a corresponding stream bubble in groupStreams.
+ * These "orphan" terminals need to be rendered independently (e.g. when
+ * the terminal just started and no stream text has been emitted yet).
+ */
+function renderOrphanBridgeTerminals(
+  meta: GroupSessionMeta,
+  props: GroupChatViewProps,
+  groupStreams: Map<string, { runId: string; text: string; startedAt: number; frozen?: boolean }>,
+) {
   const statuses = props.bridgeTerminalStatuses;
   if (!statuses || statuses.size === 0) {
     return nothing;
@@ -975,40 +1038,25 @@ function renderActiveBridgeTerminals(meta: GroupSessionMeta, props: GroupChatVie
     return nothing;
   }
 
-  return bridgeMembers
-    .filter((m) => statuses.has(m.agentId))
-    .map((m) => {
-      const status = statuses.get(m.agentId) ?? "idle";
-      const senderName = resolveSenderName(
-        { type: "agent", agentId: m.agentId },
-        meta,
-        props.agentsList,
-      );
-      const senderEmoji = resolveSenderEmoji(
-        { type: "agent", agentId: m.agentId },
-        meta,
-        props.agentsList,
-      );
+  // Only render terminals for agents that don't already have a bridge stream bubble
+  // (those are rendered inline with their stream bubble via renderBridgeTerminalForAgent)
+  const orphanMembers = bridgeMembers.filter((m) => {
+    if (!statuses.has(m.agentId)) {
+      return false;
+    }
+    const stream = groupStreams.get(m.agentId);
+    // If there's a bridge stream for this agent, the terminal is already rendered inline
+    if (stream && stream.runId.startsWith("__bridge__")) {
+      return false;
+    }
+    return true;
+  });
 
-      return html`
-        <div class="chat-group assistant">
-          <div class="chat-avatar assistant">${senderEmoji}</div>
-          <div class="chat-group-messages">
-            <bridge-terminal
-              .groupId=${meta.groupId}
-              .agentId=${m.agentId}
-              .cliType=${m.bridge?.cliType ?? "custom"}
-              .status=${status}
-              .replayBuffer=${props.bridgeTerminalReplayBuffers?.get(m.agentId)}
-              .tailTrimMarker=${m.bridge?.tailTrimMarker ?? ""}
-            ></bridge-terminal>
-            <div class="chat-group-footer">
-              <span class="chat-sender-name">${senderName}</span>
-            </div>
-          </div>
-        </div>
-      `;
-    });
+  if (orphanMembers.length === 0) {
+    return nothing;
+  }
+
+  return orphanMembers.map((m) => renderBridgeTerminalForAgent(m.agentId, meta, props));
 }
 
 /**
@@ -2191,6 +2239,7 @@ function resolveAgentName(agentId: string, agentsList: GroupChatViewProps["agent
 function parseMentions(
   text: string,
   members: GroupSessionMeta["members"],
+  agentsList?: GroupChatViewProps["agentsList"],
 ): { text: string; mentions: string[] } {
   const mentions: string[] = [];
   const mentionPattern = /@(\S+)/g;
@@ -2203,8 +2252,12 @@ function parseMentions(
     if (name === "all" || name === "全体成员") {
       hasAllMention = true;
     } else {
-      // Find member by exact match only (no partial matching to avoid confusion)
-      const member = members.find((m) => m.agentId === name);
+      // Find member by agentId or by display name
+      const member = members.find((m) => m.agentId === name) ??
+        (agentsList ? members.find((m) => {
+          const displayName = resolveAgentName(m.agentId, agentsList);
+          return displayName === name;
+        }) : undefined);
       if (member) {
         mentions.push(member.agentId);
       }
@@ -2219,14 +2272,15 @@ function parseMentions(
   return { text, mentions: [...new Set(mentions)] };
 }
 
-function renderMentionDropdown() {
+function renderMentionDropdown(agentsList: GroupChatViewProps["agentsList"]) {
   if (!mentionDropdownState.visible) {
     return nothing;
   }
 
   // Always show @all option plus filtered members
   const displayItems = getDisplayItems(mentionDropdownState.members).filter(
-    (m) => m.agentId.toLowerCase().includes(mentionDropdownState.filter) || m.agentId === "all",
+    (m) => m.agentId.toLowerCase().includes(mentionDropdownState.filter) || m.agentId === "all" ||
+      resolveAgentName(m.agentId, agentsList).toLowerCase().includes(mentionDropdownState.filter),
   );
 
   if (displayItems.length === 0) {
@@ -2236,25 +2290,29 @@ function renderMentionDropdown() {
   return html`
     <div class="mention-dropdown">
       ${displayItems.map(
-        (m, i) => html`
-          <div
-            class="mention-item ${i === mentionDropdownState.selectedIndex ? "mention-item--selected" : ""}"
-            @click=${() => {
-              if (mentionDropdownState.onSelect) {
-                const displayName = m.agentId === "all" ? "全体成员" : m.agentId;
-                mentionDropdownState.onSelect(m.agentId, displayName);
-              }
-              hideMentionDropdown();
-            }}
-            @mouseenter=${() => {
-              mentionDropdownState.selectedIndex = i;
-            }}
-          >
-            <span class="mention-item__emoji">${m.agentId === "all" ? "👥" : "🤖"}</span>
-            <span class="mention-item__name">${m.agentId === "all" ? "全体成员" : m.agentId}</span>
-            ${m.agentId !== "all" ? html`<span class="mention-item__role badge badge--${m.role}">${m.role}</span>` : nothing}
-          </div>
-        `,
+        (m, i) => {
+          const name = m.agentId === "all" ? "全体成员" : resolveAgentName(m.agentId, agentsList);
+          const agentEntry = m.agentId !== "all" ? agentsList.find((a) => a.id === m.agentId) : null;
+          const emoji = m.agentId === "all" ? "👥" : (agentEntry?.identity?.emoji ?? "🤖");
+          return html`
+            <div
+              class="mention-item ${i === mentionDropdownState.selectedIndex ? "mention-item--selected" : ""}"
+              @click=${() => {
+                if (mentionDropdownState.onSelect) {
+                  mentionDropdownState.onSelect(m.agentId, name);
+                }
+                hideMentionDropdown();
+              }}
+              @mouseenter=${() => {
+                mentionDropdownState.selectedIndex = i;
+              }}
+            >
+              <span class="mention-item__emoji">${emoji}</span>
+              <span class="mention-item__name">${name}</span>
+              ${m.agentId !== "all" ? html`<span class="mention-item__role badge badge--${m.role}">${m.role}</span>` : nothing}
+            </div>
+          `;
+        },
       )}
     </div>
   `;
