@@ -2066,7 +2066,10 @@ function mapPtyStatusToTerminalStatus(
 ): "idle" | "working" | "ready" | "completed" | "timeout" | "error" | "disconnected" {
   switch (backendStatus) {
     case "running":
-      return "working";
+      // 映射为 ready 而非 working：进程在运行不等于正在执行任务。
+      // 实际工作状态由 bridge-terminal 组件根据 PTY 数据流入动态判断。
+      // 这避免了页面刷新后错误显示"正在工作"的问题。
+      return "ready";
     case "ready":
       return "ready";
     case "stuck":

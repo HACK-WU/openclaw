@@ -1358,8 +1358,10 @@ export function renderApp(state: AppViewState) {
                   void sendTestInput(state, agentId, input);
                 },
                 // CLI Agent edit callbacks
-                onShowCliEditDialog: (agentId: string) => {
+                onShowCliEditDialog: async (agentId: string) => {
                   showCliEditDialog(state, agentId);
+                  // Load personalities list for the edit dialog
+                  await loadPersonalities(state);
                 },
                 onHideCliEditDialog: () => {
                   state.agentShowCliEditDialog = false;

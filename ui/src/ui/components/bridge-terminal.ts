@@ -409,6 +409,9 @@ export class BridgeTerminal extends LitElement {
   /** CLI tool type for status display */
   @property({ type: String }) cliType = "custom";
 
+  /** Display name for the CLI agent (shown in status label). Falls back to cliType-based name. */
+  @property({ type: String }) displayName = "";
+
   /** Terminal status */
   @property({ type: String }) status: BridgeTerminalStatus = "idle";
 
@@ -1173,6 +1176,10 @@ export class BridgeTerminal extends LitElement {
   }
 
   private _cliDisplayName(): string {
+    // 优先使用外部传入的显示名称
+    if (this.displayName) {
+      return this.displayName;
+    }
     switch (this.cliType) {
       case "claude-code":
         return "Claude Code";

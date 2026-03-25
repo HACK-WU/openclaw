@@ -13,20 +13,20 @@ import { extractThinkingCached, formatReasoningMarkdown } from "../chat/message-
 import { classifyToolCards, extractToolCards } from "../chat/tool-cards.ts";
 import { typewriter } from "../chat/typewriter-directive.ts";
 import {
-    BridgeTerminalResizeEvent,
-    BridgeTerminalStreamEndEvent,
-    BridgeTerminalStreamUpdateEvent,
+  BridgeTerminalResizeEvent,
+  BridgeTerminalStreamEndEvent,
+  BridgeTerminalStreamUpdateEvent,
 } from "../components/bridge-terminal.ts";
 import type {
-    GroupAddMemberDialogState,
-    GroupChatMessage,
-    GroupClearMessagesDialogState,
-    GroupCreateDialogState,
-    GroupDisbandDialogState,
-    GroupIndexEntry,
-    GroupRemoveMemberDialogState,
-    GroupSessionMeta,
-    GroupToolMessage,
+  GroupAddMemberDialogState,
+  GroupChatMessage,
+  GroupClearMessagesDialogState,
+  GroupCreateDialogState,
+  GroupDisbandDialogState,
+  GroupIndexEntry,
+  GroupRemoveMemberDialogState,
+  GroupSessionMeta,
+  GroupToolMessage,
 } from "../controllers/group-chat.ts";
 import { getMentionedAgents, isBridgeAssistantAgent } from "../controllers/group-chat.ts";
 import { stripThinkingTags } from "../format.ts";
@@ -204,16 +204,27 @@ function updateMentionDropdownSelection(selectedIndex: number) {
   });
 }
 
-function getSelectedMention(agentsList?: GroupChatViewProps["agentsList"]): { agentId: string; agentName: string } | null {
+function getSelectedMention(
+  agentsList?: GroupChatViewProps["agentsList"],
+): { agentId: string; agentName: string } | null {
   const displayItems = getDisplayItems(mentionDropdownState.members).filter(
-    (m) => m.agentId.toLowerCase().includes(mentionDropdownState.filter) || m.agentId === "all" ||
-      (agentsList ? resolveAgentName(m.agentId, agentsList) : m.agentId).toLowerCase().includes(mentionDropdownState.filter),
+    (m) =>
+      m.agentId.toLowerCase().includes(mentionDropdownState.filter) ||
+      m.agentId === "all" ||
+      (agentsList ? resolveAgentName(m.agentId, agentsList) : m.agentId)
+        .toLowerCase()
+        .includes(mentionDropdownState.filter),
   );
   const selected = displayItems[mentionDropdownState.selectedIndex];
   if (!selected) {
     return null;
   }
-  const displayName = selected.agentId === "all" ? "全体成员" : (agentsList ? resolveAgentName(selected.agentId, agentsList) : selected.agentId);
+  const displayName =
+    selected.agentId === "all"
+      ? "全体成员"
+      : agentsList
+        ? resolveAgentName(selected.agentId, agentsList)
+        : selected.agentId;
   return { agentId: selected.agentId, agentName: displayName };
 }
 
@@ -646,7 +657,11 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                     e.preventDefault();
                     const hasGroupAttachments = (props.groupAttachments?.length ?? 0) > 0;
                     if (props.groupDraft.trim() || hasGroupAttachments) {
-                      const { text, mentions } = parseMentions(props.groupDraft, meta.members, props.agentsList);
+                      const { text, mentions } = parseMentions(
+                        props.groupDraft,
+                        meta.members,
+                        props.agentsList,
+                      );
                       props.onSendMessage(text, mentions, props.groupAttachments);
                       // Scroll to bottom after sending
                       scrollGroupChatToBottom(true);
@@ -715,7 +730,11 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                   @click=${() => {
                     const hasGroupAttachments = (props.groupAttachments?.length ?? 0) > 0;
                     if (props.groupDraft.trim() || hasGroupAttachments) {
-                      const { text, mentions } = parseMentions(props.groupDraft, meta.members, props.agentsList);
+                      const { text, mentions } = parseMentions(
+                        props.groupDraft,
+                        meta.members,
+                        props.agentsList,
+                      );
                       props.onSendMessage(text, mentions, props.groupAttachments);
                       // Scroll to bottom after sending
                       scrollGroupChatToBottom(true);
@@ -985,16 +1004,8 @@ function renderBridgeTerminalForAgent(
   }
 
   const status = statuses.get(agentId) ?? "idle";
-  const senderName = resolveSenderName(
-    { type: "agent", agentId },
-    meta,
-    props.agentsList,
-  );
-  const senderEmoji = resolveSenderEmoji(
-    { type: "agent", agentId },
-    meta,
-    props.agentsList,
-  );
+  const senderName = resolveSenderName({ type: "agent", agentId }, meta, props.agentsList);
+  const senderEmoji = resolveSenderEmoji({ type: "agent", agentId }, meta, props.agentsList);
 
   return html`
     <div class="chat-group assistant">
@@ -1004,6 +1015,7 @@ function renderBridgeTerminalForAgent(
           .groupId=${meta.groupId}
           .agentId=${agentId}
           .cliType=${member.bridge?.cliType ?? "custom"}
+          .displayName=${senderName}
           .status=${status}
           .replayBuffer=${props.bridgeTerminalReplayBuffers?.get(agentId)}
           .tailTrimMarker=${member.bridge?.tailTrimMarker ?? ""}
@@ -2253,11 +2265,14 @@ function parseMentions(
       hasAllMention = true;
     } else {
       // Find member by agentId or by display name
-      const member = members.find((m) => m.agentId === name) ??
-        (agentsList ? members.find((m) => {
-          const displayName = resolveAgentName(m.agentId, agentsList);
-          return displayName === name;
-        }) : undefined);
+      const member =
+        members.find((m) => m.agentId === name) ??
+        (agentsList
+          ? members.find((m) => {
+              const displayName = resolveAgentName(m.agentId, agentsList);
+              return displayName === name;
+            })
+          : undefined);
       if (member) {
         mentions.push(member.agentId);
       }
@@ -2279,7 +2294,9 @@ function renderMentionDropdown(agentsList: GroupChatViewProps["agentsList"]) {
 
   // Always show @all option plus filtered members
   const displayItems = getDisplayItems(mentionDropdownState.members).filter(
-    (m) => m.agentId.toLowerCase().includes(mentionDropdownState.filter) || m.agentId === "all" ||
+    (m) =>
+      m.agentId.toLowerCase().includes(mentionDropdownState.filter) ||
+      m.agentId === "all" ||
       resolveAgentName(m.agentId, agentsList).toLowerCase().includes(mentionDropdownState.filter),
   );
 
@@ -2289,12 +2306,11 @@ function renderMentionDropdown(agentsList: GroupChatViewProps["agentsList"]) {
 
   return html`
     <div class="mention-dropdown">
-      ${displayItems.map(
-        (m, i) => {
-          const name = m.agentId === "all" ? "全体成员" : resolveAgentName(m.agentId, agentsList);
-          const agentEntry = m.agentId !== "all" ? agentsList.find((a) => a.id === m.agentId) : null;
-          const emoji = m.agentId === "all" ? "👥" : (agentEntry?.identity?.emoji ?? "🤖");
-          return html`
+      ${displayItems.map((m, i) => {
+        const name = m.agentId === "all" ? "全体成员" : resolveAgentName(m.agentId, agentsList);
+        const agentEntry = m.agentId !== "all" ? agentsList.find((a) => a.id === m.agentId) : null;
+        const emoji = m.agentId === "all" ? "👥" : (agentEntry?.identity?.emoji ?? "🤖");
+        return html`
             <div
               class="mention-item ${i === mentionDropdownState.selectedIndex ? "mention-item--selected" : ""}"
               @click=${() => {
@@ -2312,8 +2328,7 @@ function renderMentionDropdown(agentsList: GroupChatViewProps["agentsList"]) {
               ${m.agentId !== "all" ? html`<span class="mention-item__role badge badge--${m.role}">${m.role}</span>` : nothing}
             </div>
           `;
-        },
-      )}
+      })}
     </div>
   `;
 }
