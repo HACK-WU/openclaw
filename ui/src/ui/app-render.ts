@@ -5,10 +5,10 @@ import { renderUsageTab } from "./app-render-usage-tab.ts";
 import {
   renderChatControls,
   renderLocaleToggle,
+  renderNavGroupChats,
+  renderNavSessionsList,
   renderTab,
   renderThemeToggle,
-  renderNavSessionsList,
-  renderNavGroupChats,
 } from "./app-render.helpers.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
@@ -16,28 +16,28 @@ import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controlle
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
 import {
-  loadAgents,
-  loadToolsCatalog,
+  checkAgentCanBeDeleted,
+  checkWorkspacePath,
+  closePersonalityViewDialog,
   createAgent,
   createCliAgent,
   deleteAgent,
   deleteCliAgent,
-  setDefaultAgent,
-  saveAgentsConfig,
-  loadCliAgents,
-  testCliAgent,
-  stopCliAgentTest,
-  sendTestInput,
-  showCliEditDialog,
-  hideCliEditDialog,
-  updateCliAgent,
-  checkWorkspacePath,
   getDefaultWorkspacePath,
+  hideCliEditDialog,
+  loadAgents,
+  loadCliAgents,
   loadPersonalities,
-  selectPersonality,
+  loadToolsCatalog,
   openPersonalityViewDialog,
-  closePersonalityViewDialog,
-  checkAgentCanBeDeleted,
+  saveAgentsConfig,
+  selectPersonality,
+  sendTestInput,
+  setDefaultAgent,
+  showCliEditDialog,
+  stopCliAgentTest,
+  testCliAgent,
+  updateCliAgent,
 } from "./controllers/agents.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
@@ -46,31 +46,31 @@ import {
   ensureAgentConfigEntry,
   findAgentConfigEntryIndex,
   loadConfig,
+  removeConfigFormValue,
   runUpdate,
   saveConfig,
   updateConfigFormValue,
-  removeConfigFormValue,
 } from "./controllers/config.ts";
 import {
+  addCronJob,
+  cancelCronEdit,
+  getVisibleCronJobs,
+  hasCronFormErrors,
   loadCronRuns,
   loadMoreCronJobs,
   loadMoreCronRuns,
-  reloadCronJobs,
-  toggleCronJob,
-  runCronJob,
-  removeCronJob,
-  addCronJob,
-  startCronEdit,
-  startCronClone,
-  cancelCronEdit,
-  validateCronForm,
-  hasCronFormErrors,
   normalizeCronFormState,
-  getVisibleCronJobs,
+  reloadCronJobs,
+  removeCronJob,
+  runCronJob,
+  startCronClone,
+  startCronEdit,
+  toggleCronJob,
   updateCronJobsFilter,
   updateCronRunsFilter,
+  validateCronForm,
 } from "./controllers/cron.ts";
-import { loadDebug, callDebugMethod } from "./controllers/debug.ts";
+import { callDebugMethod, loadDebug } from "./controllers/debug.ts";
 import {
   approveDevicePairing,
   loadDevices,
@@ -85,25 +85,25 @@ import {
   updateExecApprovalsFormValue,
 } from "./controllers/exec-approvals.ts";
 import {
-  closeGroupChatView,
-  loadGroupList,
-  enterGroupChat,
-  leaveGroupChat,
-  sendGroupMessage,
   abortGroupChat,
+  clearBridgeTerminalStream,
+  closeClearMessagesDialog,
+  closeDisbandGroupDialog,
+  closeGroupChatView,
+  confirmClearMessages,
+  confirmDisbandGroup,
   createGroup,
   deleteGroup,
-  updateGroupMembers,
-  removeGroupMember,
-  openDisbandGroupDialog,
-  closeDisbandGroupDialog,
-  confirmDisbandGroup,
-  openClearMessagesDialog,
-  closeClearMessagesDialog,
-  confirmClearMessages,
-  sendTerminalResize,
+  enterGroupChat,
   handleBridgeTerminalStreamUpdate,
-  clearBridgeTerminalStream,
+  leaveGroupChat,
+  loadGroupList,
+  openClearMessagesDialog,
+  openDisbandGroupDialog,
+  removeGroupMember,
+  sendGroupMessage,
+  sendTerminalResize,
+  updateGroupMembers,
 } from "./controllers/group-chat.ts";
 import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
@@ -123,7 +123,7 @@ import {
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "./external-link.ts";
 import { t } from "./i18n/index.ts";
 import { icons } from "./icons.ts";
-import { normalizeBasePath, getTabGroups, subtitleForTab, titleForTab } from "./navigation.ts";
+import { getTabGroups, normalizeBasePath, subtitleForTab, titleForTab } from "./navigation.ts";
 import {
   resolveAgentConfig,
   resolveConfiguredCronModelSuggestions,
@@ -1792,13 +1792,14 @@ export function renderApp(state: AppViewState) {
                   ),
                 onLeaveGroup: () =>
                   leaveGroupChat(state as unknown as Parameters<typeof leaveGroupChat>[0]),
-                onSendMessage: (message, mentions) => {
+                onSendMessage: (message, mentions, attachments) => {
                   if (state.activeGroupId) {
                     void sendGroupMessage(
                       state as unknown as Parameters<typeof sendGroupMessage>[0],
                       state.activeGroupId,
                       message,
                       mentions,
+                      attachments,
                     );
                   }
                 },
@@ -1811,6 +1812,8 @@ export function renderApp(state: AppViewState) {
                   }
                 },
                 onDraftChange: (next) => (state.groupDraft = next),
+                groupAttachments: state.groupAttachments,
+                onGroupAttachmentsChange: (next) => (state.groupAttachments = next),
                 onCreateGroup: (opts) =>
                   void createGroup(state as unknown as Parameters<typeof createGroup>[0], opts),
                 onDeleteGroup: (groupId) =>

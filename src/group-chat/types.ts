@@ -116,6 +116,8 @@ export type GroupChatMessage = {
   serverSeq?: number; // monotonic server sequence for cross-client ordering
   /** Tool calls made during this message (for tool card display) */
   toolCalls?: GroupToolCall[];
+  /** Image attachments included with this message (base64-encoded) */
+  images?: Array<{ type: "image"; data: string; mimeType: string }>;
 };
 
 /** Simplified tool call info for message storage */

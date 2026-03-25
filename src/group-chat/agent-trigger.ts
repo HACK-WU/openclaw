@@ -47,6 +47,8 @@ export type TriggerAgentParams = {
   chainState: ConversationChainState;
   broadcast: GatewayBroadcastFn;
   signal: AbortSignal;
+  /** 用户附带的图片（仅 Owner 发送时携带，Agent 转发不带图片） */
+  images?: Array<{ type: "image"; data: string; mimeType: string }>;
 };
 
 // Tool message collector for real-time display
@@ -175,7 +177,8 @@ function buildConversationHistory(snapshot: GroupChatMessage[], currentAgentId: 
 export async function triggerAgentReasoning(
   params: TriggerAgentParams,
 ): Promise<TriggerAgentResult> {
-  const { groupId, agentId, meta, transcriptSnapshot, triggerMessage, broadcast, signal } = params;
+  const { groupId, agentId, meta, transcriptSnapshot, triggerMessage, broadcast, signal, images } =
+    params;
   let { chainState } = params;
 
   // ─── Bridge Agent fork ───
@@ -296,6 +299,7 @@ export async function triggerAgentReasoning(
       replyOptions: {
         runId,
         abortSignal: signal,
+        images: images && images.length > 0 ? images : undefined,
         suppressTyping: true,
         agentId, // Pass explicit agentId for group chat
         skillFilter: meta.groupSkills.length > 0 ? meta.groupSkills : undefined,

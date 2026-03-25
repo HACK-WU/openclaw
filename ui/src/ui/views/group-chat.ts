@@ -34,6 +34,7 @@ import { t } from "../i18n/index.ts";
 import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
 import type { ToolCard } from "../types/chat-types.ts";
+import type { ChatAttachment } from "../ui-types.ts";
 import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
 
 // ─── Mention Dropdown State ───
@@ -75,6 +76,87 @@ function scrollGroupChatToBottom(smooth = false) {
   } else {
     container.scrollTop = scrollTop;
   }
+}
+
+// ─── Image Paste & Attachment Helpers ───
+
+function generateGroupAttachmentId(): string {
+  return `gatt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function handleGroupPaste(e: ClipboardEvent, props: GroupChatViewProps) {
+  const items = e.clipboardData?.items;
+  if (!items || !props.onGroupAttachmentsChange) {
+    return;
+  }
+
+  const imageItems: DataTransferItem[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.type.startsWith("image/")) {
+      imageItems.push(item);
+    }
+  }
+
+  if (imageItems.length === 0) {
+    return;
+  }
+
+  e.preventDefault();
+
+  for (const item of imageItems) {
+    const file = item.getAsFile();
+    if (!file) {
+      continue;
+    }
+
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      const dataUrl = reader.result as string;
+      const newAttachment: ChatAttachment = {
+        id: generateGroupAttachmentId(),
+        dataUrl,
+        mimeType: file.type,
+      };
+      const current = props.groupAttachments ?? [];
+      props.onGroupAttachmentsChange?.([...current, newAttachment]);
+    });
+    reader.readAsDataURL(file);
+  }
+}
+
+function renderGroupAttachmentPreview(props: GroupChatViewProps) {
+  const attachments = props.groupAttachments ?? [];
+  if (attachments.length === 0) {
+    return nothing;
+  }
+
+  return html`
+    <div class="chat-attachments">
+      ${attachments.map(
+        (att) => html`
+          <div class="chat-attachment">
+            <img
+              src=${att.dataUrl}
+              alt="Attachment preview"
+              class="chat-attachment__img"
+            />
+            <button
+              class="chat-attachment__remove"
+              type="button"
+              aria-label="Remove attachment"
+              @click=${() => {
+                const next = (props.groupAttachments ?? []).filter((a) => a.id !== att.id);
+                props.onGroupAttachmentsChange?.(next);
+              }}
+            >
+              ${icons.x}
+            </button>
+          </div>
+        `,
+      )}
+    </div>
+  `;
 }
 
 function showMentionDropdown(
@@ -164,7 +246,7 @@ export type GroupChatViewProps = {
   // Callbacks
   onEnterGroup: (groupId: string) => void;
   onLeaveGroup: () => void;
-  onSendMessage: (message: string, mentions?: string[]) => void;
+  onSendMessage: (message: string, mentions?: string[], attachments?: ChatAttachment[]) => void;
   onAbort: () => void;
   onDraftChange: (next: string) => void;
   onCreateGroup: (opts: {
@@ -241,6 +323,9 @@ export type GroupChatViewProps = {
   >;
   /** Terminal replay buffers (Base64-encoded, for page refresh restoration) */
   bridgeTerminalReplayBuffers?: Map<string, string>;
+  // Image attachments
+  groupAttachments?: ChatAttachment[];
+  onGroupAttachmentsChange?: (attachments: ChatAttachment[]) => void;
 };
 
 // ─── Main Render ───
@@ -495,6 +580,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
           </div>
 
           <div class="chat-compose group-chat-room__compose">
+            ${renderGroupAttachmentPreview(props)}
             <div class="chat-compose__row" style="position: relative;">
               <label class="field chat-compose__field">
                 <span>${t("chat.group.message")}</span>
@@ -554,9 +640,10 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                       return;
                     }
                     e.preventDefault();
-                    if (props.groupDraft.trim()) {
+                    const hasGroupAttachments = (props.groupAttachments?.length ?? 0) > 0;
+                    if (props.groupDraft.trim() || hasGroupAttachments) {
                       const { text, mentions } = parseMentions(props.groupDraft, meta.members);
-                      props.onSendMessage(text, mentions);
+                      props.onSendMessage(text, mentions, props.groupAttachments);
                       // Scroll to bottom after sending
                       scrollGroupChatToBottom(true);
                     }
@@ -592,6 +679,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                   placeholder=${
                     props.connected ? t("chat.group.placeholder") : t("chat.disconnected")
                   }
+                  @paste=${(e: ClipboardEvent) => handleGroupPaste(e, props)}
                 ></textarea>
               </label>
               ${renderMentionDropdown()}
@@ -619,11 +707,12 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                 }
                 <button
                   class="btn primary"
-                  ?disabled=${!props.connected || (!props.groupDraft.trim() && !hasActiveStreams && !hasPendingAgents)}
+                  ?disabled=${!props.connected || (!props.groupDraft.trim() && !hasActiveStreams && !hasPendingAgents && !props.groupAttachments?.length)}
                   @click=${() => {
-                    if (props.groupDraft.trim()) {
+                    const hasGroupAttachments = (props.groupAttachments?.length ?? 0) > 0;
+                    if (props.groupDraft.trim() || hasGroupAttachments) {
                       const { text, mentions } = parseMentions(props.groupDraft, meta.members);
-                      props.onSendMessage(text, mentions);
+                      props.onSendMessage(text, mentions, props.groupAttachments);
                       // Scroll to bottom after sending
                       scrollGroupChatToBottom(true);
                     }
@@ -722,6 +811,31 @@ function renderGroupMessage(
   const markdownHtml = toSanitizedMarkdownHtml(contentWithEscapes);
   const contentHtml = highlightMentionsInHtml(markdownHtml, memberIds, senderId, mentionedAgents);
 
+  // 渲染消息中的图片附件
+  const messageImages = msg.images ?? [];
+  const hasImages = messageImages.length > 0;
+  const imagesHtml = hasImages
+    ? html`
+        <div class="chat-message-images">
+          ${messageImages.map((img) => {
+            const url = img.data.startsWith("data:")
+              ? img.data
+              : `data:${img.mimeType};base64,${img.data}`;
+            return html`
+              <img
+                src=${url}
+                alt="Attached image"
+                class="chat-message-image"
+              />
+            `;
+          })}
+        </div>
+      `
+    : nothing;
+
+  // 纯图片消息（content 为占位文本）时不显示文本
+  const isImagePlaceholder = msg.content === "[Image attached]" && hasImages;
+
   return html`
     <div class="chat-group ${roleClass}">
       <div class="chat-avatar ${roleClass}">${isUser ? "U" : senderEmoji}</div>
@@ -734,7 +848,8 @@ function renderGroupMessage(
                 )}</div>`
               : nothing
           }
-          <div class="chat-text">${unsafeHTML(contentHtml)}</div>
+          ${isImagePlaceholder ? nothing : html`<div class="chat-text">${unsafeHTML(contentHtml)}</div>`}
+          ${imagesHtml}
         </div>
         ${classified ? renderInlineToolCards(classified, onOpenSidebar) : nothing}
         <div class="chat-group-footer">

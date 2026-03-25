@@ -63,6 +63,9 @@ import type {
   GroupIndexEntry as RawGroupIndexEntry,
 } from "../../group-chat/types.js";
 import { getLogger } from "../../logging.js";
+import type { ChatImageContent } from "../chat-attachments.js";
+import { parseMessageWithAttachments } from "../chat-attachments.js";
+import { normalizeRpcAttachmentsToChatAttachments } from "./attachment-normalize.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 
 const log = getLogger("group-chat:handler");
@@ -593,8 +596,38 @@ const handleGroupHistory: GatewayRequestHandler = ({ params, respond }) => {
 
 const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context }) => {
   const groupId = params.groupId as string;
-  const messageText = params.message as string;
-  if (!groupId || !messageText) {
+  const rawMessageText = params.message as string;
+
+  // 解析图片附件
+  const normalizedAttachments = normalizeRpcAttachmentsToChatAttachments(params.attachments);
+  if (!groupId || (!rawMessageText && normalizedAttachments.length === 0)) {
+    respond(false, undefined, {
+      message: "groupId and message (or attachments) are required",
+      code: 400,
+    });
+    return;
+  }
+
+  let messageText = rawMessageText ?? "";
+  let parsedImages: ChatImageContent[] = [];
+  if (normalizedAttachments.length > 0) {
+    try {
+      const parsed = await parseMessageWithAttachments(messageText, normalizedAttachments, {
+        maxBytes: 5_000_000,
+        log: log,
+      });
+      messageText = parsed.message;
+      parsedImages = parsed.images;
+    } catch (err) {
+      respond(false, undefined, { message: `Invalid attachment: ${String(err)}`, code: 400 });
+      return;
+    }
+  }
+
+  // 确保 messageText 有值（可能纯图片无文字）
+  if (!messageText.trim() && parsedImages.length > 0) {
+    messageText = "[Image attached]";
+  } else if (!messageText.trim()) {
     respond(false, undefined, { message: "groupId and message are required", code: 400 });
     return;
   }
@@ -635,6 +668,8 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
     sender: resolvedSender,
     mentions: mentions.length > 0 ? mentions : undefined,
     timestamp: Date.now(),
+    // 将解析后的图片附件存入消息（用于前端显示）
+    images: parsedImages.length > 0 ? parsedImages : undefined,
   };
 
   log.info("[HANDLE_GROUP_SEND]", {
@@ -668,6 +703,10 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
   if (dispatch.targets.length === 0) {
     return;
   }
+
+  // 图片仅在 Owner 直接发送时传递给 agent，Agent 转发不携带图片
+  const imagesForAgent =
+    resolvedSender.type === "owner" && parsedImages.length > 0 ? parsedImages : undefined;
 
   // ── Chain state management ──
   // Only a REAL Owner message (not skipTranscript) starts a new chain.
@@ -795,6 +834,7 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
             chainState,
             broadcast: context.broadcast,
             signal: abortController.signal,
+            images: imagesForAgent,
           });
         } finally {
           decrementPendingAgents(groupId);
@@ -860,6 +900,7 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
             chainState,
             broadcast: context.broadcast,
             signal: abortController.signal,
+            images: imagesForAgent,
           });
         } finally {
           decrementPendingAgents(groupId);

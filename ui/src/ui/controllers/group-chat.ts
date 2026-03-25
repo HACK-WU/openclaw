@@ -8,6 +8,7 @@
 import { getBridgeTerminal } from "../components/bridge-terminal.ts";
 import { stripThinkingTags } from "../format.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
+import type { ChatAttachment } from "../ui-types.ts";
 import { loadSessions } from "./sessions.ts";
 
 // ─── Types ───
@@ -112,6 +113,8 @@ export type GroupChatMessage = {
   agentRunId?: string;
   serverSeq: number;
   timestamp: number;
+  /** Image attachments included with this message (base64-encoded) */
+  images?: Array<{ type: "image"; data: string; mimeType: string }>;
 };
 
 export type GroupStreamPayload = {
@@ -159,6 +162,8 @@ export type GroupChatState = {
   groupSending: boolean;
   /** Draft message */
   groupDraft: string;
+  /** Image attachments for group chat */
+  groupAttachments: ChatAttachment[];
   /** Error state */
   groupError: string | null;
   /** Whether the current group was not found (deleted/expired) */
@@ -247,6 +252,7 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   groupChatLoading: false,
   groupSending: false,
   groupDraft: "",
+  groupAttachments: [],
   groupError: null,
   groupNotFound: false,
   groupCreateDialog: null,
@@ -372,6 +378,7 @@ function resetGroupRoomState(host: GroupChatState): void {
   host.groupChatLoading = false;
   host.groupSending = false;
   host.groupDraft = "";
+  host.groupAttachments = [];
   host.groupError = null;
   host.groupNotFound = false;
   host.groupAddMemberDialog = null;
@@ -1246,8 +1253,10 @@ export async function sendGroupMessage(
   groupId: string,
   message: string,
   mentions?: string[],
+  attachments?: ChatAttachment[],
 ): Promise<void> {
-  if (!host.client || !host.connected || !message.trim()) {
+  const hasAttachments = attachments && attachments.length > 0;
+  if (!host.client || !host.connected || (!message.trim() && !hasAttachments)) {
     return;
   }
 
@@ -1287,12 +1296,31 @@ export async function sendGroupMessage(
   }
 
   try {
+    // 将 attachments 转换为 API 格式
+    const apiAttachments = hasAttachments
+      ? attachments
+          .map((att) => {
+            const match = /^data:([^;]+);base64,(.+)$/.exec(att.dataUrl);
+            if (!match) {
+              return null;
+            }
+            return {
+              type: "image",
+              mimeType: match[1],
+              content: match[2],
+            };
+          })
+          .filter((a): a is NonNullable<typeof a> => a !== null)
+      : undefined;
+
     await host.client.request("group.send", {
       groupId,
       message: message.trim(),
       mentions: mentions?.length ? mentions : undefined,
+      attachments: apiAttachments,
     });
     host.groupDraft = "";
+    host.groupAttachments = [];
   } catch (err) {
     host.groupError = `Failed to send: ${String(err)}`;
     host.groupPendingAgents = new Set();
@@ -2023,6 +2051,7 @@ export async function enterGroupChat(host: GroupHost, groupId: string): Promise<
   host.groupError = null;
   host.groupNotFound = false;
   host.groupDraft = "";
+  host.groupAttachments = [];
   host.bridgeTerminalStatuses = new Map();
   // Clear stale stream buffers from the previous group to avoid ghost bubbles
   streamBuffers.clear();
