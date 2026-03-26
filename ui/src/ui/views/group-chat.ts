@@ -832,7 +832,13 @@ function renderGroupMessage(
   const cleanContent = isAssistant ? stripThinkingTags(msg.content) : msg.content;
   const contentWithEscapes = cleanContent.replace(/\\@/g, "@");
   const markdownHtml = toSanitizedMarkdownHtml(contentWithEscapes);
-  const contentHtml = highlightMentionsInHtml(markdownHtml, memberIds, senderId, mentionedAgents);
+  const contentHtml = highlightMentionsInHtml(
+    markdownHtml,
+    memberIds,
+    agentsList,
+    senderId,
+    mentionedAgents,
+  );
 
   // 渲染消息中的图片附件
   const messageImages = msg.images ?? [];
@@ -1148,7 +1154,7 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
                 </span>
                 <span class="group-members-panel__text">
                   <span class="group-members-panel__name">${displayName}</span>
-                  ${showId ? html`<span class="group-members-panel__id">@${m.agentId}</span>` : nothing}
+                  ${showId ? html`<span class="group-members-panel__id">${m.agentId}</span>` : nothing}
                 </span>
                 <span class="group-members-panel__role badge badge--${roleLabel}">${roleLabel}</span>
                 ${
@@ -2258,6 +2264,9 @@ function parseMentions(
   let match: RegExpExecArray | null;
   let hasAllMention = false;
 
+  // 收集需要替换的 name→agentId 映射（用于将消息文本中的 @agentName 替换为 @agentId）
+  const nameToIdReplacements: Array<{ name: string; agentId: string }> = [];
+
   while ((match = mentionPattern.exec(text)) !== null) {
     const name = match[1];
     // Check for @all or @全体成员
@@ -2265,16 +2274,22 @@ function parseMentions(
       hasAllMention = true;
     } else {
       // Find member by agentId or by display name
-      const member =
-        members.find((m) => m.agentId === name) ??
-        (agentsList
-          ? members.find((m) => {
-              const displayName = resolveAgentName(m.agentId, agentsList);
-              return displayName === name;
-            })
-          : undefined);
-      if (member) {
-        mentions.push(member.agentId);
+      const memberById = members.find((m) => m.agentId === name);
+      if (memberById) {
+        mentions.push(memberById.agentId);
+      } else if (agentsList) {
+        // 尝试通过显示名称匹配
+        const memberByName = members.find((m) => {
+          const displayName = resolveAgentName(m.agentId, agentsList);
+          return displayName === name;
+        });
+        if (memberByName) {
+          mentions.push(memberByName.agentId);
+          // 记录需要替换的名称（名称与 agentId 不同时才需要替换）
+          if (name !== memberByName.agentId) {
+            nameToIdReplacements.push({ name, agentId: memberByName.agentId });
+          }
+        }
       }
     }
   }
@@ -2284,7 +2299,18 @@ function parseMentions(
     members.forEach((m) => mentions.push(m.agentId));
   }
 
-  return { text, mentions: [...new Set(mentions)] };
+  // 将消息文本中的 @agentName 替换为 @agentId，确保后端 transcript 中使用 agentId，
+  // 这样 agent 看到的也是 @agentId 格式，能被 extractDedicatedMentions 正确匹配。
+  let processedText = text;
+  // 按名称长度降序排列，避免短名称误替换长名称的一部分
+  const sortedReplacements = [...nameToIdReplacements].toSorted(
+    (a, b) => b.name.length - a.name.length,
+  );
+  for (const { name, agentId } of sortedReplacements) {
+    processedText = processedText.replaceAll(`@${name}`, `@${agentId}`);
+  }
+
+  return { text: processedText, mentions: [...new Set(mentions)] };
 }
 
 function renderMentionDropdown(agentsList: GroupChatViewProps["agentsList"]) {
@@ -2360,6 +2386,7 @@ function formatTimeAgo(ts: number): string {
 function highlightMentionsInHtml(
   html: string,
   memberIds: string[],
+  agentsList?: GroupChatViewProps["agentsList"],
   excludeId?: string,
   highlightIds?: string[],
 ): string {
@@ -2389,10 +2416,12 @@ function highlightMentionsInHtml(
     if (agentId === excludeId) {
       continue;
     }
+    // 将 @agentId 渲染为 @显示名称，保留原文的 @ 前缀
+    const displayName = agentsList ? resolveAgentName(agentId, agentsList) : agentId;
     // Match @agentId that's not part of a longer word and not inside HTML tags
     // Use a regex that avoids matching inside <...>
     const pattern = new RegExp(`@${escapeRegExp(agentId)}(?![a-zA-Z0-9_-])(?![^<]*>)`, "g");
-    result = result.replace(pattern, `<mark class="mention">@${agentId}</mark>`);
+    result = result.replace(pattern, `<mark class="mention">@${displayName}</mark>`);
   }
 
   return result;
