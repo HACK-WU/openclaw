@@ -117,6 +117,35 @@ export type GroupChatMessage = {
   images?: Array<{ type: "image"; data: string; mimeType: string }>;
 };
 
+export type BridgeTerminalStatus =
+  | "idle"
+  | "working"
+  | "ready"
+  | "completed"
+  | "timeout"
+  | "error"
+  | "disconnected";
+
+export type GroupStreamEntry = {
+  runId: string;
+  text: string;
+  startedAt: number;
+  timelineOrder: number;
+};
+
+export type GroupBridgeSnapshot = {
+  id: string;
+  groupId: string;
+  agentId: string;
+  runId: string;
+  text: string;
+  startedAt: number;
+  timelineOrder: number;
+  terminalVisible: boolean;
+  terminalStatus: BridgeTerminalStatus;
+  source: "live-freeze" | "refresh-recovery";
+};
+
 export type GroupStreamPayload = {
   groupId: string;
   agentId: string;
@@ -149,7 +178,9 @@ export type GroupChatState = {
   /** Group chat messages */
   groupMessages: GroupChatMessage[];
   /** Active agent streams (agentId → current text) */
-  groupStreams: Map<string, { runId: string; text: string; startedAt: number; frozen?: boolean }>;
+  groupStreams: Map<string, GroupStreamEntry>;
+  /** Frozen bridge snapshots that participate in unified timeline rendering */
+  groupBridgeSnapshots: Map<string, GroupBridgeSnapshot>;
   /** Agents that are pending response (waiting for first stream delta) */
   groupPendingAgents: Set<string>;
   /** Tool messages for real-time display (key: "agentId:runId" → messages) */
@@ -182,10 +213,7 @@ export type GroupChatState = {
   groupInfoPanelOpen: boolean;
   // ─── Bridge Terminal state ───
   /** Active bridge terminal statuses (agentId → status) */
-  bridgeTerminalStatuses?: Map<
-    string,
-    "idle" | "working" | "ready" | "completed" | "timeout" | "error" | "disconnected"
-  >;
+  bridgeTerminalStatuses?: Map<string, BridgeTerminalStatus>;
   /** Terminal replay buffers (Base64-encoded, for page refresh restoration) */
   bridgeTerminalReplayBuffers?: Map<string, string>;
 };
@@ -245,6 +273,7 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   activeGroupMeta: null,
   groupMessages: [],
   groupStreams: new Map(),
+  groupBridgeSnapshots: new Map(),
   groupPendingAgents: new Set(),
   groupToolMessages: new Map(),
   groupIndex: [],
@@ -270,6 +299,103 @@ export type GroupHost = {
   client: GatewayBrowserClient | null;
   connected: boolean;
 } & GroupChatState;
+
+let nextTimelineOrder = 1;
+
+function allocateTimelineOrder(): number {
+  return nextTimelineOrder++;
+}
+
+function getBridgeSnapshotKey(agentId: string, runId: string): string {
+  return `${agentId}:${runId}`;
+}
+
+function upsertBridgeSnapshot(
+  host: GroupChatState,
+  snapshot: Omit<GroupBridgeSnapshot, "id">,
+): void {
+  const key = getBridgeSnapshotKey(snapshot.agentId, snapshot.runId);
+  const nextSnapshots = new Map(host.groupBridgeSnapshots);
+  nextSnapshots.set(key, {
+    ...snapshot,
+    id: `bridge-snapshot:${key}`,
+  });
+  host.groupBridgeSnapshots = nextSnapshots;
+}
+
+function removeBridgeSnapshot(host: GroupChatState, agentId: string, runId: string): boolean {
+  const key = getBridgeSnapshotKey(agentId, runId);
+  if (!host.groupBridgeSnapshots.has(key)) {
+    return false;
+  }
+  const nextSnapshots = new Map(host.groupBridgeSnapshots);
+  nextSnapshots.delete(key);
+  host.groupBridgeSnapshots = nextSnapshots;
+  return true;
+}
+
+function setBridgeSnapshotsTerminalVisible(
+  host: GroupChatState,
+  agentId: string,
+  terminalVisible: boolean,
+): void {
+  if (host.groupBridgeSnapshots.size === 0) {
+    return;
+  }
+  let changed = false;
+  const nextSnapshots = new Map(host.groupBridgeSnapshots);
+  for (const [key, snapshot] of host.groupBridgeSnapshots) {
+    if (snapshot.agentId !== agentId || snapshot.terminalVisible === terminalVisible) {
+      continue;
+    }
+    nextSnapshots.set(key, { ...snapshot, terminalVisible });
+    changed = true;
+  }
+  if (changed) {
+    host.groupBridgeSnapshots = nextSnapshots;
+  }
+}
+
+function findLatestBridgeSnapshotByAgent(
+  host: GroupChatState,
+  agentId: string,
+): GroupBridgeSnapshot | null {
+  let latest: GroupBridgeSnapshot | null = null;
+  for (const snapshot of host.groupBridgeSnapshots.values()) {
+    if (snapshot.agentId !== agentId) {
+      continue;
+    }
+    if (
+      latest === null ||
+      snapshot.timelineOrder > latest.timelineOrder ||
+      (snapshot.timelineOrder === latest.timelineOrder && snapshot.startedAt > latest.startedAt)
+    ) {
+      latest = snapshot;
+    }
+  }
+  return latest;
+}
+
+function removeBridgeSnapshotByAgentFallback(
+  host: GroupChatState,
+  agentId: string,
+  messageTimestamp: number,
+): boolean {
+  const matchingSnapshots = [...host.groupBridgeSnapshots.values()].filter(
+    (snapshot) => snapshot.agentId === agentId,
+  );
+  if (matchingSnapshots.length !== 1) {
+    return false;
+  }
+  if (host.groupStreams.has(agentId)) {
+    return false;
+  }
+  const [snapshot] = matchingSnapshots;
+  if (Math.abs(snapshot.startedAt - messageTimestamp) > 5 * 60 * 1000) {
+    return false;
+  }
+  return removeBridgeSnapshot(host, agentId, snapshot.runId);
+}
 
 const groupMetaCache = new Map<string, GroupSessionMeta>();
 const groupActiveStreamKeys = new Map<string, Set<string>>();
@@ -373,6 +499,7 @@ function resetGroupRoomState(host: GroupChatState): void {
   host.activeGroupMeta = null;
   host.groupMessages = [];
   host.groupStreams = new Map();
+  host.groupBridgeSnapshots = new Map();
   host.groupPendingAgents = new Set();
   host.groupToolMessages = new Map();
   host.groupChatLoading = false;
@@ -974,6 +1101,8 @@ export async function detectAndForwardMentions(
   // Separate first-time mentions from repeated mentions
   const firstTimeMentions: string[] = [];
 
+  const queuedAgentIds: string[] = [];
+
   for (const agentId of mentionedIds) {
     if (hasBeenMentioned(chain, agentId)) {
       // Already triggered in this chain, save for later delivery
@@ -982,12 +1111,22 @@ export async function detectAndForwardMentions(
         message,
         fromAgentId: senderAgentId ?? "unknown",
       });
+      queuedAgentIds.push(agentId);
     } else {
       // First time being mentioned - mark immediately to prevent race conditions
       // when the same message is processed multiple times (e.g., due to WebSocket reconnect)
       addMentionedAgent(chain, agentId);
       firstTimeMentions.push(agentId);
     }
+  }
+
+  // Notify user that repeated @mentions have been queued for later delivery
+  if (queuedAgentIds.length > 0) {
+    appendSystemMessageToUI(
+      host,
+      message.groupId,
+      `⏳ ${queuedAgentIds.map((id) => `@${id}`).join(" ")} 正在回复中，消息已排队，将在当前回复完成后自动投递。`,
+    );
   }
 
   // Only trigger first-time mentions
@@ -1644,6 +1783,7 @@ export async function confirmClearMessages(host: GroupHost): Promise<void> {
     // Clear local state
     host.groupMessages = [];
     host.groupStreams = new Map();
+    host.groupBridgeSnapshots = new Map();
     host.groupPendingAgents = new Set();
     host.groupToolMessages = new Map();
     streamBuffers.clear();
@@ -1670,21 +1810,39 @@ export function handleGroupMessageEvent(
 ): void {
   const isActiveGroup = payload.groupId === host.activeGroupId;
   if (isActiveGroup) {
+    // When a formal message from a bridge agent replaces a bridge snapshot,
+    // inherit the snapshot's startedAt so the message stays at the same
+    // timeline position instead of jumping to the bottom (the formal message's
+    // timestamp is always later because it is created after CLI completion +
+    // idle detection + network RTT).
+    if (payload.sender.type === "agent" && "agentId" in payload.sender) {
+      const replacedSnapshot = findLatestBridgeSnapshotByAgent(host, payload.sender.agentId);
+      if (replacedSnapshot) {
+        payload.timestamp = replacedSnapshot.startedAt;
+      }
+    }
+
     if (host.groupMessages.some((m) => m.id === payload.id)) {
       // duplicate message, skip
     } else {
       host.groupMessages = [...host.groupMessages, payload];
     }
 
-    // When a formal message arrives from an agent, remove any frozen stream
-    // bubble for that agent — the persistent message supersedes the temporary
-    // stream bubble.
     if (payload.sender.type === "agent" && "agentId" in payload.sender) {
-      const frozenStream = host.groupStreams.get(payload.sender.agentId);
-      if (frozenStream?.frozen) {
-        const next = new Map(host.groupStreams);
-        next.delete(payload.sender.agentId);
-        host.groupStreams = next;
+      let snapshotRemoved = false;
+      if (payload.agentRunId) {
+        snapshotRemoved = removeBridgeSnapshot(host, payload.sender.agentId, payload.agentRunId);
+      }
+      if (!snapshotRemoved) {
+        snapshotRemoved = removeBridgeSnapshotByAgentFallback(host, payload.sender.agentId, payload.timestamp);
+      }
+
+      // Once the formal message replaces the snapshot, clear the terminal status
+      // so the terminal component does not appear as an orphan at the bottom.
+      if (snapshotRemoved && host.bridgeTerminalStatuses?.has(payload.sender.agentId)) {
+        const nextStatuses = new Map(host.bridgeTerminalStatuses);
+        nextStatuses.delete(payload.sender.agentId);
+        host.bridgeTerminalStatuses = nextStatuses;
       }
     }
   }
@@ -1714,7 +1872,27 @@ export function handleGroupMessageEvent(
 }
 
 const streamBuffers = new Map<string, string>();
-let streamSyncTimer: number | null = null;
+const pendingSyncAgents = new Set<string>();
+let batchSyncTimer: number | null = null;
+
+function scheduleBatchSync(host: GroupChatState, agentId: string): void {
+  pendingSyncAgents.add(agentId);
+  if (batchSyncTimer !== null) {
+    return;
+  }
+  batchSyncTimer = window.setTimeout(() => {
+    batchSyncTimer = null;
+    batchSyncGroupStreams(host);
+  }, 60);
+}
+
+function flushPendingBridgeSyncIfNeeded(host: GroupChatState): void {
+  if (batchSyncTimer !== null) {
+    clearTimeout(batchSyncTimer);
+    batchSyncTimer = null;
+  }
+  batchSyncGroupStreams(host);
+}
 
 export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStreamPayload): void {
   const isActiveGroup = payload.groupId === host.activeGroupId;
@@ -1752,12 +1930,7 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     }
 
     if (deltaText.length === 0) {
-      if (!streamSyncTimer) {
-        streamSyncTimer = window.setTimeout(() => {
-          syncGroupStreams(host);
-          streamSyncTimer = null;
-        }, 50);
-      }
+      scheduleBatchSync(host, payload.agentId);
       return;
     }
 
@@ -1780,13 +1953,7 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     }
 
     streamBuffers.set(streamKey, deltaText);
-
-    if (!streamSyncTimer) {
-      streamSyncTimer = window.setTimeout(() => {
-        syncGroupStreams(host);
-        streamSyncTimer = null;
-      }, 50);
-    }
+    scheduleBatchSync(host, payload.agentId);
     return;
   }
 
@@ -1804,9 +1971,9 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     }
 
     if (host.groupPendingAgents.has(payload.agentId)) {
-      const next = new Set(host.groupPendingAgents);
-      next.delete(payload.agentId);
-      host.groupPendingAgents = next;
+      const nextPending = new Set(host.groupPendingAgents);
+      nextPending.delete(payload.agentId);
+      host.groupPendingAgents = nextPending;
     }
 
     const next = new Map(host.groupStreams);
@@ -1817,6 +1984,7 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     host.groupStreams = next;
 
     streamBuffers.delete(`${payload.agentId}:${payload.runId}`);
+    pendingSyncAgents.delete(payload.agentId);
     const currentToolMessages = host.groupToolMessages ?? new Map();
     const toolNext = new Map(currentToolMessages);
     toolNext.delete(`${payload.agentId}:${payload.runId}`);
@@ -1827,37 +1995,45 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
   }
 }
 
-function syncGroupStreams(host: GroupChatState): void {
+function batchSyncGroupStreams(host: GroupChatState): void {
+  const agents = new Set(pendingSyncAgents);
+  pendingSyncAgents.clear();
+  if (agents.size === 0) {
+    return;
+  }
+
   const next = new Map(host.groupStreams);
+  let changed = false;
+
   for (const [key, text] of streamBuffers) {
-    // Split only on the *first* colon so that runIds containing colons
-    // (e.g. bridge terminal's "__bridge__agentId:timestamp") are preserved
-    // intact.  The old `key.split(":")` destructure silently truncated
-    // such runIds, causing clearBridgeTerminalStream's runId comparison
-    // to fail and the streaming bubble to linger after completion.
     const colonIdx = key.indexOf(":");
     if (colonIdx <= 0) {
       continue;
     }
     const agentId = key.slice(0, colonIdx);
     const runId = key.slice(colonIdx + 1);
-    if (!runId) {
+    if (!runId || !agents.has(agentId)) {
       continue;
     }
 
     const existing = next.get(agentId);
-    // Never overwrite a frozen stream — it is finalized and must stay as-is.
-    if (existing?.frozen) {
+    if (existing?.runId === runId && existing.text === text) {
       continue;
     }
-    // Only update if this is the same run or newer (runId is unique, so we always update)
+
     next.set(agentId, {
       runId,
       text,
-      startedAt: existing?.startedAt ?? Date.now(),
+      startedAt: existing?.runId === runId ? existing.startedAt : Date.now(),
+      timelineOrder:
+        existing?.runId === runId ? existing.timelineOrder : allocateTimelineOrder(),
     });
+    changed = true;
   }
-  host.groupStreams = next;
+
+  if (changed) {
+    host.groupStreams = next;
+  }
 }
 
 export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSystemPayload): void {
@@ -1886,6 +2062,7 @@ export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSyste
       host.groupMessages = [...host.groupMessages, systemMsg];
       host.groupPendingAgents = new Set();
       host.groupStreams = new Map();
+      host.groupBridgeSnapshots = new Map();
       host.groupToolMessages = new Map();
       streamBuffers.clear();
     }
@@ -1983,6 +2160,7 @@ export async function enterGroupChat(host: GroupHost, groupId: string): Promise<
   host.activeGroupMeta = groupMetaCache.get(groupId) ?? null;
   host.groupMessages = [];
   host.groupStreams = new Map();
+  host.groupBridgeSnapshots = new Map();
   host.groupPendingAgents = new Set();
   host.groupToolMessages = new Map();
   host.groupError = null;
@@ -2161,10 +2339,6 @@ export function handleGroupTerminalStatusEvent(
   statuses.set(payload.agentId, mappedStatus);
   host.bridgeTerminalStatuses = statuses;
 
-  // Once a bridge terminal has started or become ready, the generic pending
-  // indicator should disappear to avoid rendering the same agent twice.
-  // Also clear on terminal states (timeout, error, disconnected) to stop
-  // the "generating..." bubble when the CLI agent stops running.
   if (
     mappedStatus === "working" ||
     mappedStatus === "ready" ||
@@ -2178,16 +2352,18 @@ export function handleGroupTerminalStatusEvent(
     host.groupPendingAgents = nextPending;
   }
 
-  // When status becomes "completed" or "timeout", clean up streaming bubble
-  // and mark the terminal as finished. Also push extracted text to backend
-  // in case the frontend idle detection hasn't fired yet.
+  if (mappedStatus === "working") {
+    activeBridgeStreamRuns.delete(payload.agentId);
+    const nextStreams = new Map(host.groupStreams);
+    nextStreams.delete(payload.agentId);
+    host.groupStreams = nextStreams;
+    setBridgeSnapshotsTerminalVisible(host, payload.agentId, false);
+  }
+
   if (mappedStatus === "completed" || mappedStatus === "timeout") {
     clearBridgeTerminalStream(host, payload.agentId);
     const terminal = getBridgeTerminal(payload.groupId, payload.agentId);
     if (terminal) {
-      // Extract text before completing — the backend may still be waiting
-      // for frontend-extracted text (e.g. PTY exit detection happened before
-      // the frontend's idle timer fired).
       const extractedText = terminal.extractVisibleText();
       if (extractedText?.trim() && "client" in host) {
         void sendTerminalTextExtracted(
@@ -2197,21 +2373,7 @@ export function handleGroupTerminalStatusEvent(
           extractedText,
         );
       }
-      // Pass the correct status to completeAndFold
       terminal.completeAndFold(mappedStatus === "timeout" ? "timeout" : "completed");
-    }
-  }
-
-  // When a new working cycle starts, reset the bridge stream runId so
-  // the next round gets a fresh synthetic runId, and clear any frozen
-  // stream from the previous cycle so the new live stream can take over.
-  if (mappedStatus === "working") {
-    activeBridgeStreamRuns.delete(payload.agentId);
-    const currentStream = host.groupStreams.get(payload.agentId);
-    if (currentStream?.frozen) {
-      const next = new Map(host.groupStreams);
-      next.delete(payload.agentId);
-      host.groupStreams = next;
     }
   }
 }
@@ -2327,31 +2489,47 @@ export function handleBridgeTerminalStreamUpdate(
     return;
   }
 
-  // When the terminal has already completed/errored, do not feed the normal
-  // streaming pipeline (which would restart the "generating" animation).
-  // However, if the stream update arrives for a completed terminal AND there
-  // is no existing frozen stream for this agent, inject a frozen entry
-  // directly. This handles the page-refresh recovery path: the bridge-terminal
-  // component replays its buffer and emits a stream update *after* the
-  // terminal status was already restored as "completed".
   const terminalStatus = host.bridgeTerminalStatuses?.get(agentId);
   if (
     terminalStatus === "completed" ||
     terminalStatus === "error" ||
     terminalStatus === "disconnected"
   ) {
-    const existing = host.groupStreams.get(agentId);
-    if (!existing && text.trim()) {
-      // Inject a frozen stream entry for the completed terminal
-      const runId = `${BRIDGE_STREAM_RUN_PREFIX}${agentId}:restored`;
-      const next = new Map(host.groupStreams);
-      next.set(agentId, {
+    if (!text.trim()) {
+      return;
+    }
+
+    const existingSnapshot = findLatestBridgeSnapshotByAgent(host, agentId);
+    if (existingSnapshot) {
+      upsertBridgeSnapshot(host, {
+        groupId: existingSnapshot.groupId,
+        agentId: existingSnapshot.agentId,
+        runId: existingSnapshot.runId,
+        text,
+        startedAt: existingSnapshot.startedAt,
+        timelineOrder: existingSnapshot.timelineOrder,
+        terminalVisible: true,
+        terminalStatus,
+        source: existingSnapshot.source,
+      });
+      return;
+    }
+
+    const runId = `${BRIDGE_STREAM_RUN_PREFIX}${agentId}:restored`;
+    const hasActive = host.groupStreams.get(agentId)?.runId === runId;
+    const hasSnapshot = host.groupBridgeSnapshots.has(getBridgeSnapshotKey(agentId, runId));
+    if (!hasActive && !hasSnapshot) {
+      upsertBridgeSnapshot(host, {
+        groupId,
+        agentId,
         runId,
         text,
         startedAt: Date.now(),
-        frozen: true,
+        timelineOrder: allocateTimelineOrder(),
+        terminalVisible: true,
+        terminalStatus,
+        source: "refresh-recovery",
       });
-      host.groupStreams = next;
     }
     return;
   }
@@ -2359,76 +2537,61 @@ export function handleBridgeTerminalStreamUpdate(
   const runId = getBridgeStreamRunId(agentId);
   const streamKey = `${agentId}:${runId}`;
 
-  // Remove pending indicator for this agent
   if (host.groupPendingAgents.has(agentId)) {
     const next = new Set(host.groupPendingAgents);
     next.delete(agentId);
     host.groupPendingAgents = next;
   }
 
-  // Inject into the same stream pipeline as LLM agents.
-  // `text` is the *full* visible text (not a delta), which is exactly what
-  // `streamBuffers` expects — it's an overwrite, not an append.
   streamBuffers.set(streamKey, text);
-
-  if (!streamSyncTimer) {
-    streamSyncTimer = window.setTimeout(() => {
-      syncGroupStreams(host);
-      streamSyncTimer = null;
-    }, 50);
-  }
+  scheduleBatchSync(host, agentId);
 }
 
 /**
- * Freeze the streaming chat bubble for a Bridge Agent when it completes.
- * Called from the terminal status event handler.
- *
- * Instead of deleting the stream entry (which would cause the bubble to
- * vanish entirely), we mark it as `frozen` so the view layer can render
- * it without the "generating" indicator. The streamBuffers are cleaned
- * up to prevent further updates, but the groupStreams entry is preserved.
- *
- * This is defensive: even if `activeBridgeStreamRuns` has no record for
- * this agent, we still scan `streamBuffers` to remove lingering entries.
+ * Convert the active bridge streaming bubble into a frozen snapshot when the
+ * current run completes. This removes the active stream entry and persists the
+ * frozen UI state in `groupBridgeSnapshots` instead of `groupStreams`.
  */
 export function clearBridgeTerminalStream(host: GroupChatState, agentId: string): void {
   const runId = activeBridgeStreamRuns.get(agentId);
 
-  // 1. Remove the primary streamBuffer entry (exact key)
   if (runId) {
     streamBuffers.delete(`${agentId}:${runId}`);
   }
 
-  // 2. Defensive sweep: remove any remaining bridge-stream buffer entries
-  //    for this agent (guards against runId mismatch / stale timers).
   for (const key of streamBuffers.keys()) {
     if (key.startsWith(`${agentId}:${BRIDGE_STREAM_RUN_PREFIX}`)) {
       streamBuffers.delete(key);
     }
   }
+  pendingSyncAgents.delete(agentId);
 
-  // 3. Freeze the groupStreams entry instead of deleting it.
-  //    This keeps the bubble visible but stops the "generating" animation.
-  const next = new Map(host.groupStreams);
-  const currentStream = next.get(agentId);
+  const nextStreams = new Map(host.groupStreams);
+  const currentStream = nextStreams.get(agentId);
   if (currentStream) {
     const isExactMatch = runId && currentStream.runId === runId;
     const isBridgeStream = currentStream.runId.startsWith(BRIDGE_STREAM_RUN_PREFIX);
-    if ((isExactMatch || isBridgeStream) && !currentStream.frozen) {
-      next.set(agentId, { ...currentStream, frozen: true });
+    if (isExactMatch || isBridgeStream) {
+      nextStreams.delete(agentId);
+      host.groupStreams = nextStreams;
+
+      const text = currentStream.text?.trim() ?? "";
+      if (text) {
+        upsertBridgeSnapshot(host, {
+          groupId: host.activeGroupId ?? "",
+          agentId,
+          runId: currentStream.runId,
+          text: currentStream.text,
+          startedAt: currentStream.startedAt,
+          timelineOrder: currentStream.timelineOrder,
+          terminalVisible: true,
+          terminalStatus: host.bridgeTerminalStatuses?.get(agentId) ?? "completed",
+          source: "live-freeze",
+        });
+      }
     }
   }
-  host.groupStreams = next;
 
-  // 4. Clean up the runId mapping
   activeBridgeStreamRuns.delete(agentId);
-
-  // 5. Cancel any pending sync timer to prevent stale data from being
-  //    re-injected into groupStreams after we've cleaned up.
-  if (streamSyncTimer !== null) {
-    clearTimeout(streamSyncTimer);
-    streamSyncTimer = null;
-    // Re-sync immediately with the cleaned-up buffers
-    syncGroupStreams(host);
-  }
+  flushPendingBridgeSyncIfNeeded(host);
 }

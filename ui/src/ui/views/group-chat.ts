@@ -13,20 +13,23 @@ import { extractThinkingCached, formatReasoningMarkdown } from "../chat/message-
 import { classifyToolCards, extractToolCards } from "../chat/tool-cards.ts";
 import { typewriter } from "../chat/typewriter-directive.ts";
 import {
-  BridgeTerminalResizeEvent,
-  BridgeTerminalStreamEndEvent,
-  BridgeTerminalStreamUpdateEvent,
+    BridgeTerminalResizeEvent,
+    BridgeTerminalStreamEndEvent,
+    BridgeTerminalStreamUpdateEvent,
 } from "../components/bridge-terminal.ts";
 import type {
-  GroupAddMemberDialogState,
-  GroupChatMessage,
-  GroupClearMessagesDialogState,
-  GroupCreateDialogState,
-  GroupDisbandDialogState,
-  GroupIndexEntry,
-  GroupRemoveMemberDialogState,
-  GroupSessionMeta,
-  GroupToolMessage,
+    BridgeTerminalStatus,
+    GroupAddMemberDialogState,
+    GroupBridgeSnapshot,
+    GroupChatMessage,
+    GroupClearMessagesDialogState,
+    GroupCreateDialogState,
+    GroupDisbandDialogState,
+    GroupIndexEntry,
+    GroupRemoveMemberDialogState,
+    GroupSessionMeta,
+    GroupStreamEntry,
+    GroupToolMessage
 } from "../controllers/group-chat.ts";
 import { getMentionedAgents, isBridgeAssistantAgent } from "../controllers/group-chat.ts";
 import { stripThinkingTags } from "../format.ts";
@@ -237,7 +240,8 @@ export type GroupChatViewProps = {
   activeGroupId: string | null;
   activeGroupMeta: GroupSessionMeta | null;
   groupMessages: GroupChatMessage[];
-  groupStreams: Map<string, { runId: string; text: string; startedAt: number; frozen?: boolean }>;
+  groupStreams: Map<string, GroupStreamEntry>;
+  groupBridgeSnapshots: Map<string, GroupBridgeSnapshot>;
   groupPendingAgents: Set<string>;
   groupToolMessages: Map<string, GroupToolMessage[]>;
   groupIndex: GroupIndexEntry[];
@@ -329,10 +333,7 @@ export type GroupChatViewProps = {
   onOpenSidebar?: (content: string) => void;
   onCloseSidebar?: () => void;
   // Bridge terminal
-  bridgeTerminalStatuses?: Map<
-    string,
-    "idle" | "working" | "ready" | "completed" | "error" | "disconnected"
-  >;
+  bridgeTerminalStatuses?: Map<string, BridgeTerminalStatus>;
   /** Terminal replay buffers (Base64-encoded, for page refresh restoration) */
   bridgeTerminalReplayBuffers?: Map<string, string>;
   // Image attachments
@@ -347,6 +348,92 @@ export function renderGroupChat(props: GroupChatViewProps) {
     return renderGroupChatRoom(props);
   }
   return renderGroupList(props);
+}
+
+type GroupTimelineItem =
+  | {
+      kind: "message";
+      id: string;
+      sortAt: number;
+      order: number;
+      message: GroupChatMessage;
+    }
+  | {
+      kind: "stream";
+      id: string;
+      sortAt: number;
+      order: number;
+      agentId: string;
+      stream: GroupStreamEntry;
+      toolMessages?: GroupToolMessage[];
+    }
+  | {
+      kind: "bridge-snapshot";
+      id: string;
+      sortAt: number;
+      order: number;
+      snapshot: GroupBridgeSnapshot;
+    };
+
+function compareTimelineItems(a: GroupTimelineItem, b: GroupTimelineItem): number {
+  if (a.sortAt !== b.sortAt) {
+    return a.sortAt - b.sortAt;
+  }
+  if (a.order !== b.order) {
+    return a.order - b.order;
+  }
+  const rank = {
+    message: 0,
+    "bridge-snapshot": 1,
+    stream: 2,
+  } as const;
+  return rank[a.kind] - rank[b.kind];
+}
+
+function buildGroupTimeline(
+  props: GroupChatViewProps,
+  meta: GroupSessionMeta,
+): GroupTimelineItem[] {
+  const items: GroupTimelineItem[] = [];
+
+  for (const message of props.groupMessages) {
+    items.push({
+      kind: "message",
+      id: `message:${message.id}`,
+      sortAt: message.timestamp,
+      order: message.serverSeq > 0 ? message.serverSeq : message.timestamp,
+      message,
+    });
+  }
+
+  for (const [agentId, stream] of props.groupStreams.entries()) {
+    const toolKey = `${agentId}:${stream.runId}`;
+    items.push({
+      kind: "stream",
+      id: `stream:${agentId}:${stream.runId}`,
+      sortAt: stream.startedAt,
+      order: stream.timelineOrder,
+      agentId,
+      stream,
+      toolMessages: props.groupToolMessages.get(toolKey),
+    });
+  }
+
+  for (const snapshot of props.groupBridgeSnapshots.values()) {
+    if (snapshot.groupId !== meta.groupId) {
+      continue;
+    }
+    items.push({
+      kind: "bridge-snapshot",
+      id: snapshot.id,
+      sortAt: snapshot.startedAt,
+      order: snapshot.timelineOrder,
+      snapshot,
+    });
+  }
+
+  items.sort(compareTimelineItems);
+  return items;
 }
 
 // ─── Group List View ───
@@ -469,14 +556,21 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
   // Ensure groupToolMessages is defined (defensive check)
   const toolMessages = groupToolMessages ?? new Map();
 
+  const timelineItems = buildGroupTimeline(props, meta);
   const hasActiveStreams = groupStreams.size > 0;
   const hasPendingAgents = groupPendingAgents.size > 0;
 
-  // Pending agents that are NOT yet streaming and do not already have an
-  // active bridge terminal rendered.
-  const pendingOnly = [...groupPendingAgents].filter(
-    (id) => !groupStreams.has(id) && !props.bridgeTerminalStatuses?.has(id),
-  );
+  const pendingOnly = [...groupPendingAgents].filter((id) => {
+    if (groupStreams.has(id)) {
+      return false;
+    }
+    for (const snapshot of props.groupBridgeSnapshots.values()) {
+      if (snapshot.agentId === id && snapshot.terminalVisible) {
+        return false;
+      }
+    }
+    return !props.bridgeTerminalStatuses?.has(id);
+  });
 
   // Sidebar state — overlay mode for group chat (covers members panel, does not push content)
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
@@ -554,40 +648,30 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                 : nothing
             }
 
-            ${repeat(
-              groupMessages,
-              (m) => m.id,
-              (m) =>
-                renderGroupMessage(
-                  m,
-                  meta,
-                  props.agentsList,
-                  props.showThinking,
-                  props.onOpenSidebar,
-                ),
-            )}
-
-            ${Array.from(groupStreams.entries()).map(([agentId, stream]) => {
-              const toolKey = `${agentId}:${stream.runId}`;
-              const tools = toolMessages.get(toolKey);
-              const isBridgeStream = stream.runId.startsWith("__bridge__");
-              return html`
-                ${renderGroupStreamBubble(
-                  agentId,
-                  stream,
-                  meta,
-                  props.agentsList,
-                  tools,
-                  props.showThinking,
-                  props.onOpenSidebar,
-                  isBridgeStream,
-                  stream.frozen,
-                )}
-                ${isBridgeStream ? renderBridgeTerminalForAgent(agentId, meta, props) : nothing}
-              `;
+            ${repeat(timelineItems, (item) => item.id, (item) => {
+              switch (item.kind) {
+                case "message":
+                  return renderGroupMessage(
+                    item.message,
+                    meta,
+                    props.agentsList,
+                    props.showThinking,
+                    props.onOpenSidebar,
+                  );
+                case "stream":
+                  return renderTimelineStream(
+                    item.agentId,
+                    item.stream,
+                    meta,
+                    props,
+                    item.toolMessages,
+                  );
+                case "bridge-snapshot":
+                  return renderBridgeSnapshot(item.snapshot, meta, props);
+              }
             })}
 
-            ${renderOrphanBridgeTerminals(meta, props, groupStreams)}
+            ${renderOrphanBridgeTerminals(meta, props, groupStreams, props.groupBridgeSnapshots)}
 
             ${pendingOnly.map((agentId) =>
               renderPendingAgentIndicator(agentId, meta, props.agentsList),
@@ -892,14 +976,13 @@ function renderGroupMessage(
 
 function renderGroupStreamBubble(
   agentId: string,
-  stream: { runId: string; text: string; startedAt: number; frozen?: boolean },
+  stream: GroupStreamEntry,
   meta: GroupSessionMeta,
   agentsList: GroupChatViewProps["agentsList"],
   toolMessages?: GroupToolMessage[],
   showThinking = false,
   onOpenSidebar?: (content: string) => void,
-  isBridgeStream = false,
-  frozen = false,
+  typewriterMode: "line" | "char" = "char",
 ) {
   const sender: { type: "agent"; agentId: string } = { type: "agent", agentId };
   const senderName = resolveSenderName(sender, meta, agentsList);
@@ -910,28 +993,23 @@ function renderGroupStreamBubble(
     second: "2-digit",
   });
 
-  // Render tool cards if available
   let toolCards: ReturnType<typeof renderInlineToolCards> = nothing;
   if (toolMessages && toolMessages.length > 0) {
-    // Convert GroupToolMessage[] to ToolCard[]
     const toolCardList: ToolCard[] = toolMessages.map((msg) => ({
       kind: msg.role === "tool_call" ? "call" : "result",
       name: msg.toolName ?? "tool",
       args: msg.toolArgs,
       text: msg.content,
     }));
-    // Classify the tool cards and render them
     const classified = classifyToolCards(toolCardList);
     toolCards = renderInlineToolCards(classified, onOpenSidebar);
   }
 
-  // For streaming text, extract thinking if <think> tags are present
   const streamText = stream.text;
   let displayText = streamText;
   let streamThinkingHtml: ReturnType<typeof html> | typeof nothing = nothing;
 
   if (showThinking && streamText) {
-    // Extract thinking from streaming text (may contain partial <think> tags)
     const thinkMatch = streamText.match(
       /<\s*think(?:ing)?\s*>([\s\S]*?)(<\s*\/\s*think(?:ing)?\s*>|$)/i,
     );
@@ -943,43 +1021,33 @@ function renderGroupStreamBubble(
           toSanitizedMarkdownHtml(reasoningMd),
         )}</div>`;
       }
-      // Strip thinking tags from displayed text
       displayText = stripThinkingTags(streamText);
     }
   } else if (streamText) {
-    // Even when not showing thinking, strip thinking tags from display
     displayText = stripThinkingTags(streamText);
   }
 
   return html`
-    <div class="chat-group assistant ${frozen ? "" : "streaming"}">
+    <div class="chat-group assistant streaming">
       <div class="chat-avatar assistant">${senderEmoji}</div>
       <div class="chat-group-messages">
-        <div class="chat-bubble ${frozen ? "" : "streaming"}">
+        <div class="chat-bubble streaming">
           ${streamThinkingHtml}
           ${
             displayText?.trim()
-              ? frozen
-                ? html`<div class="chat-text">${unsafeHTML(toSanitizedMarkdownHtml(displayText))}</div>`
-                : html`<div class="chat-text chat-text-streaming" ${typewriter(displayText, isBridgeStream ? "line" : "char")}></div>`
+              ? html`<div class="chat-text chat-text-streaming" ${typewriter(displayText, typewriterMode)}></div>`
               : nothing
           }
         </div>
         ${toolCards}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${senderName}</span>
-          ${
-            frozen
-              ? nothing
-              : html`
-              <span class="group-stream-indicator">
-                <span class="group-stream-indicator__label">${t("chat.group.generating")}</span>
-                <span class="group-stream-indicator__dots">
-                  <span></span><span></span><span></span>
-                </span>
-              </span>
-            `
-          }
+          <span class="group-stream-indicator">
+            <span class="group-stream-indicator__label">${t("chat.group.generating")}</span>
+            <span class="group-stream-indicator__dots">
+              <span></span><span></span><span></span>
+            </span>
+          </span>
           <span class="chat-group-timestamp">${timestamp}</span>
         </div>
       </div>
@@ -987,11 +1055,63 @@ function renderGroupStreamBubble(
   `;
 }
 
-/**
- * Render a bridge terminal for a specific agent, placed inline with its stream bubble.
- * This ensures the terminal card follows the agent's message position instead of
- * being fixed at the bottom of the message list.
- */
+function renderTimelineStream(
+  agentId: string,
+  stream: GroupStreamEntry,
+  meta: GroupSessionMeta,
+  props: GroupChatViewProps,
+  toolMessages?: GroupToolMessage[],
+) {
+  const isBridgeStream = stream.runId.startsWith("__bridge__");
+  return html`
+    ${renderGroupStreamBubble(
+      agentId,
+      stream,
+      meta,
+      props.agentsList,
+      toolMessages,
+      props.showThinking,
+      props.onOpenSidebar,
+      isBridgeStream ? "line" : "char",
+    )}
+    ${isBridgeStream ? renderBridgeTerminalForAgent(agentId, meta, props) : nothing}
+  `;
+}
+
+function renderBridgeSnapshot(
+  snapshot: GroupBridgeSnapshot,
+  meta: GroupSessionMeta,
+  props: GroupChatViewProps,
+) {
+  const sender: { type: "agent"; agentId: string } = { type: "agent", agentId: snapshot.agentId };
+  const senderName = resolveSenderName(sender, meta, props.agentsList);
+  const senderEmoji = resolveSenderEmoji(sender, meta, props.agentsList);
+  const timestamp = new Date(snapshot.startedAt).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const displayText = stripThinkingTags(snapshot.text ?? "");
+
+  return html`
+    <div class="chat-group assistant">
+      <div class="chat-avatar assistant">${senderEmoji}</div>
+      <div class="chat-group-messages">
+        <div class="chat-bubble assistant">
+          ${displayText.trim()
+            ? html`<div class="chat-text">${unsafeHTML(toSanitizedMarkdownHtml(displayText))}</div>`
+            : nothing}
+        </div>
+        <div class="chat-group-footer">
+          <span class="chat-sender-name">${senderName}</span>
+          <span class="chat-group-timestamp">${timestamp}</span>
+        </div>
+      </div>
+    </div>
+    ${snapshot.terminalVisible ? renderBridgeTerminalForAgent(snapshot.agentId, meta, props) : nothing}
+  `;
+}
+
 function renderBridgeTerminalForAgent(
   agentId: string,
   meta: GroupSessionMeta,
@@ -1034,16 +1154,11 @@ function renderBridgeTerminalForAgent(
   `;
 }
 
-/**
- * Render bridge terminals for agents that have an active terminal status
- * but do NOT have a corresponding stream bubble in groupStreams.
- * These "orphan" terminals need to be rendered independently (e.g. when
- * the terminal just started and no stream text has been emitted yet).
- */
 function renderOrphanBridgeTerminals(
   meta: GroupSessionMeta,
   props: GroupChatViewProps,
-  groupStreams: Map<string, { runId: string; text: string; startedAt: number; frozen?: boolean }>,
+  groupStreams: Map<string, GroupStreamEntry>,
+  groupBridgeSnapshots: Map<string, GroupBridgeSnapshot>,
 ) {
   const statuses = props.bridgeTerminalStatuses;
   if (!statuses || statuses.size === 0) {
@@ -1051,21 +1166,22 @@ function renderOrphanBridgeTerminals(
   }
 
   const bridgeMembers = meta.members.filter((m) => m.bridge && !isBridgeAssistantAgent(m.agentId));
-
   if (bridgeMembers.length === 0) {
     return nothing;
   }
 
-  // Only render terminals for agents that don't already have a bridge stream bubble
-  // (those are rendered inline with their stream bubble via renderBridgeTerminalForAgent)
   const orphanMembers = bridgeMembers.filter((m) => {
     if (!statuses.has(m.agentId)) {
       return false;
     }
     const stream = groupStreams.get(m.agentId);
-    // If there's a bridge stream for this agent, the terminal is already rendered inline
     if (stream && stream.runId.startsWith("__bridge__")) {
       return false;
+    }
+    for (const snapshot of groupBridgeSnapshots.values()) {
+      if (snapshot.agentId === m.agentId && snapshot.terminalVisible) {
+        return false;
+      }
     }
     return true;
   });

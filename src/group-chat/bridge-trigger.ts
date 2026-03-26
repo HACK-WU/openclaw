@@ -20,23 +20,23 @@ import type { TriggerAgentParams, TriggerAgentResult } from "./agent-trigger.js"
 import { updateChainState } from "./anti-loop.js";
 import { buildCoreFilesContentSection, buildCoreFilesPathSection } from "./bridge-context.js";
 import {
-  clearFrontendExtractedText,
-  createBridgePty,
-  getPtyState,
-  isPtyRunning,
-  killBridgePty,
-  setInputPhase,
-  updateLastTranscriptIndex,
-  waitForFrontendExtractedText,
-  writeToPty,
+    clearFrontendExtractedText,
+    createBridgePty,
+    getPtyState,
+    isPtyRunning,
+    killBridgePty,
+    setInputPhase,
+    updateLastTranscriptIndex,
+    waitForFrontendExtractedText,
+    writeToPty,
 } from "./bridge-pty.js";
 import type { BridgeConfig } from "./bridge-types.js";
 import {
-  DEFAULT_CONTEXT_MAX_CHARACTERS,
-  DEFAULT_CONTEXT_MAX_MESSAGES,
-  DEFAULT_REPLY_TIMEOUT_MS,
-  DEFAULT_ROLE_REMINDER_INTERVAL,
-  MAX_SINGLE_MESSAGE_CHARS,
+    DEFAULT_CONTEXT_MAX_CHARACTERS,
+    DEFAULT_CONTEXT_MAX_MESSAGES,
+    DEFAULT_REPLY_TIMEOUT_MS,
+    DEFAULT_ROLE_REMINDER_INTERVAL,
+    MAX_SINGLE_MESSAGE_CHARS,
 } from "./bridge-types.js";
 import { broadcastGroupMessage, broadcastGroupStream } from "./parallel-stream.js";
 import { broadcastTerminalData, broadcastTerminalStatus } from "./terminal-events.js";
@@ -44,7 +44,44 @@ import { appendGroupMessage } from "./transcript.js";
 import type { GroupAgentRun, GroupChatMessage, GroupSessionEntry } from "./types.js";
 import { isBridgeAssistant } from "./types.js";
 
-const log = getLogger("group-chat:bridge-trigger");
+const log = getLogger();
+
+const bridgeAgentQueues = new Map<string, Promise<void>>();
+
+function getBridgeQueueKey(groupId: string, agentId: string): string {
+  return `${groupId}:${agentId}`;
+}
+
+async function runBridgeAgentQueued<T>(
+  groupId: string,
+  agentId: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  const key = getBridgeQueueKey(groupId, agentId);
+  const previous = bridgeAgentQueues.get(key) ?? Promise.resolve();
+
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.catch(() => undefined).then(() => current);
+  bridgeAgentQueues.set(key, tail);
+
+  try {
+    await previous.catch(() => undefined);
+    return await task();
+  } finally {
+    release();
+    if (bridgeAgentQueues.get(key) === tail) {
+      bridgeAgentQueues.delete(key);
+    }
+  }
+}
+
+/** @internal for tests */
+export function resetBridgeAgentQueues(): void {
+  bridgeAgentQueues.clear();
+}
 
 /**
  * Trigger a Bridge Agent's response cycle.
@@ -53,6 +90,15 @@ const log = getLogger("group-chat:bridge-trigger");
  * through PTY stdin/stdout with an external CLI tool.
  */
 export async function triggerBridgeAgent(
+  params: TriggerAgentParams,
+  bridgeConfig: BridgeConfig,
+): Promise<TriggerAgentResult> {
+  return runBridgeAgentQueued(params.groupId, params.agentId, () =>
+    triggerBridgeAgentInternal(params, bridgeConfig),
+  );
+}
+
+async function triggerBridgeAgentInternal(
   params: TriggerAgentParams,
   bridgeConfig: BridgeConfig,
 ): Promise<TriggerAgentResult> {
@@ -270,13 +316,17 @@ export async function triggerBridgeAgent(
 
     // 5. If we got a reply, write it to transcript
     if (replyText && replyText.trim()) {
+      // Use `now` (the run start time) instead of Date.now() so the formal
+      // message keeps the same timeline position as the live stream.  This
+      // prevents the CLI reply from jumping to the bottom after page refresh
+      // (where only persisted messages exist and are sorted by timestamp).
       const replyMessage = await appendGroupMessage(groupId, {
         id: randomUUID(),
         groupId,
         role: "assistant",
         content: replyText,
         sender: { type: "agent", agentId, agentName: agentId },
-        timestamp: Date.now(),
+        timestamp: now,
       });
 
       log.info("[BRIDGE_REPLY]", {
@@ -301,7 +351,7 @@ export async function triggerBridgeAgent(
 
       run.status = "completed";
       run.completedAt = Date.now();
-      chainState = updateChainState(chainState, agentId);
+      chainState = updateChainState(chainState);
 
       return { run, replyMessage, chainState };
     }
@@ -316,7 +366,7 @@ export async function triggerBridgeAgent(
       agentName: agentId,
       state: "final",
     });
-    chainState = updateChainState(chainState, agentId);
+    chainState = updateChainState(chainState);
 
     return { run, chainState };
   } catch (err) {
@@ -701,3 +751,7 @@ async function waitForCompletion(params: {
     }
   });
 }
+
+export const _test = {
+  resetBridgeAgentQueues,
+};

@@ -476,6 +476,12 @@ export class BridgeTerminal extends LitElement {
   /** Last emitted stream text — used to avoid redundant events when nothing changed. */
   private _lastStreamText = "";
 
+  /** Cached extracted text; reused while the terminal buffer stays unchanged. */
+  private _extractCache: string | null = null;
+
+  /** Whether terminal writes have invalidated the extracted-text cache. */
+  private _extractDirty = true;
+
   /** Whether we have ever emitted a stream update during this working cycle. */
   private _streamUpdateEmitted = false;
 
@@ -727,6 +733,8 @@ export class BridgeTerminal extends LitElement {
       this._lastDataTime = Date.now();
     }
 
+    this._markExtractDirty();
+
     if (!this._terminal) {
       // Buffer data if terminal hasn't initialized yet
       if (!this._plainTextTerminal) {
@@ -764,6 +772,8 @@ export class BridgeTerminal extends LitElement {
       // Update last data time for frontend completion detection
       this._lastDataTime = Date.now();
     }
+
+    this._markExtractDirty();
 
     if (!this._terminal) {
       if (!this._plainTextTerminal) {
@@ -822,6 +832,10 @@ export class BridgeTerminal extends LitElement {
     this.dispatchEvent(new BridgeTerminalStreamUpdateEvent(this.groupId, this.agentId, text));
   }
 
+  private _markExtractDirty(): void {
+    this._extractDirty = true;
+  }
+
   /**
    * Clear streaming state. Called when the terminal transitions to a new working cycle.
    */
@@ -831,6 +845,8 @@ export class BridgeTerminal extends LitElement {
       this._streamExtractTimer = null;
     }
     this._lastStreamText = "";
+    this._extractCache = null;
+    this._extractDirty = true;
     this._streamUpdateEmitted = false;
   }
 
@@ -926,16 +942,22 @@ export class BridgeTerminal extends LitElement {
    * Used for creating the plain-text transcript message.
    */
   extractVisibleText(): string {
+    if (!this._extractDirty && this._extractCache !== null) {
+      return this._extractCache;
+    }
+
     let text = "";
     if (this._terminal) {
       text = this._terminal.extractText();
     } else if (this._plainTextTerminal) {
       text = this._plainTextTerminal.extractText();
     }
-    // Apply tail trim if configured (remove CLI prompt area from end)
     if (this.tailTrimMarker && text) {
       text = trimTailPrompt(text, this.tailTrimMarker);
     }
+
+    this._extractCache = text;
+    this._extractDirty = false;
     return text;
   }
 
@@ -968,6 +990,8 @@ export class BridgeTerminal extends LitElement {
   clearTerminal(): void {
     this._terminal?.clear();
     this._plainTextTerminal?.clear();
+    this._markExtractDirty();
+    this._extractCache = null;
   }
 
   // ─── Private Methods ───

@@ -1,54 +1,54 @@
 import { LitElement } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import {
-  handleChannelConfigReload as handleChannelConfigReloadInternal,
-  handleChannelConfigSave as handleChannelConfigSaveInternal,
-  handleNostrProfileCancel as handleNostrProfileCancelInternal,
-  handleNostrProfileEdit as handleNostrProfileEditInternal,
-  handleNostrProfileFieldChange as handleNostrProfileFieldChangeInternal,
-  handleNostrProfileImport as handleNostrProfileImportInternal,
-  handleNostrProfileSave as handleNostrProfileSaveInternal,
-  handleNostrProfileToggleAdvanced as handleNostrProfileToggleAdvancedInternal,
-  handleWhatsAppLogout as handleWhatsAppLogoutInternal,
-  handleWhatsAppStart as handleWhatsAppStartInternal,
-  handleWhatsAppWait as handleWhatsAppWaitInternal,
+    handleChannelConfigReload as handleChannelConfigReloadInternal,
+    handleChannelConfigSave as handleChannelConfigSaveInternal,
+    handleNostrProfileCancel as handleNostrProfileCancelInternal,
+    handleNostrProfileEdit as handleNostrProfileEditInternal,
+    handleNostrProfileFieldChange as handleNostrProfileFieldChangeInternal,
+    handleNostrProfileImport as handleNostrProfileImportInternal,
+    handleNostrProfileSave as handleNostrProfileSaveInternal,
+    handleNostrProfileToggleAdvanced as handleNostrProfileToggleAdvancedInternal,
+    handleWhatsAppLogout as handleWhatsAppLogoutInternal,
+    handleWhatsAppStart as handleWhatsAppStartInternal,
+    handleWhatsAppWait as handleWhatsAppWaitInternal,
 } from "./app-channels.ts";
 import {
-  handleAbortChat as handleAbortChatInternal,
-  handleSendChat as handleSendChatInternal,
-  removeQueuedMessage as removeQueuedMessageInternal,
-  switchSession,
+    handleAbortChat as handleAbortChatInternal,
+    handleSendChat as handleSendChatInternal,
+    removeQueuedMessage as removeQueuedMessageInternal,
+    switchSession,
 } from "./app-chat.ts";
 import { DEFAULT_CRON_FORM, DEFAULT_LOG_LEVEL_FILTERS } from "./app-defaults.ts";
 import type { EventLogEntry } from "./app-events.ts";
 import { connectGateway as connectGatewayInternal } from "./app-gateway.ts";
 import {
-  handleConnected,
-  handleDisconnected,
-  handleFirstUpdated,
-  handleUpdated,
+    handleConnected,
+    handleDisconnected,
+    handleFirstUpdated,
+    handleUpdated,
 } from "./app-lifecycle.ts";
 import { renderApp } from "./app-render.ts";
 import {
-  exportLogs as exportLogsInternal,
-  handleChatScroll as handleChatScrollInternal,
-  handleLogsScroll as handleLogsScrollInternal,
-  resetChatScroll as resetChatScrollInternal,
-  scheduleChatScroll as scheduleChatScrollInternal,
+    exportLogs as exportLogsInternal,
+    handleChatScroll as handleChatScrollInternal,
+    handleLogsScroll as handleLogsScrollInternal,
+    resetChatScroll as resetChatScrollInternal,
+    scheduleChatScroll as scheduleChatScrollInternal,
 } from "./app-scroll.ts";
 import {
-  applySettings as applySettingsInternal,
-  loadCron as loadCronInternal,
-  loadOverview as loadOverviewInternal,
-  onPopState as onPopStateInternal,
-  setTab as setTabInternal,
-  setTheme as setThemeInternal,
+    applySettings as applySettingsInternal,
+    loadCron as loadCronInternal,
+    loadOverview as loadOverviewInternal,
+    onPopState as onPopStateInternal,
+    setTab as setTabInternal,
+    setTheme as setThemeInternal,
 } from "./app-settings.ts";
 import {
-  resetToolStream as resetToolStreamInternal,
-  type CompactionStatus,
-  type FallbackStatus,
-  type ToolStreamEntry,
+    resetToolStream as resetToolStreamInternal,
+    type CompactionStatus,
+    type FallbackStatus,
+    type ToolStreamEntry,
 } from "./app-tool-stream.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { normalizeAssistantIdentity } from "./assistant-identity.ts";
@@ -58,45 +58,45 @@ import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
 import type {
-  GroupAddMemberDialogState,
-  GroupChatMessage,
-  GroupCreateDialogState,
-  GroupIndexEntry,
-  GroupSessionMeta,
+    GroupAddMemberDialogState,
+    GroupChatMessage,
+    GroupCreateDialogState,
+    GroupIndexEntry,
+    GroupSessionMeta,
 } from "./controllers/group-chat.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
 import {
-  i18n,
-  I18nController,
-  initLocale,
-  isSupportedLocale,
-  setLocale as setLocaleInternal,
-  type LocaleCode,
+    i18n,
+    I18nController,
+    initLocale,
+    isSupportedLocale,
+    setLocale as setLocaleInternal,
+    type LocaleCode,
 } from "./i18n/index.ts";
 import type { Tab } from "./navigation.ts";
 import { loadSettings, type UiSettings } from "./storage.ts";
 import type { ResolvedTheme, ThemeMode } from "./theme.ts";
 import type {
-  AgentIdentityResult,
-  AgentsFilesListResult,
-  AgentsListResult,
-  ChannelsStatusSnapshot,
-  ConfigSnapshot,
-  ConfigUiHints,
-  CronJob,
-  CronRunLogEntry,
-  CronStatus,
-  HealthSnapshot,
-  LogEntry,
-  LogLevel,
-  NostrProfile,
-  PresenceEntry,
-  SessionsListResult,
-  SkillStatusReport,
-  StatusSummary,
-  ToolsCatalogResult,
+    AgentIdentityResult,
+    AgentsFilesListResult,
+    AgentsListResult,
+    ChannelsStatusSnapshot,
+    ConfigSnapshot,
+    ConfigUiHints,
+    CronJob,
+    CronRunLogEntry,
+    CronStatus,
+    HealthSnapshot,
+    LogEntry,
+    LogLevel,
+    NostrProfile,
+    PresenceEntry,
+    SessionsListResult,
+    SkillStatusReport,
+    StatusSummary,
+    ToolsCatalogResult,
 } from "./types.ts";
 import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types.ts";
 import { generateUUID } from "./uuid.ts";
@@ -209,7 +209,11 @@ export class OpenClawApp extends LitElement {
   @state() groupMessages: GroupChatMessage[] = [];
   @state() groupStreams: Map<
     string,
-    { runId: string; text: string; startedAt: number; frozen?: boolean }
+    import("./controllers/group-chat.js").GroupStreamEntry
+  > = new Map();
+  @state() groupBridgeSnapshots: Map<
+    string,
+    import("./controllers/group-chat.js").GroupBridgeSnapshot
   > = new Map();
   @state() groupPendingAgents: Set<string> = new Set();
   @state() groupToolMessages: Map<
