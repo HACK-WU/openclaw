@@ -1,0 +1,261 @@
+/* ─── Projects View ─── */
+
+.projects-view {
+  padding: 0;
+}
+
+.projects-view__header {
+  margin-bottom: 1.5rem;
+}
+
+.projects-view__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.projects-view__title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--fg);
+  margin: 0;
+}
+
+.projects-view__loading {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--muted);
+}
+
+/* ─── Project List ─── */
+
+.projects-view__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.projects-view__count {
+  text-align: center;
+  padding: 0.75rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ─── Project Card ─── */
+
+.projects-view__card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  padding: 1rem 1.25rem;
+  background: var(--card-bg, var(--bg-raised));
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.projects-view__card:hover {
+  border-color: var(--border-hover, var(--accent));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.projects-view__card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.projects-view__card-icon {
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+}
+
+.projects-view__card-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.projects-view__card-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.projects-view__card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-bottom: 0.75rem;
+}
+
+.projects-view__card-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.projects-view__card-label {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.projects-view__card-label svg {
+  width: 14px;
+  height: 14px;
+}
+
+.projects-view__card-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projects-view__card-value.mono {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+}
+
+.projects-view__card-description {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projects-view__card-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+/* ─── Empty State ─── */
+
+.projects-view__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+  gap: 0.75rem;
+}
+
+.projects-view__empty-icon {
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+.projects-view__empty-icon svg {
+  width: 48px;
+  height: 48px;
+}
+
+.projects-view__empty-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.projects-view__empty-desc {
+  font-size: 0.9rem;
+  color: var(--muted);
+  max-width: 400px;
+}
+
+/* ─── Projects Dialog ─── */
+
+.projects-dialog {
+  max-width: 560px;
+  width: 90vw;
+}
+
+.projects-dialog .form-group {
+  margin-bottom: 1rem;
+}
+
+.projects-dialog .form-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--fg);
+  margin-bottom: 0.375rem;
+}
+
+.projects-dialog .form-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--input-bg, var(--bg));
+  color: var(--fg);
+  outline: none;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+  box-sizing: border-box;
+}
+
+.projects-dialog .form-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--ring, rgba(255, 92, 92, 0.2));
+}
+
+.projects-dialog .form-input--disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.projects-dialog .form-textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
+.projects-dialog .form-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+/* ─── Danger text button variant ─── */
+
+.btn--danger-text {
+  color: var(--danger, #ef4444);
+  background: transparent;
+  border-color: transparent;
+}
+
+.btn--danger-text:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* ─── Modal close button ─── */
+
+.modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: var(--radius-sm, 6px);
+  transition: color 200ms ease, background 200ms ease;
+}
+
+.modal-close:hover {
+  color: var(--fg);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+}
+
+.modal-close svg {
+  width: 18px;
+  height: 18px;
+}

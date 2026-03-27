@@ -3,12 +3,12 @@ import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
 import { refreshChatAvatar, switchSession } from "./app-chat.ts";
 import { renderUsageTab } from "./app-render-usage-tab.ts";
 import {
-    renderChatControls,
-    renderLocaleToggle,
-    renderNavGroupChats,
-    renderNavSessionsList,
-    renderTab,
-    renderThemeToggle,
+  renderChatControls,
+  renderLocaleToggle,
+  renderNavGroupChats,
+  renderNavSessionsList,
+  renderTab,
+  renderThemeToggle,
 } from "./app-render.helpers.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
@@ -16,120 +16,128 @@ import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controlle
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
 import {
-    checkAgentCanBeDeleted,
-    checkWorkspacePath,
-    closePersonalityViewDialog,
-    createAgent,
-    createCliAgent,
-    deleteAgent,
-    deleteCliAgent,
-    getDefaultWorkspacePath,
-    hideCliEditDialog,
-    loadAgents,
-    loadCliAgents,
-    loadPersonalities,
-    loadToolsCatalog,
-    openPersonalityViewDialog,
-    saveAgentsConfig,
-    selectPersonality,
-    sendTestInput,
-    setDefaultAgent,
-    showCliEditDialog,
-    stopCliAgentTest,
-    testCliAgent,
-    updateCliAgent,
+  checkAgentCanBeDeleted,
+  checkWorkspacePath,
+  closePersonalityViewDialog,
+  createAgent,
+  createCliAgent,
+  deleteAgent,
+  deleteCliAgent,
+  getDefaultWorkspacePath,
+  hideCliEditDialog,
+  loadAgents,
+  loadCliAgents,
+  loadPersonalities,
+  loadToolsCatalog,
+  openPersonalityViewDialog,
+  saveAgentsConfig,
+  selectPersonality,
+  sendTestInput,
+  setDefaultAgent,
+  showCliEditDialog,
+  stopCliAgentTest,
+  testCliAgent,
+  updateCliAgent,
 } from "./controllers/agents.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
 import {
-    applyConfig,
-    ensureAgentConfigEntry,
-    findAgentConfigEntryIndex,
-    loadConfig,
-    removeConfigFormValue,
-    runUpdate,
-    saveConfig,
-    updateConfigFormValue,
+  applyConfig,
+  ensureAgentConfigEntry,
+  findAgentConfigEntryIndex,
+  loadConfig,
+  removeConfigFormValue,
+  runUpdate,
+  saveConfig,
+  updateConfigFormValue,
 } from "./controllers/config.ts";
 import {
-    addCronJob,
-    cancelCronEdit,
-    getVisibleCronJobs,
-    hasCronFormErrors,
-    loadCronRuns,
-    loadMoreCronJobs,
-    loadMoreCronRuns,
-    normalizeCronFormState,
-    reloadCronJobs,
-    removeCronJob,
-    runCronJob,
-    startCronClone,
-    startCronEdit,
-    toggleCronJob,
-    updateCronJobsFilter,
-    updateCronRunsFilter,
-    validateCronForm,
+  addCronJob,
+  cancelCronEdit,
+  getVisibleCronJobs,
+  hasCronFormErrors,
+  loadCronRuns,
+  loadMoreCronJobs,
+  loadMoreCronRuns,
+  normalizeCronFormState,
+  reloadCronJobs,
+  removeCronJob,
+  runCronJob,
+  startCronClone,
+  startCronEdit,
+  toggleCronJob,
+  updateCronJobsFilter,
+  updateCronRunsFilter,
+  validateCronForm,
 } from "./controllers/cron.ts";
 import { callDebugMethod, loadDebug } from "./controllers/debug.ts";
 import {
-    approveDevicePairing,
-    loadDevices,
-    rejectDevicePairing,
-    revokeDeviceToken,
-    rotateDeviceToken,
+  approveDevicePairing,
+  loadDevices,
+  rejectDevicePairing,
+  revokeDeviceToken,
+  rotateDeviceToken,
 } from "./controllers/devices.ts";
 import {
-    loadExecApprovals,
-    removeExecApprovalsFormValue,
-    saveExecApprovals,
-    updateExecApprovalsFormValue,
+  loadExecApprovals,
+  removeExecApprovalsFormValue,
+  saveExecApprovals,
+  updateExecApprovalsFormValue,
 } from "./controllers/exec-approvals.ts";
 import {
-    abortGroupChat,
-    clearBridgeTerminalStream,
-    closeClearMessagesDialog,
-    closeDisbandGroupDialog,
-    closeGroupChatView,
-    confirmClearMessages,
-    confirmDisbandGroup,
-    createGroup,
-    deleteGroup,
-    enterGroupChat,
-    handleBridgeTerminalStreamUpdate,
-    leaveGroupChat,
-    loadGroupList,
-    openClearMessagesDialog,
-    openDisbandGroupDialog,
-    removeGroupMember,
-    sendGroupMessage,
-    sendTerminalResize,
-    updateGroupMembers,
+  abortGroupChat,
+  clearBridgeTerminalStream,
+  closeClearMessagesDialog,
+  closeDisbandGroupDialog,
+  closeGroupChatView,
+  confirmClearMessages,
+  confirmDisbandGroup,
+  createGroup,
+  deleteGroup,
+  enterGroupChat,
+  handleBridgeTerminalStreamUpdate,
+  leaveGroupChat,
+  loadGroupList,
+  openClearMessagesDialog,
+  openDisbandGroupDialog,
+  removeGroupMember,
+  sendGroupMessage,
+  sendTerminalResize,
+  updateGroupMembers,
 } from "./controllers/group-chat.ts";
 import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadPresence } from "./controllers/presence.ts";
+import {
+  createProject,
+  deleteProject,
+  loadProjectInfo,
+  updateProject,
+  validateProjectPaths,
+  type ProjectsHost,
+} from "./controllers/projects.ts";
 import { deleteSessionAndRefresh, loadSessions, patchSession } from "./controllers/sessions.ts";
 import {
-    closeSkillFileEditor,
-    installSkill,
-    loadSkillFile,
-    loadSkills,
-    saveSkillApiKey,
-    saveSkillFile,
-    updateSkillEdit,
-    updateSkillEnabled,
-    updateSkillFileContent,
+  closeSkillFileEditor,
+  installSkill,
+  loadSkillFile,
+  loadSkills,
+  saveSkillApiKey,
+  saveSkillFile,
+  updateSkillEdit,
+  updateSkillEnabled,
+  updateSkillFileContent,
 } from "./controllers/skills.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "./external-link.ts";
 import { t } from "./i18n/index.ts";
 import { icons } from "./icons.ts";
 import { getTabGroups, normalizeBasePath, subtitleForTab, titleForTab } from "./navigation.ts";
 import {
-    resolveAgentConfig,
-    resolveConfiguredCronModelSuggestions,
-    resolveEffectiveModelFallbacks,
-    resolveModelPrimary,
-    sortLocaleStrings,
+  resolveAgentConfig,
+  resolveConfiguredCronModelSuggestions,
+  resolveEffectiveModelFallbacks,
+  resolveModelPrimary,
+  sortLocaleStrings,
 } from "./views/agents-utils.ts";
 import { renderAgents, type CliType } from "./views/agents.ts";
 import { renderChannels } from "./views/channels.ts";
@@ -145,6 +153,7 @@ import { renderInstances } from "./views/instances.ts";
 import { renderLogs } from "./views/logs.ts";
 import { renderNodes } from "./views/nodes.ts";
 import { renderOverview } from "./views/overview.ts";
+import { renderProjectsView } from "./views/projects.ts";
 import { renderSessions } from "./views/sessions.ts";
 import { renderSkills } from "./views/skills.ts";
 
@@ -557,6 +566,70 @@ export function renderApp(state: AppViewState) {
                 onConnect: () => state.connect(),
                 // 刷新概览数据回调
                 onRefresh: () => state.loadOverview(),
+              })
+            : nothing
+        }
+
+        <!-- ========================================
+           PROJECTS 标签页：项目管理面板
+           ======================================== -->
+        ${
+          state.tab === "projects"
+            ? renderProjectsView({
+                projectsList: state.projectsList,
+                projectsLoading: state.projectsLoading,
+                activeProject: state.activeProject,
+                projectCreateDialog: state.projectCreateDialog,
+                projectEditDialog: state.projectEditDialog,
+                projectDeleteDialog: state.projectDeleteDialog,
+                projectError: state.projectError,
+                groupIndex: state.groupIndex,
+                onLoadProjectInfo: (projectId) =>
+                  void loadProjectInfo(state as unknown as ProjectsHost, projectId),
+                onOpenCreateDialog: () => {
+                  state.projectCreateDialog = {
+                    name: "",
+                    directory: "",
+                    documents: "",
+                    description: "",
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseCreateDialog: () => (state.projectCreateDialog = null),
+                onCreateProject: (params) =>
+                  void createProject(state as unknown as ProjectsHost, params),
+                onOpenEditDialog: (project) => {
+                  state.projectEditDialog = {
+                    projectId: project.id,
+                    name: project.name,
+                    directory: project.directory,
+                    documents: project.documents.join(", "),
+                    description: project.description ?? "",
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseEditDialog: () => (state.projectEditDialog = null),
+                onUpdateProject: (projectId, params) =>
+                  void updateProject(state as unknown as ProjectsHost, projectId, params),
+                onOpenDeleteDialog: (projectId, projectName) => {
+                  const linkedGroupCount = state.groupIndex.filter(
+                    (g) => (g as unknown as { projectId?: string }).projectId === projectId,
+                  ).length;
+                  state.projectDeleteDialog = {
+                    projectId,
+                    projectName,
+                    linkedGroupCount,
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseDeleteDialog: () => (state.projectDeleteDialog = null),
+                onDeleteProject: (projectId) =>
+                  void deleteProject(state as unknown as ProjectsHost, projectId),
+                onValidatePaths: (paths, type) =>
+                  validateProjectPaths(state as unknown as ProjectsHost, paths, type),
               })
             : nothing
         }

@@ -5,11 +5,18 @@ import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
 import type {
-    GroupChatMessage,
-    GroupCreateDialogState,
-    GroupIndexEntry,
-    GroupSessionMeta,
+  GroupChatMessage,
+  GroupCreateDialogState,
+  GroupIndexEntry,
+  GroupSessionMeta,
 } from "./controllers/group-chat.ts";
+import type {
+  Project,
+  ProjectCreateDialogState,
+  ProjectDeleteDialogState,
+  ProjectEditDialogState,
+  ProjectIndexEntry,
+} from "./controllers/projects.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
 import type { LocaleCode } from "./i18n/index.ts";
@@ -18,24 +25,24 @@ import type { UiSettings } from "./storage.ts";
 import type { ThemeTransitionContext } from "./theme-transition.ts";
 import type { ThemeMode } from "./theme.ts";
 import type {
-    AgentIdentityResult,
-    AgentsFilesListResult,
-    AgentsListResult,
-    ChannelsStatusSnapshot,
-    ConfigSnapshot,
-    ConfigUiHints,
-    CostUsageSummary,
-    HealthSnapshot,
-    LogEntry,
-    LogLevel,
-    NostrProfile,
-    PresenceEntry,
-    SessionUsageTimeSeries,
-    SessionsListResult,
-    SessionsUsageResult,
-    SkillStatusReport,
-    StatusSummary,
-    ToolsCatalogResult,
+  AgentIdentityResult,
+  AgentsFilesListResult,
+  AgentsListResult,
+  ChannelsStatusSnapshot,
+  ConfigSnapshot,
+  ConfigUiHints,
+  CostUsageSummary,
+  HealthSnapshot,
+  LogEntry,
+  LogLevel,
+  NostrProfile,
+  PresenceEntry,
+  SessionUsageTimeSeries,
+  SessionsListResult,
+  SessionsUsageResult,
+  SkillStatusReport,
+  StatusSummary,
+  ToolsCatalogResult,
 } from "./types.ts";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
@@ -340,6 +347,14 @@ export type AppViewState = {
       | import("./controllers/group-chat.js").GroupClearMessagesDialogState
       | null;
     groupInfoPanelOpen: boolean;
+    // Project management state
+    projectsList: ProjectIndexEntry[];
+    projectsLoading: boolean;
+    activeProject: Project | null;
+    projectCreateDialog: ProjectCreateDialogState | null;
+    projectEditDialog: ProjectEditDialogState | null;
+    projectDeleteDialog: ProjectDeleteDialogState | null;
+    projectError: string | null;
     handleDeleteSessionConfirm: () => Promise<void>;
     handleDeleteSessionCancel: () => void;
     connect: () => void;

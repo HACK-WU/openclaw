@@ -132,6 +132,13 @@ const BASE_METHODS = [
   "cliAgents.files.set",
   "cliAgents.test",
   "cliAgents.testStop",
+  // Project management methods
+  "projects.list",
+  "projects.info",
+  "projects.create",
+  "projects.update",
+  "projects.delete",
+  "projects.validatePaths",
 ];
 
 export function listGatewayMethods(): string[] {

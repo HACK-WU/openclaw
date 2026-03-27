@@ -49,6 +49,7 @@ import {
   type GroupTerminalStatusPayload,
 } from "./controllers/group-chat.ts";
 import { loadNodes } from "./controllers/nodes.ts";
+import { loadProjectsList, type ProjectsHost } from "./controllers/projects.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import {
   GatewayBrowserClient,
@@ -253,6 +254,7 @@ export function connectGateway(host: GatewayHost) {
       void loadNodes(host as unknown as OpenClawApp, { quiet: true });
       void loadDevices(host as unknown as OpenClawApp, { quiet: true });
       void loadGroupList(host as unknown as Parameters<typeof loadGroupList>[0]);
+      void loadProjectsList(host as unknown as ProjectsHost);
       // 无条件加载 sessions，确保导航栏对话列表在所有 tab 下都能显示。
       // refreshActiveTab 仅在 overview/sessions/chat tab 下加载 sessions，
       // 其余 tab（如 agents、skills、nodes 等）不会加载，导致对话列表为空。
