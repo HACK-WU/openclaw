@@ -13,23 +13,23 @@ import { extractThinkingCached, formatReasoningMarkdown } from "../chat/message-
 import { classifyToolCards, extractToolCards } from "../chat/tool-cards.ts";
 import { typewriter } from "../chat/typewriter-directive.ts";
 import {
-    BridgeTerminalResizeEvent,
-    BridgeTerminalStreamEndEvent,
-    BridgeTerminalStreamUpdateEvent,
+  BridgeTerminalResizeEvent,
+  BridgeTerminalStreamEndEvent,
+  BridgeTerminalStreamUpdateEvent,
 } from "../components/bridge-terminal.ts";
 import type {
-    BridgeTerminalStatus,
-    GroupAddMemberDialogState,
-    GroupBridgeSnapshot,
-    GroupChatMessage,
-    GroupClearMessagesDialogState,
-    GroupCreateDialogState,
-    GroupDisbandDialogState,
-    GroupIndexEntry,
-    GroupRemoveMemberDialogState,
-    GroupSessionMeta,
-    GroupStreamEntry,
-    GroupToolMessage
+  BridgeTerminalStatus,
+  GroupAddMemberDialogState,
+  GroupBridgeSnapshot,
+  GroupChatMessage,
+  GroupClearMessagesDialogState,
+  GroupCreateDialogState,
+  GroupDisbandDialogState,
+  GroupIndexEntry,
+  GroupRemoveMemberDialogState,
+  GroupSessionMeta,
+  GroupStreamEntry,
+  GroupToolMessage,
 } from "../controllers/group-chat.ts";
 import { getMentionedAgents, isBridgeAssistantAgent } from "../controllers/group-chat.ts";
 import { stripThinkingTags } from "../format.ts";
@@ -554,7 +554,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
   }
 
   // Ensure groupToolMessages is defined (defensive check)
-  const toolMessages = groupToolMessages ?? new Map();
+  const _toolMessages = groupToolMessages ?? new Map();
 
   const timelineItems = buildGroupTimeline(props, meta);
   const hasActiveStreams = groupStreams.size > 0;
@@ -648,28 +648,32 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                 : nothing
             }
 
-            ${repeat(timelineItems, (item) => item.id, (item) => {
-              switch (item.kind) {
-                case "message":
-                  return renderGroupMessage(
-                    item.message,
-                    meta,
-                    props.agentsList,
-                    props.showThinking,
-                    props.onOpenSidebar,
-                  );
-                case "stream":
-                  return renderTimelineStream(
-                    item.agentId,
-                    item.stream,
-                    meta,
-                    props,
-                    item.toolMessages,
-                  );
-                case "bridge-snapshot":
-                  return renderBridgeSnapshot(item.snapshot, meta, props);
-              }
-            })}
+            ${repeat(
+              timelineItems,
+              (item) => item.id,
+              (item) => {
+                switch (item.kind) {
+                  case "message":
+                    return renderGroupMessage(
+                      item.message,
+                      meta,
+                      props.agentsList,
+                      props.showThinking,
+                      props.onOpenSidebar,
+                    );
+                  case "stream":
+                    return renderTimelineStream(
+                      item.agentId,
+                      item.stream,
+                      meta,
+                      props,
+                      item.toolMessages,
+                    );
+                  case "bridge-snapshot":
+                    return renderBridgeSnapshot(item.snapshot, meta, props);
+                }
+              },
+            )}
 
             ${renderOrphanBridgeTerminals(meta, props, groupStreams, props.groupBridgeSnapshots)}
 
@@ -1098,9 +1102,11 @@ function renderBridgeSnapshot(
       <div class="chat-avatar assistant">${senderEmoji}</div>
       <div class="chat-group-messages">
         <div class="chat-bubble assistant">
-          ${displayText.trim()
-            ? html`<div class="chat-text">${unsafeHTML(toSanitizedMarkdownHtml(displayText))}</div>`
-            : nothing}
+          ${
+            displayText.trim()
+              ? html`<div class="chat-text">${unsafeHTML(toSanitizedMarkdownHtml(displayText))}</div>`
+              : nothing
+          }
         </div>
         <div class="chat-group-footer">
           <span class="chat-sender-name">${senderName}</span>

@@ -20,23 +20,23 @@ import type { TriggerAgentParams, TriggerAgentResult } from "./agent-trigger.js"
 import { updateChainState } from "./anti-loop.js";
 import { buildCoreFilesContentSection, buildCoreFilesPathSection } from "./bridge-context.js";
 import {
-    clearFrontendExtractedText,
-    createBridgePty,
-    getPtyState,
-    isPtyRunning,
-    killBridgePty,
-    setInputPhase,
-    updateLastTranscriptIndex,
-    waitForFrontendExtractedText,
-    writeToPty,
+  clearFrontendExtractedText,
+  createBridgePty,
+  getPtyState,
+  isPtyRunning,
+  killBridgePty,
+  setInputPhase,
+  updateLastTranscriptIndex,
+  waitForFrontendExtractedText,
+  writeToPty,
 } from "./bridge-pty.js";
 import type { BridgeConfig } from "./bridge-types.js";
 import {
-    DEFAULT_CONTEXT_MAX_CHARACTERS,
-    DEFAULT_CONTEXT_MAX_MESSAGES,
-    DEFAULT_REPLY_TIMEOUT_MS,
-    DEFAULT_ROLE_REMINDER_INTERVAL,
-    MAX_SINGLE_MESSAGE_CHARS,
+  DEFAULT_CONTEXT_MAX_CHARACTERS,
+  DEFAULT_CONTEXT_MAX_MESSAGES,
+  DEFAULT_REPLY_TIMEOUT_MS,
+  DEFAULT_ROLE_REMINDER_INTERVAL,
+  MAX_SINGLE_MESSAGE_CHARS,
 } from "./bridge-types.js";
 import { broadcastGroupMessage, broadcastGroupStream } from "./parallel-stream.js";
 import { broadcastTerminalData, broadcastTerminalStatus } from "./terminal-events.js";

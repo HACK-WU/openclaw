@@ -147,11 +147,13 @@ describe("bridge-trigger queueing", () => {
     setInputPhase.mockImplementation(() => {});
     clearFrontendExtractedText.mockImplementation(() => {});
     updateLastTranscriptIndex.mockImplementation(() => {});
-    appendGroupMessage.mockImplementation(async (groupId: string, msg: Record<string, unknown>) => ({
-      ...msg,
-      groupId,
-      serverSeq: 1,
-    }));
+    appendGroupMessage.mockImplementation(
+      async (groupId: string, msg: Record<string, unknown>) => ({
+        ...msg,
+        groupId,
+        serverSeq: 1,
+      }),
+    );
     writeToPty.mockReturnValue(true);
     isPtyRunning.mockReturnValue(true);
     killBridgePty.mockResolvedValue(undefined);

@@ -1,28 +1,27 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>待办事项清单</title>
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
     <div class="container">
-        <h1>待办事项清单</h1>
+      <h1>待办事项清单</h1>
 
-        <div class="input-group">
-            <input type="text" id="todo-input" placeholder="添加新的待办事项..." autocomplete="off">
-            <button id="add-btn">添加</button>
-        </div>
+      <div class="input-group">
+        <input type="text" id="todo-input" placeholder="添加新的待办事项..." autocomplete="off" />
+        <button id="add-btn">添加</button>
+      </div>
 
-        <ul id="todo-list"></ul>
+      <ul id="todo-list"></ul>
 
-        <div class="info" id="info-text">
-            <span id="total-count">0</span> 个任务，
-            <span id="completed-count">0</span> 个已完成
-        </div>
+      <div class="info" id="info-text">
+        <span id="total-count">0</span> 个任务， <span id="completed-count">0</span> 个已完成
+      </div>
     </div>
 
     <script src="script.js"></script>
-</body>
+  </body>
 </html>

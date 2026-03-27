@@ -1834,7 +1834,11 @@ export function handleGroupMessageEvent(
         snapshotRemoved = removeBridgeSnapshot(host, payload.sender.agentId, payload.agentRunId);
       }
       if (!snapshotRemoved) {
-        snapshotRemoved = removeBridgeSnapshotByAgentFallback(host, payload.sender.agentId, payload.timestamp);
+        snapshotRemoved = removeBridgeSnapshotByAgentFallback(
+          host,
+          payload.sender.agentId,
+          payload.timestamp,
+        );
       }
 
       // Once the formal message replaces the snapshot, clear the terminal status
@@ -2025,8 +2029,7 @@ function batchSyncGroupStreams(host: GroupChatState): void {
       runId,
       text,
       startedAt: existing?.runId === runId ? existing.startedAt : Date.now(),
-      timelineOrder:
-        existing?.runId === runId ? existing.timelineOrder : allocateTimelineOrder(),
+      timelineOrder: existing?.runId === runId ? existing.timelineOrder : allocateTimelineOrder(),
     });
     changed = true;
   }

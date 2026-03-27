@@ -818,7 +818,7 @@
   color: var(--muted);
 }
 
-.group-info-panel__section>div {
+.group-info-panel__section > div {
   font-size: 13px;
   color: var(--text);
 }
@@ -1372,7 +1372,6 @@
 }
 
 @keyframes stream-dots-bounce {
-
   0%,
   60%,
   100% {
@@ -1387,7 +1386,6 @@
 }
 
 @keyframes group-pending-pulse {
-
   0%,
   100% {
     opacity: 0.6;
