@@ -70,6 +70,10 @@ import type {
   ProjectDeleteDialogState,
   ProjectEditDialogState,
   ProjectIndexEntry,
+  ProjectRule,
+  ProjectRuleCreateDialogState,
+  ProjectRuleDeleteDialogState,
+  ProjectRuleEditDialogState,
 } from "./controllers/projects.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
@@ -254,6 +258,12 @@ export class OpenClawApp extends LitElement {
   @state() projectEditDialog: ProjectEditDialogState | null = null;
   @state() projectDeleteDialog: ProjectDeleteDialogState | null = null;
   @state() projectError: string | null = null;
+  // Project rules state
+  @state() projectRules: ProjectRule[] = [];
+  @state() projectRulesLoading = false;
+  @state() projectRuleCreateDialog: ProjectRuleCreateDialogState | null = null;
+  @state() projectRuleEditDialog: ProjectRuleEditDialogState | null = null;
+  @state() projectRuleDeleteDialog: ProjectRuleDeleteDialogState | null = null;
   @state() groupAnnouncementEditor: { open: boolean; draft: string; preview: boolean } = {
     open: false,
     draft: "",

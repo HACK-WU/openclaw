@@ -30,3 +30,20 @@ export type ProjectIndexEntry = {
   name: string;
   updatedAt: number;
 };
+
+// ─── Project Rule ───
+
+export type ProjectRule = {
+  /** 规则唯一标识 (UUID) */
+  id: string;
+  /** 所属项目 ID */
+  projectId: string;
+  /** 规则标题 */
+  title: string;
+  /** 规则内容（Markdown 格式） */
+  content: string;
+  /** 创建时间戳 (epoch ms) */
+  createdAt: number;
+  /** 更新时间戳 (epoch ms) */
+  updatedAt: number;
+};

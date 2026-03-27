@@ -8,11 +8,16 @@
 import { getLogger } from "../../logging.js";
 import {
   createProject,
+  createProjectRule,
   deleteProject,
+  deleteProjectRule,
   findProjectByName,
   loadProjectIndex,
   loadProjectMeta,
+  loadProjectRule,
+  loadProjectRules,
   updateProjectMeta,
+  updateProjectRule,
 } from "../../projects/project-store.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 
@@ -232,6 +237,138 @@ const handleProjectsValidatePaths: GatewayRequestHandler = async ({ params, resp
   respond(true, { results });
 };
 
+// ─── List Project Rules ───
+
+const handleProjectsRulesList: GatewayRequestHandler = ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  if (!projectId) {
+    respond(false, undefined, { message: "projectId is required", code: 400 });
+    return;
+  }
+
+  const meta = loadProjectMeta(projectId);
+  if (!meta) {
+    respond(false, undefined, { message: "Project not found", code: 404 });
+    return;
+  }
+
+  const rules = loadProjectRules(projectId);
+  respond(true, rules);
+};
+
+// ─── Get Project Rule ───
+
+const handleProjectsRulesGet: GatewayRequestHandler = ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const ruleId = params.ruleId as string;
+  if (!projectId || !ruleId) {
+    respond(false, undefined, { message: "projectId and ruleId are required", code: 400 });
+    return;
+  }
+
+  const rule = loadProjectRule(projectId, ruleId);
+  if (!rule) {
+    respond(false, undefined, { message: "Rule not found", code: 404 });
+    return;
+  }
+
+  respond(true, rule);
+};
+
+// ─── Create Project Rule ───
+
+const handleProjectsRulesCreate: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const title = (params.title as string)?.trim();
+  const content = (params.content as string)?.trim();
+
+  if (!projectId) {
+    respond(false, undefined, { message: "projectId is required", code: 400 });
+    return;
+  }
+  if (!title) {
+    respond(false, undefined, { message: "Rule title is required", code: 400 });
+    return;
+  }
+  if (!content) {
+    respond(false, undefined, { message: "Rule content is required", code: 400 });
+    return;
+  }
+
+  const meta = loadProjectMeta(projectId);
+  if (!meta) {
+    respond(false, undefined, { message: "Project not found", code: 404 });
+    return;
+  }
+
+  try {
+    const rule = await createProjectRule(projectId, { title, content });
+    log.info(`Rule created: ${rule.id} in project ${projectId}`);
+    respond(true, rule);
+  } catch (err) {
+    log.error(`Failed to create rule: ${String(err)}`);
+    respond(false, undefined, { message: "Failed to create rule", code: 500 });
+  }
+};
+
+// ─── Update Project Rule ───
+
+const handleProjectsRulesUpdate: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const ruleId = params.ruleId as string;
+  const title = params.title as string | undefined;
+  const content = params.content as string | undefined;
+
+  if (!projectId || !ruleId) {
+    respond(false, undefined, { message: "projectId and ruleId are required", code: 400 });
+    return;
+  }
+
+  try {
+    const updated = await updateProjectRule(projectId, ruleId, {
+      title: title?.trim(),
+      content: content?.trim(),
+    });
+    log.info(`Rule updated: ${ruleId} in project ${projectId}`);
+    respond(true, updated);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("not found")) {
+      respond(false, undefined, { message: "Rule not found", code: 404 });
+    } else {
+      log.error(`Failed to update rule: ${String(err)}`);
+      respond(false, undefined, { message: "Failed to update rule", code: 500 });
+    }
+  }
+};
+
+// ─── Delete Project Rule ───
+
+const handleProjectsRulesDelete: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const ruleId = params.ruleId as string;
+
+  if (!projectId || !ruleId) {
+    respond(false, undefined, { message: "projectId and ruleId are required", code: 400 });
+    return;
+  }
+
+  const rule = loadProjectRule(projectId, ruleId);
+  if (!rule) {
+    respond(false, undefined, { message: "Rule not found", code: 404 });
+    return;
+  }
+
+  try {
+    await deleteProjectRule(projectId, ruleId);
+    log.info(`Rule deleted: ${ruleId} in project ${projectId}`);
+    respond(true, { ok: true });
+  } catch (err) {
+    log.error(`Failed to delete rule: ${String(err)}`);
+    respond(false, undefined, { message: "Failed to delete rule", code: 500 });
+  }
+};
+
 // ─── Export Handlers ───
 
 export const projectsHandlers: GatewayRequestHandlers = {
@@ -241,4 +378,9 @@ export const projectsHandlers: GatewayRequestHandlers = {
   "projects.update": handleProjectsUpdate,
   "projects.delete": handleProjectsDelete,
   "projects.validatePaths": handleProjectsValidatePaths,
+  "projects.rules.list": handleProjectsRulesList,
+  "projects.rules.get": handleProjectsRulesGet,
+  "projects.rules.create": handleProjectsRulesCreate,
+  "projects.rules.update": handleProjectsRulesUpdate,
+  "projects.rules.delete": handleProjectsRulesDelete,
 };

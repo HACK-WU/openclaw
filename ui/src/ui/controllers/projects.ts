@@ -64,6 +64,39 @@ export type ValidationResult = {
   error?: string;
 };
 
+export type ProjectRule = {
+  id: string;
+  projectId: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ProjectRuleCreateDialogState = {
+  title: string;
+  content: string;
+  previewMode: boolean;
+  isBusy: boolean;
+  error: string | null;
+};
+
+export type ProjectRuleEditDialogState = {
+  ruleId: string;
+  title: string;
+  content: string;
+  previewMode: boolean;
+  isBusy: boolean;
+  error: string | null;
+};
+
+export type ProjectRuleDeleteDialogState = {
+  ruleId: string;
+  ruleTitle: string;
+  isBusy: boolean;
+  error: string | null;
+};
+
 // ─── State ───
 
 export type ProjectsState = {
@@ -74,6 +107,12 @@ export type ProjectsState = {
   projectEditDialog: ProjectEditDialogState | null;
   projectDeleteDialog: ProjectDeleteDialogState | null;
   projectError: string | null;
+  // 规则管理状态
+  projectRules: ProjectRule[];
+  projectRulesLoading: boolean;
+  projectRuleCreateDialog: ProjectRuleCreateDialogState | null;
+  projectRuleEditDialog: ProjectRuleEditDialogState | null;
+  projectRuleDeleteDialog: ProjectRuleDeleteDialogState | null;
 };
 
 export const DEFAULT_PROJECTS_STATE: ProjectsState = {
@@ -84,6 +123,11 @@ export const DEFAULT_PROJECTS_STATE: ProjectsState = {
   projectEditDialog: null,
   projectDeleteDialog: null,
   projectError: null,
+  projectRules: [],
+  projectRulesLoading: false,
+  projectRuleCreateDialog: null,
+  projectRuleEditDialog: null,
+  projectRuleDeleteDialog: null,
 };
 
 export type ProjectsHost = {
@@ -206,5 +250,95 @@ export async function validateProjectPaths(
     return result?.results ?? [];
   } catch {
     return [];
+  }
+}
+
+// ─── Rule RPC Functions ───
+
+export async function loadProjectRules(host: ProjectsHost, projectId: string): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  host.projectRulesLoading = true;
+  try {
+    const result = await host.client.request<ProjectRule[]>("projects.rules.list", { projectId });
+    host.projectRules = result ?? [];
+  } catch (err) {
+    host.projectError = String(err);
+  } finally {
+    host.projectRulesLoading = false;
+  }
+}
+
+export async function createProjectRule(
+  host: ProjectsHost,
+  projectId: string,
+  params: { title: string; content: string },
+): Promise<boolean> {
+  if (!host.client || !host.connected) {
+    return false;
+  }
+  const dialog = host.projectRuleCreateDialog;
+  if (!dialog) {
+    return false;
+  }
+  host.projectRuleCreateDialog = { ...dialog, isBusy: true, error: null };
+  try {
+    await host.client.request("projects.rules.create", { projectId, ...params });
+    host.projectRuleCreateDialog = null;
+    await loadProjectRules(host, projectId);
+    return true;
+  } catch (err) {
+    host.projectRuleCreateDialog = { ...dialog, isBusy: false, error: String(err) };
+    return false;
+  }
+}
+
+export async function updateProjectRule(
+  host: ProjectsHost,
+  projectId: string,
+  ruleId: string,
+  params: { title?: string; content?: string },
+): Promise<boolean> {
+  if (!host.client || !host.connected) {
+    return false;
+  }
+  const dialog = host.projectRuleEditDialog;
+  if (!dialog) {
+    return false;
+  }
+  host.projectRuleEditDialog = { ...dialog, isBusy: true, error: null };
+  try {
+    await host.client.request("projects.rules.update", { projectId, ruleId, ...params });
+    host.projectRuleEditDialog = null;
+    await loadProjectRules(host, projectId);
+    return true;
+  } catch (err) {
+    host.projectRuleEditDialog = { ...dialog, isBusy: false, error: String(err) };
+    return false;
+  }
+}
+
+export async function deleteProjectRule(
+  host: ProjectsHost,
+  projectId: string,
+  ruleId: string,
+): Promise<boolean> {
+  if (!host.client || !host.connected) {
+    return false;
+  }
+  const dialog = host.projectRuleDeleteDialog;
+  if (!dialog) {
+    return false;
+  }
+  host.projectRuleDeleteDialog = { ...dialog, isBusy: true, error: null };
+  try {
+    await host.client.request("projects.rules.delete", { projectId, ruleId });
+    host.projectRuleDeleteDialog = null;
+    await loadProjectRules(host, projectId);
+    return true;
+  } catch (err) {
+    host.projectRuleDeleteDialog = { ...dialog, isBusy: false, error: String(err) };
+    return false;
   }
 }

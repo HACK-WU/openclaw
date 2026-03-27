@@ -451,4 +451,38 @@ export const en: Record<string, string> = {
     "This project is linked to {count} groups. They will become standalone groups after deletion.",
   "project.delete.cancel": "Cancel",
   "project.delete.confirmButton": "Confirm Delete",
+
+  // Project Rules
+  "project.rules.title": "Project Rules",
+  "project.rules.create": "Create Rule",
+  "project.rules.edit": "Edit",
+  "project.rules.delete": "Delete",
+  "project.rules.empty.title": "No Project Rules",
+  "project.rules.empty.description":
+    "Create rules to standardize Agent behavior, rules will be injected into linked group contexts",
+  "project.rules.empty.button": "Create First Rule",
+  "project.rules.dialog.create.title": "Create Rule",
+  "project.rules.dialog.edit.title": "Edit Rule",
+  "project.rules.dialog.title.label": "Rule Title",
+  "project.rules.dialog.title.hint": "Name the rule for easy identification and management",
+  "project.rules.dialog.title.placeholder": "Enter rule title...",
+  "project.rules.dialog.title.required": "Rule title is required",
+  "project.rules.dialog.content.label": "Rule Content",
+  "project.rules.dialog.content.hint":
+    "Supports Markdown format, will be injected into linked group Agent contexts",
+  "project.rules.dialog.content.placeholder": "## Rule Title\n\nRule content...",
+  "project.rules.dialog.content.required": "Rule content is required",
+  "project.rules.dialog.tab.edit": "Edit",
+  "project.rules.dialog.tab.preview": "Preview",
+  "project.rules.dialog.cancel": "Cancel",
+  "project.rules.dialog.create": "Create Rule",
+  "project.rules.dialog.save": "Save Changes",
+  "project.rules.delete.title": "Delete Rule",
+  "project.rules.delete.confirm":
+    'Are you sure you want to delete rule "{title}"? This action cannot be undone.',
+  "project.rules.delete.hint":
+    "After deletion, Agents in linked groups will no longer receive this rule in context.",
+  "project.rules.delete.cancel": "Cancel",
+  "project.rules.delete.confirmButton": "Confirm Delete",
+  "project.rules.count": "{count} rules",
 };

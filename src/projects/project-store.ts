@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
-import type { Project, ProjectIndexEntry } from "./types.js";
+import type { Project, ProjectIndexEntry, ProjectRule } from "./types.js";
 
 // ─── Path resolution ───
 
@@ -245,4 +245,119 @@ export function findProjectByName(name: string): Project | null {
     return null;
   }
   return loadProjectMeta(entry.id);
+}
+
+// ─── Project Rules CRUD ───
+
+export function resolveProjectRulesDir(projectId: string): string {
+  return path.join(resolveProjectDir(projectId), "rules");
+}
+
+export function resolveProjectRulePath(projectId: string, ruleId: string): string {
+  return path.join(resolveProjectRulesDir(projectId), `${ruleId}.json`);
+}
+
+/**
+ * 加载项目的所有规则
+ */
+export function loadProjectRules(projectId: string): ProjectRule[] {
+  const rulesDir = resolveProjectRulesDir(projectId);
+  try {
+    const entries = fs.readdirSync(rulesDir);
+    const rules: ProjectRule[] = [];
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) {
+        continue;
+      }
+      try {
+        const raw = fs.readFileSync(path.join(rulesDir, entry), "utf-8");
+        const rule: ProjectRule = JSON.parse(raw);
+        rules.push(rule);
+      } catch {
+        // 跳过无法解析的文件
+      }
+    }
+    // 按创建时间排序
+    rules.sort((a, b) => a.createdAt - b.createdAt);
+    return rules;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 加载单条规则
+ */
+export function loadProjectRule(projectId: string, ruleId: string): ProjectRule | null {
+  const filePath = resolveProjectRulePath(projectId, ruleId);
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    return JSON.parse(raw) as ProjectRule;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 创建项目规则
+ */
+export async function createProjectRule(
+  projectId: string,
+  params: { title: string; content: string },
+): Promise<ProjectRule> {
+  const ruleId = randomUUID();
+  const now = Date.now();
+
+  const rule: ProjectRule = {
+    id: ruleId,
+    projectId,
+    title: params.title,
+    content: params.content,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const rulesDir = resolveProjectRulesDir(projectId);
+  ensureDir(rulesDir);
+  await atomicWriteJson(resolveProjectRulePath(projectId, ruleId), rule);
+
+  return rule;
+}
+
+/**
+ * 更新项目规则
+ */
+export async function updateProjectRule(
+  projectId: string,
+  ruleId: string,
+  params: { title?: string; content?: string },
+): Promise<ProjectRule> {
+  return withProjectLock(`rule:${ruleId}`, async () => {
+    const current = loadProjectRule(projectId, ruleId);
+    if (!current) {
+      throw new Error(`Rule ${ruleId} not found in project ${projectId}`);
+    }
+
+    const updated: ProjectRule = {
+      ...current,
+      ...(params.title !== undefined ? { title: params.title } : {}),
+      ...(params.content !== undefined ? { content: params.content } : {}),
+      updatedAt: Date.now(),
+    };
+
+    await atomicWriteJson(resolveProjectRulePath(projectId, ruleId), updated);
+    return updated;
+  });
+}
+
+/**
+ * 删除项目规则
+ */
+export async function deleteProjectRule(projectId: string, ruleId: string): Promise<void> {
+  const filePath = resolveProjectRulePath(projectId, ruleId);
+  try {
+    await fs.promises.unlink(filePath);
+  } catch {
+    // 文件不存在则忽略
+  }
 }

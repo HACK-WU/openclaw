@@ -16,6 +16,10 @@ import type {
   ProjectDeleteDialogState,
   ProjectEditDialogState,
   ProjectIndexEntry,
+  ProjectRule,
+  ProjectRuleCreateDialogState,
+  ProjectRuleDeleteDialogState,
+  ProjectRuleEditDialogState,
 } from "./controllers/projects.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
@@ -355,6 +359,12 @@ export type AppViewState = {
     projectEditDialog: ProjectEditDialogState | null;
     projectDeleteDialog: ProjectDeleteDialogState | null;
     projectError: string | null;
+    // Project rules state
+    projectRules: ProjectRule[];
+    projectRulesLoading: boolean;
+    projectRuleCreateDialog: ProjectRuleCreateDialogState | null;
+    projectRuleEditDialog: ProjectRuleEditDialogState | null;
+    projectRuleDeleteDialog: ProjectRuleDeleteDialogState | null;
     handleDeleteSessionConfirm: () => Promise<void>;
     handleDeleteSessionCancel: () => void;
     connect: () => void;

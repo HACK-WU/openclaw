@@ -139,6 +139,11 @@ const BASE_METHODS = [
   "projects.update",
   "projects.delete",
   "projects.validatePaths",
+  "projects.rules.list",
+  "projects.rules.get",
+  "projects.rules.create",
+  "projects.rules.update",
+  "projects.rules.delete",
 ];
 
 export function listGatewayMethods(): string[] {

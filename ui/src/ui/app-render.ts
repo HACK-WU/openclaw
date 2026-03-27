@@ -110,9 +110,13 @@ import { loadNodes } from "./controllers/nodes.ts";
 import { loadPresence } from "./controllers/presence.ts";
 import {
   createProject,
+  createProjectRule,
   deleteProject,
+  deleteProjectRule,
   loadProjectInfo,
+  loadProjectRules,
   updateProject,
+  updateProjectRule,
   validateProjectPaths,
   type ProjectsHost,
 } from "./controllers/projects.ts";
@@ -630,6 +634,55 @@ export function renderApp(state: AppViewState) {
                   void deleteProject(state as unknown as ProjectsHost, projectId),
                 onValidatePaths: (paths, type) =>
                   validateProjectPaths(state as unknown as ProjectsHost, paths, type),
+                // 规则管理
+                projectRules: state.projectRules,
+                projectRulesLoading: state.projectRulesLoading,
+                projectRuleCreateDialog: state.projectRuleCreateDialog,
+                projectRuleEditDialog: state.projectRuleEditDialog,
+                projectRuleDeleteDialog: state.projectRuleDeleteDialog,
+                onLoadProjectRules: (projectId) =>
+                  void loadProjectRules(state as unknown as ProjectsHost, projectId),
+                onOpenRuleCreateDialog: () => {
+                  state.projectRuleCreateDialog = {
+                    title: "",
+                    content: "",
+                    previewMode: false,
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseRuleCreateDialog: () => (state.projectRuleCreateDialog = null),
+                onCreateRule: (projectId, params) =>
+                  void createProjectRule(state as unknown as ProjectsHost, projectId, params),
+                onOpenRuleEditDialog: (rule) => {
+                  state.projectRuleEditDialog = {
+                    ruleId: rule.id,
+                    title: rule.title,
+                    content: rule.content,
+                    previewMode: false,
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseRuleEditDialog: () => (state.projectRuleEditDialog = null),
+                onUpdateRule: (projectId, ruleId, params) =>
+                  void updateProjectRule(
+                    state as unknown as ProjectsHost,
+                    projectId,
+                    ruleId,
+                    params,
+                  ),
+                onOpenRuleDeleteDialog: (ruleId, ruleTitle) => {
+                  state.projectRuleDeleteDialog = {
+                    ruleId,
+                    ruleTitle,
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseRuleDeleteDialog: () => (state.projectRuleDeleteDialog = null),
+                onDeleteRule: (projectId, ruleId) =>
+                  void deleteProjectRule(state as unknown as ProjectsHost, projectId, ruleId),
               })
             : nothing
         }
