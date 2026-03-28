@@ -74,6 +74,7 @@ import type {
   ProjectRuleCreateDialogState,
   ProjectRuleDeleteDialogState,
   ProjectRuleEditDialogState,
+  ProjectManageDialogState,
 } from "./controllers/projects.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
@@ -257,6 +258,7 @@ export class OpenClawApp extends LitElement {
   @state() projectCreateDialog: ProjectCreateDialogState | null = null;
   @state() projectEditDialog: ProjectEditDialogState | null = null;
   @state() projectDeleteDialog: ProjectDeleteDialogState | null = null;
+  @state() projectManageDialog: ProjectManageDialogState | null = null;
   @state() projectError: string | null = null;
   // Project rules state
   @state() projectRules: ProjectRule[] = [];

@@ -269,7 +269,14 @@
 /* ─── Projects Dialog Wide (for rules) ─── */
 
 .projects-dialog--wide {
-  max-width: 680px;
+  max-width: 800px;
+  min-height: 500px;
+}
+
+/* 浅色遮罩层（用于规则弹框） - 透明背景 */
+.modal-overlay--light {
+  background: transparent !important;
+  backdrop-filter: none !important;
 }
 
 /* ─── Rules Section ─── */
@@ -506,4 +513,187 @@
 
 .projects-rules__preview em {
   font-style: italic;
+}
+
+/* ─── Manage Dialog ─── */
+
+.projects-manage-dialog {
+  max-width: 720px;
+  width: 90vw;
+}
+
+.projects-manage-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.projects-manage-dialog__title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.projects-manage-dialog__title svg {
+  width: 20px;
+  height: 20px;
+  color: var(--accent);
+}
+
+.projects-manage-dialog__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: var(--radius-sm, 6px);
+  transition:
+    color 200ms ease,
+    background 200ms ease;
+}
+
+.projects-manage-dialog__close:hover {
+  color: var(--fg);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.1));
+}
+
+.projects-manage-dialog__close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.projects-manage-dialog__tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.projects-manage-dialog__tab {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  transition:
+    color 200ms ease,
+    background 200ms ease;
+}
+
+.projects-manage-dialog__tab:hover {
+  color: var(--fg);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+}
+
+.projects-manage-dialog__tab--active {
+  color: var(--accent);
+  background: rgba(255, 92, 92, 0.1);
+  border-color: var(--accent);
+}
+
+.projects-manage-dialog__loading {
+  text-align: center;
+  padding: 2rem;
+  color: var(--muted);
+}
+
+.projects-manage-dialog__overview {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.projects-manage-dialog__section {
+  margin-bottom: 1rem;
+}
+
+.projects-manage-dialog__section-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 0.5rem;
+}
+
+.projects-manage-dialog__field {
+  font-size: 0.85rem;
+  color: var(--fg);
+  word-break: break-all;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-raised);
+  border-radius: var(--radius-sm, 6px);
+}
+
+.projects-manage-dialog__docs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.projects-manage-dialog__doc-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+.projects-manage-dialog__doc-item svg {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.projects-manage-dialog__description {
+  font-size: 0.85rem;
+  color: var(--fg);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.projects-manage-dialog__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.projects-manage-dialog__group-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+.projects-manage-dialog__group-item svg {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+    flex-shrink: 0;
+}
+
+.projects-manage-dialog__empty-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+    font-style: italic;
+}
+
+.projects-manage-dialog__time-info {
+  display: flex;
+  gap: 1.5rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.projects-manage-dialog__section--muted {
+  padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    margin-top: 1rem;
 }

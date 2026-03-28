@@ -387,4 +387,8 @@ export const zhTW: Record<string, string> = {
   "project.rules.delete.cancel": "取消",
   "project.rules.delete.confirmButton": "確認刪除",
   "project.rules.count": "{count} 條規則",
+  "project.manage.tab.overview": "概覽",
+  "project.manage.tab.rules": "規則",
+  "project.manage.noGroups": "暫無關聯群聊",
+  "project.manage.noGroupsHint": "群聊關聯功能將在 Phase 2 實現",
 };

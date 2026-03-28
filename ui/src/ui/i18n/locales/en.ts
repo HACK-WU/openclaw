@@ -485,4 +485,8 @@ export const en: Record<string, string> = {
   "project.rules.delete.cancel": "Cancel",
   "project.rules.delete.confirmButton": "Confirm Delete",
   "project.rules.count": "{count} rules",
+  "project.manage.tab.overview": "Overview",
+  "project.manage.tab.rules": "Rules",
+  "project.manage.noGroups": "No linked groups",
+  "project.manage.noGroupsHint": "Group linking will be implemented in Phase 2",
 };

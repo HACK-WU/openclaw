@@ -14,6 +14,7 @@ import type {
   ProjectDeleteDialogState,
   ProjectEditDialogState,
   ProjectIndexEntry,
+  ProjectManageDialogState,
   ProjectRule,
   ProjectRuleCreateDialogState,
   ProjectRuleDeleteDialogState,
@@ -34,6 +35,7 @@ export type ProjectsViewProps = {
   projectCreateDialog: ProjectCreateDialogState | null;
   projectEditDialog: ProjectEditDialogState | null;
   projectDeleteDialog: ProjectDeleteDialogState | null;
+  projectManageDialog: ProjectManageDialogState | null;
   projectError: string | null;
   // 群聊信息（用于显示关联群聊数量）
   groupIndex: GroupIndexEntry[];
@@ -63,6 +65,10 @@ export type ProjectsViewProps = {
   onCloseDeleteDialog: () => void;
   onDeleteProject: (projectId: string) => void;
   onValidatePaths: (paths: string[], type: "directory" | "file") => Promise<ValidationResult[]>;
+  // 管理弹框回调
+  onOpenManageDialog: (projectId: string, projectName: string) => void;
+  onCloseManageDialog: () => void;
+  onSetManageTab: (tab: "overview" | "rules") => void;
   // 规则回调
   onLoadProjectRules: (projectId: string) => void;
   onOpenRuleCreateDialog: () => void;
@@ -78,6 +84,9 @@ export type ProjectsViewProps = {
   onOpenRuleDeleteDialog: (ruleId: string, ruleTitle: string) => void;
   onCloseRuleDeleteDialog: () => void;
   onDeleteRule: (projectId: string, ruleId: string) => void;
+  // 预览模式切换
+  onToggleRuleCreatePreview: (previewMode: boolean) => void;
+  onToggleRuleEditPreview: (previewMode: boolean) => void;
 };
 
 // ─── Main Render ───
@@ -108,11 +117,10 @@ export function renderProjectsView(props: ProjectsViewProps): TemplateResult {
             : renderProjectList(props)
       }
 
-      ${props.activeProject ? renderRulesSection(props) : nothing}
-
       ${renderCreateDialog(props)}
       ${renderEditDialog(props)}
       ${renderDeleteDialog(props)}
+      ${renderManageDialog(props)}
       ${renderRuleCreateDialog(props)}
       ${renderRuleEditDialog(props)}
       ${renderRuleDeleteDialog(props)}
@@ -168,10 +176,7 @@ function renderProjectCard(project: ProjectIndexEntry, props: ProjectsViewProps)
       <div class="projects-view__card-actions">
         <button
           class="btn btn--sm"
-          @click=${() => {
-            props.onLoadProjectInfo(project.id);
-            props.onLoadProjectRules(project.id);
-          }}
+          @click=${() => props.onOpenManageDialog(project.id, project.name)}
           title="${t("project.card.manage")}"
         >
           ${t("project.card.manage")}
@@ -536,6 +541,197 @@ function renderDeleteDialog(props: ProjectsViewProps): TemplateResult | typeof n
   `;
 }
 
+// ─── Manage Dialog ───
+
+function renderManageDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
+  const dialog = props.projectManageDialog;
+  if (!dialog) {
+    return nothing;
+  }
+
+  const project = props.activeProject;
+
+  return html`
+    <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
+      @click=${(e: Event) => {
+        if ((e.target as HTMLElement).classList.contains("modal-overlay")) {
+          props.onCloseManageDialog();
+        }
+      }}
+    >
+      <div class="modal-card projects-manage-dialog">
+        <div class="modal-header">
+          <h3 class="modal-title">${t("project.manage.title")} - ${dialog.projectName}</h3>
+          <button class="modal-close" @click=${() => props.onCloseManageDialog()}>
+            ${icons.x}
+          </button>
+        </div>
+
+        <!-- Tab 切换 -->
+        <div class="projects-manage-dialog__tabs">
+          <button
+            class="projects-manage-dialog__tab ${dialog.activeTab === "overview" ? "projects-manage-dialog__tab--active" : ""}"
+            @click=${() => props.onSetManageTab("overview")}
+          >
+            ${t("project.manage.tab.overview")}
+          </button>
+          <button
+            class="projects-manage-dialog__tab ${dialog.activeTab === "rules" ? "projects-manage-dialog__tab--active" : ""}"
+            @click=${() => props.onSetManageTab("rules")}
+          >
+            ${t("project.manage.tab.rules")}
+          </button>
+        </div>
+
+        <div class="modal-body">
+          ${
+            dialog.activeTab === "overview"
+              ? renderManageOverviewTab(props, project)
+              : renderManageRulesTab(props)
+          }
+        </div>
+
+        <div class="modal-actions">
+          <button
+            class="btn btn--secondary"
+            @click=${() => props.onCloseManageDialog()}
+          >
+            ${t("action.close")}
+          </button>
+          ${
+            project
+              ? html`
+                <button
+                  class="btn btn--primary"
+                  @click=${() => {
+                    props.onOpenEditDialog(project);
+                  }}
+                >
+                  ${t("project.card.edit")}
+                </button>
+              `
+              : nothing
+          }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderManageOverviewTab(
+  props: ProjectsViewProps,
+  project: Project | null,
+): TemplateResult {
+  if (!project) {
+    return html`<div class="projects-manage-dialog__loading">${t("action.loading")}</div>`;
+  }
+
+  return html`
+    <div class="projects-manage-dialog__overview">
+      <!-- 项目信息 -->
+      <div class="projects-manage-dialog__section">
+        <h4 class="projects-manage-dialog__section-title">${t("project.card.directory")}</h4>
+        <div class="projects-manage-dialog__field mono">${project.directory}</div>
+      </div>
+
+      ${
+        project.documents.length > 0
+          ? html`
+            <div class="projects-manage-dialog__section">
+              <h4 class="projects-manage-dialog__section-title">${t("project.card.docs")}</h4>
+              <div class="projects-manage-dialog__docs">
+                ${project.documents.map(
+                  (doc) => html`
+                  <div class="projects-manage-dialog__doc-item">
+                    ${icons.fileText}
+                    <span>${doc}</span>
+                  </div>
+                `,
+                )}
+              </div>
+            </div>
+          `
+          : nothing
+      }
+
+      ${
+        project.description
+          ? html`
+            <div class="projects-manage-dialog__section">
+              <h4 class="projects-manage-dialog__section-title">${t("project.dialog.description.label")}</h4>
+              <div class="projects-manage-dialog__description">${project.description}</div>
+            </div>
+          `
+          : nothing
+      }
+
+      <!-- 关联群聊 (Phase 2 功能，暂不显示) -->
+      <div class="projects-manage-dialog__section">
+        <h4 class="projects-manage-dialog__section-title">${t("project.card.groups")}</h4>
+        <div class="projects-manage-dialog__empty-hint">
+          ${t("project.manage.noGroupsHint")}
+        </div>
+      </div>
+
+      <!-- 时间信息 -->
+      <div class="projects-manage-dialog__section projects-manage-dialog__section--muted">
+        <div class="projects-manage-dialog__time-info">
+          <span>${t("project.card.createdAt")}: ${new Date(project.createdAt).toLocaleString()}</span>
+          <span>${t("project.card.updatedAt")}: ${new Date(project.updatedAt).toLocaleString()}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderManageRulesTab(props: ProjectsViewProps): TemplateResult {
+  return html`
+    <div class="projects-manage-dialog__rules">
+      <div class="projects-manage-dialog__rules-header">
+        <h4 class="projects-manage-dialog__section-title">
+          ${t("project.rules.title")}
+          ${
+            props.projectRules.length > 0
+              ? html`<span class="projects-rules__count">(${props.projectRules.length})</span>`
+              : nothing
+          }
+        </h4>
+        <button
+          class="btn btn--sm btn--primary"
+          @click=${() => props.onOpenRuleCreateDialog()}
+        >
+          ${icons.plus}
+          <span>${t("project.rules.create")}</span>
+        </button>
+      </div>
+
+      ${
+        props.projectRulesLoading
+          ? html`<div class="projects-manage-dialog__loading">${t("action.loading")}</div>`
+          : props.projectRules.length === 0
+            ? html`
+              <div class="projects-rules__empty">
+                <div class="projects-rules__empty-icon">${icons.fileText}</div>
+                <div class="projects-rules__empty-title">${t("project.rules.empty.title")}</div>
+                <div class="projects-rules__empty-desc">${t("project.rules.empty.description")}</div>
+                <button
+                  class="btn btn--primary btn--sm"
+                  @click=${() => props.onOpenRuleCreateDialog()}
+                >
+                  ${t("project.rules.empty.button")}
+                </button>
+              </div>
+            `
+            : html`
+              <div class="projects-rules__list">
+                ${props.projectRules.map((rule) => renderRuleItem(rule, props))}
+              </div>
+            `
+      }
+    </div>
+  `;
+}
+
 // ─── Simple Markdown to HTML ───
 
 function simpleMarkdownToHtml(md: string): string {
@@ -672,7 +868,7 @@ function renderRuleCreateDialog(props: ProjectsViewProps): TemplateResult | type
   }
 
   return html`
-    <div class="modal-overlay" role="dialog" aria-modal="true"
+    <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
       @click=${(e: Event) => {
         if ((e.target as HTMLElement).classList.contains("modal-overlay")) {
           props.onCloseRuleCreateDialog();
@@ -710,17 +906,13 @@ function renderRuleCreateDialog(props: ProjectsViewProps): TemplateResult | type
             <div class="projects-rules__tabs">
               <button
                 class="projects-rules__tab ${!dialog.previewMode ? "projects-rules__tab--active" : ""}"
-                @click=${() => {
-                  props.projectRuleCreateDialog!.previewMode = false;
-                }}
+                @click=${() => props.onToggleRuleCreatePreview(false)}
               >
                 ${t("project.rules.dialog.tab.edit")}
               </button>
               <button
                 class="projects-rules__tab ${dialog.previewMode ? "projects-rules__tab--active" : ""}"
-                @click=${() => {
-                  props.projectRuleCreateDialog!.previewMode = true;
-                }}
+                @click=${() => props.onToggleRuleCreatePreview(true)}
               >
                 ${t("project.rules.dialog.tab.preview")}
               </button>
@@ -788,7 +980,7 @@ function renderRuleEditDialog(props: ProjectsViewProps): TemplateResult | typeof
   }
 
   return html`
-    <div class="modal-overlay" role="dialog" aria-modal="true"
+    <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
       @click=${(e: Event) => {
         if ((e.target as HTMLElement).classList.contains("modal-overlay")) {
           props.onCloseRuleEditDialog();
@@ -825,17 +1017,13 @@ function renderRuleEditDialog(props: ProjectsViewProps): TemplateResult | typeof
             <div class="projects-rules__tabs">
               <button
                 class="projects-rules__tab ${!dialog.previewMode ? "projects-rules__tab--active" : ""}"
-                @click=${() => {
-                  props.projectRuleEditDialog!.previewMode = false;
-                }}
+                @click=${() => props.onToggleRuleEditPreview(false)}
               >
                 ${t("project.rules.dialog.tab.edit")}
               </button>
               <button
                 class="projects-rules__tab ${dialog.previewMode ? "projects-rules__tab--active" : ""}"
-                @click=${() => {
-                  props.projectRuleEditDialog!.previewMode = true;
-                }}
+                @click=${() => props.onToggleRuleEditPreview(true)}
               >
                 ${t("project.rules.dialog.tab.preview")}
               </button>

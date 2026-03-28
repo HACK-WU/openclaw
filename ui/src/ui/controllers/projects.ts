@@ -97,6 +97,14 @@ export type ProjectRuleDeleteDialogState = {
   error: string | null;
 };
 
+// 管理弹框状态
+export type ProjectManageDialogState = {
+  projectId: string;
+  projectName: string;
+  // 当前选中的 tab: "overview" | "rules"
+  activeTab: "overview" | "rules";
+};
+
 // ─── State ───
 
 export type ProjectsState = {
@@ -106,6 +114,7 @@ export type ProjectsState = {
   projectCreateDialog: ProjectCreateDialogState | null;
   projectEditDialog: ProjectEditDialogState | null;
   projectDeleteDialog: ProjectDeleteDialogState | null;
+  projectManageDialog: ProjectManageDialogState | null;
   projectError: string | null;
   // 规则管理状态
   projectRules: ProjectRule[];
@@ -122,6 +131,7 @@ export const DEFAULT_PROJECTS_STATE: ProjectsState = {
   projectCreateDialog: null,
   projectEditDialog: null,
   projectDeleteDialog: null,
+  projectManageDialog: null,
   projectError: null,
   projectRules: [],
   projectRulesLoading: false,
@@ -340,5 +350,38 @@ export async function deleteProjectRule(
   } catch (err) {
     host.projectRuleDeleteDialog = { ...dialog, isBusy: false, error: String(err) };
     return false;
+  }
+}
+
+// ─── Manage Dialog Functions ───
+
+export async function openProjectManageDialog(
+  host: ProjectsHost,
+  projectId: string,
+  projectName: string,
+): Promise<void> {
+  // 加载项目详情和规则
+  await loadProjectInfo(host, projectId);
+  await loadProjectRules(host, projectId);
+
+  host.projectManageDialog = {
+    projectId,
+    projectName,
+    activeTab: "overview",
+  };
+}
+
+export function closeProjectManageDialog(host: ProjectsHost): void {
+  host.projectManageDialog = null;
+  host.activeProject = null;
+  host.projectRules = [];
+}
+
+export function setProjectManageTab(host: ProjectsHost, tab: "overview" | "rules"): void {
+  if (host.projectManageDialog) {
+    host.projectManageDialog = {
+      ...host.projectManageDialog,
+      activeTab: tab,
+    };
   }
 }

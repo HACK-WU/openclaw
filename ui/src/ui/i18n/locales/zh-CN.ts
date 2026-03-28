@@ -438,4 +438,8 @@ export const zhCN: Record<string, string> = {
   "project.rules.delete.cancel": "取消",
   "project.rules.delete.confirmButton": "确认删除",
   "project.rules.count": "{count} 条规则",
+  "project.manage.tab.overview": "概览",
+  "project.manage.tab.rules": "规则",
+  "project.manage.noGroups": "暂无关联群聊",
+  "project.manage.noGroupsHint": "群聊关联功能将在 Phase 2 实现",
 };

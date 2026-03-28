@@ -586,6 +586,7 @@ export function renderApp(state: AppViewState) {
                 projectCreateDialog: state.projectCreateDialog,
                 projectEditDialog: state.projectEditDialog,
                 projectDeleteDialog: state.projectDeleteDialog,
+                projectManageDialog: state.projectManageDialog,
                 projectError: state.projectError,
                 groupIndex: state.groupIndex,
                 onLoadProjectInfo: (projectId) =>
@@ -634,6 +635,31 @@ export function renderApp(state: AppViewState) {
                   void deleteProject(state as unknown as ProjectsHost, projectId),
                 onValidatePaths: (paths, type) =>
                   validateProjectPaths(state as unknown as ProjectsHost, paths, type),
+                // 管理弹框
+                onOpenManageDialog: (projectId, projectName) => {
+                  // 立即显示弹框
+                  state.projectManageDialog = {
+                    projectId,
+                    projectName,
+                    activeTab: "overview",
+                  };
+                  // 异步加载数据（不阻塞弹框显示）
+                  void loadProjectInfo(state as unknown as ProjectsHost, projectId);
+                  void loadProjectRules(state as unknown as ProjectsHost, projectId);
+                },
+                onCloseManageDialog: () => {
+                  state.projectManageDialog = null;
+                  state.activeProject = null;
+                  state.projectRules = [];
+                },
+                onSetManageTab: (tab) => {
+                  if (state.projectManageDialog) {
+                    state.projectManageDialog = {
+                      ...state.projectManageDialog,
+                      activeTab: tab,
+                    };
+                  }
+                },
                 // 规则管理
                 projectRules: state.projectRules,
                 projectRulesLoading: state.projectRulesLoading,
@@ -683,6 +709,23 @@ export function renderApp(state: AppViewState) {
                 onCloseRuleDeleteDialog: () => (state.projectRuleDeleteDialog = null),
                 onDeleteRule: (projectId, ruleId) =>
                   void deleteProjectRule(state as unknown as ProjectsHost, projectId, ruleId),
+                // 预览模式切换
+                onToggleRuleCreatePreview: (previewMode) => {
+                  if (state.projectRuleCreateDialog) {
+                    state.projectRuleCreateDialog = {
+                      ...state.projectRuleCreateDialog,
+                      previewMode,
+                    };
+                  }
+                },
+                onToggleRuleEditPreview: (previewMode) => {
+                  if (state.projectRuleEditDialog) {
+                    state.projectRuleEditDialog = {
+                      ...state.projectRuleEditDialog,
+                      previewMode,
+                    };
+                  }
+                },
               })
             : nothing
         }
