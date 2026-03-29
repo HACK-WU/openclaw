@@ -485,8 +485,24 @@ export const en: Record<string, string> = {
   "project.rules.delete.cancel": "Cancel",
   "project.rules.delete.confirmButton": "Confirm Delete",
   "project.rules.count": "{count} rules",
+  "project.manage.title": "Project Management",
   "project.manage.tab.overview": "Overview",
   "project.manage.tab.rules": "Rules",
-  "project.manage.noGroups": "No linked groups",
-  "project.manage.noGroupsHint": "Group linking will be implemented in Phase 2",
+  // Groups management Tab
+  "project.groups.title": "Linked Groups",
+  "project.groups.empty.title": "No linked groups",
+  "project.groups.empty.description":
+    "Select this project when creating a group, or link from group settings.",
+  "project.groups.enter": "Enter",
+  "project.groups.unlink": "Unlink",
+  "project.groups.archived": "Archived",
+  // Create group - project selection
+  "chat.group.project.select": "Select Project",
+  "chat.group.project.select.hint":
+    "Select a project to inherit project settings, or create a standalone group",
+  "chat.group.project.noProject": "No project (standalone group)",
+  "chat.group.project.selected": "Selected Project",
+  "chat.group.project.docs.count": "{count} documents",
+  // Group info panel - project display
+  "chat.group.project.associated": "Associated Project",
 };

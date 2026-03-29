@@ -57,6 +57,8 @@ export type GroupSessionMeta = {
   updatedAt: number;
   /** Thinking level for all agents in this group */
   thinkingLevel?: string;
+  /** Associated project ID (Phase 2: group-chat integration). */
+  projectId?: string;
   /** Project configuration for Bridge Agents. */
   project?: {
     directory?: string;
@@ -96,6 +98,8 @@ export type GroupIndexEntry = {
   createdAt: number;
   updatedAt: number;
   archived: boolean;
+  /** Associated project ID (Phase 2: group-chat integration). */
+  projectId?: string;
 };
 
 export type GroupMessageSender =
@@ -224,6 +228,8 @@ export type GroupCreateDialogState = {
   /** Pending role selections for unchecked agents (agentId → role). */
   pendingRoles: Record<string, "assistant" | "member" | "bridge-assistant">;
   messageMode: "unicast" | "broadcast";
+  /** Selected project ID (Phase 2: group-chat integration). */
+  selectedProjectId?: string;
   /** Project directory for CLI Agents (optional). */
   projectDirectory: string;
   /** Project documentation paths (optional). */
@@ -1472,6 +1478,7 @@ export async function createGroup(
     name?: string;
     members: Array<{ agentId: string; role: "assistant" | "member" | "bridge-assistant" }>;
     messageMode?: "unicast" | "broadcast";
+    projectId?: string;
     project?: { directory?: string; docs?: string[] };
   },
 ): Promise<string | null> {

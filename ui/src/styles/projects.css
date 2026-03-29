@@ -676,24 +676,24 @@
   width: 14px;
   height: 14px;
   color: var(--accent);
-    flex-shrink: 0;
+  flex-shrink: 0;
 }
 
 .projects-manage-dialog__empty-hint {
   font-size: 0.85rem;
   color: var(--muted);
-    font-style: italic;
+  font-style: italic;
 }
 
 .projects-manage-dialog__time-info {
   display: flex;
   gap: 1.5rem;
-    font-size: 0.8rem;
-    color: var(--muted);
+  font-size: 0.8rem;
+  color: var(--muted);
 }
 
 .projects-manage-dialog__section--muted {
   padding-top: 1rem;
-    border-top: 1px solid var(--border);
-    margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  margin-top: 1rem;
 }

@@ -387,8 +387,22 @@ export const zhTW: Record<string, string> = {
   "project.rules.delete.cancel": "取消",
   "project.rules.delete.confirmButton": "確認刪除",
   "project.rules.count": "{count} 條規則",
+  "project.manage.title": "項目管理",
   "project.manage.tab.overview": "概覽",
   "project.manage.tab.rules": "規則",
-  "project.manage.noGroups": "暫無關聯群聊",
-  "project.manage.noGroupsHint": "群聊關聯功能將在 Phase 2 實現",
+  // 群聊管理 Tab
+  "project.groups.title": "關聯群聊",
+  "project.groups.empty.title": "暫無關聯群聊",
+  "project.groups.empty.description": "在創建群聊時選擇此項目，或從群聊設定中關聯到此項目。",
+  "project.groups.enter": "進入",
+  "project.groups.unlink": "解除關聯",
+  "project.groups.archived": "已歸檔",
+  // 創建群聊 - 項目選擇
+  "chat.group.project.select": "選擇項目",
+  "chat.group.project.select.hint": "選擇項目以繼承項目設定，或創建獨立群聊",
+  "chat.group.project.noProject": "不關聯項目（獨立群聊）",
+  "chat.group.project.selected": "已選擇項目",
+  "chat.group.project.docs.count": "{count} 個文檔",
+  // 群聊資訊面板 - 項目顯示
+  "chat.group.project.associated": "關聯項目",
 };

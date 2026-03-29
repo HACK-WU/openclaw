@@ -438,8 +438,22 @@ export const zhCN: Record<string, string> = {
   "project.rules.delete.cancel": "取消",
   "project.rules.delete.confirmButton": "确认删除",
   "project.rules.count": "{count} 条规则",
+  "project.manage.title": "项目管理",
   "project.manage.tab.overview": "概览",
   "project.manage.tab.rules": "规则",
-  "project.manage.noGroups": "暂无关联群聊",
-  "project.manage.noGroupsHint": "群聊关联功能将在 Phase 2 实现",
+  // 群聊管理 Tab
+  "project.groups.title": "关联群聊",
+  "project.groups.empty.title": "暂无关联群聊",
+  "project.groups.empty.description": "在创建群聊时选择此项目，或从群聊设置中关联到此项目。",
+  "project.groups.enter": "进入",
+  "project.groups.unlink": "解除关联",
+  "project.groups.archived": "已归档",
+  // 创建群聊 - 项目选择
+  "chat.group.project.select": "选择项目",
+  "chat.group.project.select.hint": "选择项目以继承项目配置，或创建独立群聊",
+  "chat.group.project.noProject": "不关联项目（独立群聊）",
+  "chat.group.project.selected": "已选择项目",
+  "chat.group.project.docs.count": "{count} 个文档",
+  // 群聊信息面板 - 项目显示
+  "chat.group.project.associated": "关联项目",
 };

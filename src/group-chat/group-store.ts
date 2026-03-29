@@ -162,6 +162,7 @@ export async function createGroup(params: {
     bridge?: BridgeConfig;
   }>;
   messageMode?: "unicast" | "broadcast";
+  projectId?: string;
   project?: {
     directory?: string;
     docs?: string[];
@@ -191,6 +192,7 @@ export async function createGroup(params: {
     compaction: { enabled: true, maxHistoryShare: 0.5, reserveTokensFloor: 20_000 },
     createdAt: now,
     updatedAt: now,
+    ...(params.projectId ? { projectId: params.projectId } : {}),
     ...(params.project ? { project: params.project } : {}),
     ...(params.contextConfig ? { contextConfig: params.contextConfig } : {}),
   };
@@ -217,7 +219,7 @@ export async function createGroup(params: {
   // Update index
   await updateGroupIndex((idx) => [
     ...idx,
-    { groupId, groupName: entry.groupName, updatedAt: now },
+    { groupId, groupName: entry.groupName, updatedAt: now, projectId: params.projectId },
   ]);
 
   return entry;
@@ -257,10 +259,17 @@ export async function updateGroupMeta(
     await atomicWriteJson(resolveGroupMetaPath(groupId), next);
     invalidateMetaCache(groupId);
 
-    // Update index timestamp
+    // Update index timestamp and projectId
     await updateGroupIndex((idx) =>
       idx.map((e) =>
-        e.groupId === groupId ? { ...e, groupName: next.groupName, updatedAt: next.updatedAt } : e,
+        e.groupId === groupId
+          ? {
+              ...e,
+              groupName: next.groupName,
+              updatedAt: next.updatedAt,
+              projectId: next.projectId,
+            }
+          : e,
       ),
     );
 
@@ -284,4 +293,30 @@ export async function deleteGroup(groupId: string): Promise<void> {
   }
   invalidateMetaCache(groupId);
   await updateGroupIndex((idx) => idx.filter((e) => e.groupId !== groupId));
+}
+
+// ─── Project Integration ───
+
+/**
+ * Find all groups associated with a project.
+ * Returns groups where projectId matches.
+ */
+export function findGroupsByProjectId(projectId: string): GroupIndexEntry[] {
+  const index = loadGroupIndex();
+  return index.filter((entry) => entry.projectId === projectId && !entry.archived);
+}
+
+/**
+ * Clear projectId from all groups associated with a project.
+ * Used when deleting a project.
+ */
+export async function clearProjectIdFromGroups(projectId: string): Promise<void> {
+  const groups = findGroupsByProjectId(projectId);
+
+  for (const group of groups) {
+    await updateGroupMeta(group.groupId, (meta) => {
+      const { projectId: _, ...rest } = meta;
+      return rest as GroupSessionEntry;
+    });
+  }
 }

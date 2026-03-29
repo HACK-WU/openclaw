@@ -7,7 +7,6 @@
 
 import { html, nothing, type TemplateResult } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import type { GroupIndexEntry } from "../controllers/group-chat.ts";
 import type {
   Project,
   ProjectCreateDialogState,
@@ -37,8 +36,6 @@ export type ProjectsViewProps = {
   projectDeleteDialog: ProjectDeleteDialogState | null;
   projectManageDialog: ProjectManageDialogState | null;
   projectError: string | null;
-  // 群聊信息（用于显示关联群聊数量）
-  groupIndex: GroupIndexEntry[];
   // 规则管理状态
   projectRules: ProjectRule[];
   projectRulesLoading: boolean;
@@ -55,11 +52,9 @@ export type ProjectsViewProps = {
     documents?: string[];
     description?: string;
   }) => void;
-  onOpenEditDialog: (project: Project) => void;
-  onCloseEditDialog: () => void;
   onUpdateProject: (
     projectId: string,
-    params: { directory?: string; documents?: string[]; description?: string },
+    params: { name?: string; directory?: string; documents?: string[]; description?: string },
   ) => void;
   onOpenDeleteDialog: (projectId: string, projectName: string) => void;
   onCloseDeleteDialog: () => void;
@@ -118,7 +113,6 @@ export function renderProjectsView(props: ProjectsViewProps): TemplateResult {
       }
 
       ${renderCreateDialog(props)}
-      ${renderEditDialog(props)}
       ${renderDeleteDialog(props)}
       ${renderManageDialog(props)}
       ${renderRuleCreateDialog(props)}
@@ -180,23 +174,6 @@ function renderProjectCard(project: ProjectIndexEntry, props: ProjectsViewProps)
           title="${t("project.card.manage")}"
         >
           ${t("project.card.manage")}
-        </button>
-        <button
-          class="btn btn--sm"
-          @click=${async () => {
-            // 加载完整项目信息后打开编辑对话框
-            if (!props.activeProject || props.activeProject.id !== project.id) {
-              props.onLoadProjectInfo(project.id);
-              // 等待一小段时间让数据加载
-              await new Promise((r) => setTimeout(r, 200));
-            }
-            if (props.activeProject && props.activeProject.id === project.id) {
-              props.onOpenEditDialog(props.activeProject);
-            }
-          }}
-          title="${t("project.card.edit")}"
-        >
-          ${t("project.card.edit")}
         </button>
         <button
           class="btn btn--sm btn--danger-text"
@@ -355,124 +332,6 @@ function renderCreateDialog(props: ProjectsViewProps): TemplateResult | typeof n
   `;
 }
 
-// ─── Edit Dialog ───
-
-function renderEditDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
-  const dialog = props.projectEditDialog;
-  if (!dialog) {
-    return nothing;
-  }
-
-  return html`
-    <div class="modal-overlay" role="dialog" aria-modal="true"
-      @click=${(e: Event) => {
-        if ((e.target as HTMLElement).classList.contains("modal-overlay")) {
-          props.onCloseEditDialog();
-        }
-      }}
-    >
-      <div class="modal-card projects-dialog">
-        <div class="modal-header">
-          <h3 class="modal-title">${t("project.dialog.edit.title", { name: dialog.name })}</h3>
-          <button class="modal-close" @click=${() => props.onCloseEditDialog()}>
-            ${icons.x}
-          </button>
-        </div>
-        <div class="modal-body">
-          <!-- 项目名称（不可编辑） -->
-          <div class="form-group">
-            <label class="form-label">${t("project.dialog.name.label")}</label>
-            <input
-              class="form-input form-input--disabled"
-              type="text"
-              .value=${dialog.name}
-              disabled
-            />
-          </div>
-
-          <!-- 项目目录 -->
-          <div class="form-group">
-            <label class="form-label">${t("project.dialog.directory.label")} *</label>
-            <input
-              class="form-input"
-              type="text"
-              .value=${dialog.directory}
-              placeholder=${t("project.dialog.directory.placeholder")}
-              @input=${(e: Event) => {
-                const target = e.target as HTMLInputElement;
-                props.projectEditDialog!.directory = target.value;
-              }}
-              ?disabled=${dialog.isBusy}
-            />
-          </div>
-
-          <!-- 项目文档 -->
-          <div class="form-group">
-            <label class="form-label">${t("project.dialog.docs.label")}</label>
-            <input
-              class="form-input"
-              type="text"
-              .value=${dialog.documents}
-              placeholder=${t("project.dialog.docs.placeholder")}
-              @input=${(e: Event) => {
-                const target = e.target as HTMLInputElement;
-                props.projectEditDialog!.documents = target.value;
-              }}
-              ?disabled=${dialog.isBusy}
-            />
-            <div class="form-hint">${t("project.dialog.docs.hint")}</div>
-          </div>
-
-          <!-- 描述 -->
-          <div class="form-group">
-            <label class="form-label">${t("project.dialog.description.label")}</label>
-            <textarea
-              class="form-input form-textarea"
-              .value=${dialog.description}
-              placeholder=${t("project.dialog.description.placeholder")}
-              @input=${(e: Event) => {
-                const target = e.target as HTMLTextAreaElement;
-                props.projectEditDialog!.description = target.value;
-              }}
-              ?disabled=${dialog.isBusy}
-              rows="3"
-            ></textarea>
-          </div>
-
-          ${dialog.error ? html`<div class="modal-error">${dialog.error}</div>` : nothing}
-        </div>
-        <div class="modal-actions">
-          <button
-            class="btn btn--secondary"
-            @click=${() => props.onCloseEditDialog()}
-            ?disabled=${dialog.isBusy}
-          >
-            ${t("project.dialog.cancel")}
-          </button>
-          <button
-            class="btn btn--primary"
-            ?disabled=${dialog.isBusy || !dialog.directory.trim()}
-            @click=${() => {
-              const docs = dialog.documents
-                .split(",")
-                .map((d) => d.trim())
-                .filter(Boolean);
-              props.onUpdateProject(dialog.projectId, {
-                directory: dialog.directory.trim(),
-                documents: docs,
-                description: dialog.description.trim() || undefined,
-              });
-            }}
-          >
-            ${dialog.isBusy ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing}
-            ${t("project.dialog.save")}
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
 // ─── Delete Dialog ───
 
 function renderDeleteDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
@@ -598,20 +457,6 @@ function renderManageDialog(props: ProjectsViewProps): TemplateResult | typeof n
           >
             ${t("action.close")}
           </button>
-          ${
-            project
-              ? html`
-                <button
-                  class="btn btn--primary"
-                  @click=${() => {
-                    props.onOpenEditDialog(project);
-                  }}
-                >
-                  ${t("project.card.edit")}
-                </button>
-              `
-              : nothing
-          }
         </div>
       </div>
     </div>
@@ -628,7 +473,25 @@ function renderManageOverviewTab(
 
   return html`
     <div class="projects-manage-dialog__overview">
-      <!-- 项目信息 -->
+      <!-- 项目名称 -->
+      <div class="projects-manage-dialog__section">
+        <h4 class="projects-manage-dialog__section-title">${t("project.dialog.name.label")}</h4>
+        <div class="projects-manage-dialog__field-edit">
+          <input
+            type="text"
+            class="form-input"
+            .value=${project.name}
+            @change=${(e: Event) => {
+              const newName = (e.target as HTMLInputElement).value.trim();
+              if (newName && newName !== project.name) {
+                props.onUpdateProject(project.id, { name: newName });
+              }
+            }}
+          />
+        </div>
+      </div>
+
+      <!-- 项目目录 -->
       <div class="projects-manage-dialog__section">
         <h4 class="projects-manage-dialog__section-title">${t("project.card.directory")}</h4>
         <div class="projects-manage-dialog__field mono">${project.directory}</div>
@@ -664,14 +527,6 @@ function renderManageOverviewTab(
           `
           : nothing
       }
-
-      <!-- 关联群聊 (Phase 2 功能，暂不显示) -->
-      <div class="projects-manage-dialog__section">
-        <h4 class="projects-manage-dialog__section-title">${t("project.card.groups")}</h4>
-        <div class="projects-manage-dialog__empty-hint">
-          ${t("project.manage.noGroupsHint")}
-        </div>
-      </div>
 
       <!-- 时间信息 -->
       <div class="projects-manage-dialog__section projects-manage-dialog__section--muted">

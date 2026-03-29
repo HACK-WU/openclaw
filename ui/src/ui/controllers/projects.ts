@@ -202,23 +202,21 @@ export async function createProject(
 export async function updateProject(
   host: ProjectsHost,
   projectId: string,
-  params: { directory?: string; documents?: string[]; description?: string },
+  params: { name?: string; directory?: string; documents?: string[]; description?: string },
 ): Promise<boolean> {
   if (!host.client || !host.connected) {
     return false;
   }
-  const dialog = host.projectEditDialog;
-  if (!dialog) {
-    return false;
-  }
-  host.projectEditDialog = { ...dialog, isBusy: true, error: null };
   try {
     await host.client.request("projects.update", { projectId, ...params });
-    host.projectEditDialog = null;
+    // Reload project list and info
     await loadProjectsList(host);
+    if (host.activeProject?.id === projectId) {
+      await loadProjectInfo(host, projectId);
+    }
     return true;
   } catch (err) {
-    host.projectEditDialog = { ...dialog, isBusy: false, error: String(err) };
+    host.projectError = String(err);
     return false;
   }
 }

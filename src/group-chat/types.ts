@@ -73,6 +73,9 @@ export type GroupSessionEntry = {
   updatedAt: number;
   label?: string;
   archived?: boolean;
+  // ─── Project integration ───
+  /** Associated project ID (Phase 2: group-chat integration). */
+  projectId?: string;
   // ─── Bridge Agent extensions ───
   /** Project configuration for Bridge Agents (optional). */
   project?: {
@@ -92,6 +95,8 @@ export type GroupIndexEntry = {
   groupName?: string;
   updatedAt: number;
   archived?: boolean;
+  /** Associated project ID (Phase 2: group-chat integration). */
+  projectId?: string;
 };
 
 // ─── Message Sender ───

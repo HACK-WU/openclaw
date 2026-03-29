@@ -118,6 +118,7 @@ const handleGroupCreate: GatewayRequestHandler = async ({ params, respond, conte
 
   const project = params.project as { directory?: string; docs?: string[] } | undefined;
   const contextConfig = params.contextConfig as ContextConfig | undefined;
+  const projectId = params.projectId as string | undefined;
 
   const entry = await createGroup({
     name: (params.name as string) || undefined,
@@ -126,6 +127,7 @@ const handleGroupCreate: GatewayRequestHandler = async ({ params, respond, conte
       bridge: resolveBridgeForMember(m) ?? m.bridge,
     })),
     messageMode: (params.messageMode as "unicast" | "broadcast") || undefined,
+    projectId,
     project,
     contextConfig,
   });

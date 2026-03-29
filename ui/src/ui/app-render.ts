@@ -588,7 +588,6 @@ export function renderApp(state: AppViewState) {
                 projectDeleteDialog: state.projectDeleteDialog,
                 projectManageDialog: state.projectManageDialog,
                 projectError: state.projectError,
-                groupIndex: state.groupIndex,
                 onLoadProjectInfo: (projectId) =>
                   void loadProjectInfo(state as unknown as ProjectsHost, projectId),
                 onOpenCreateDialog: () => {
@@ -604,28 +603,13 @@ export function renderApp(state: AppViewState) {
                 onCloseCreateDialog: () => (state.projectCreateDialog = null),
                 onCreateProject: (params) =>
                   void createProject(state as unknown as ProjectsHost, params),
-                onOpenEditDialog: (project) => {
-                  state.projectEditDialog = {
-                    projectId: project.id,
-                    name: project.name,
-                    directory: project.directory,
-                    documents: project.documents.join(", "),
-                    description: project.description ?? "",
-                    isBusy: false,
-                    error: null,
-                  };
-                },
-                onCloseEditDialog: () => (state.projectEditDialog = null),
                 onUpdateProject: (projectId, params) =>
                   void updateProject(state as unknown as ProjectsHost, projectId, params),
                 onOpenDeleteDialog: (projectId, projectName) => {
-                  const linkedGroupCount = state.groupIndex.filter(
-                    (g) => (g as unknown as { projectId?: string }).projectId === projectId,
-                  ).length;
                   state.projectDeleteDialog = {
                     projectId,
                     projectName,
-                    linkedGroupCount,
+                    linkedGroupCount: 0,
                     isBusy: false,
                     error: null,
                   };
@@ -1957,6 +1941,13 @@ export function renderApp(state: AppViewState) {
                       | undefined,
                   })),
                 ],
+                // Projects (Phase 2: group-chat integration)
+                projectsList: state.projectsList.map((p) => ({
+                  id: p.id,
+                  name: p.name,
+                  directory: p.directory,
+                  documentsCount: p.documentsCount ?? 0,
+                })),
                 onEnterGroup: (groupId) =>
                   void enterGroupChat(
                     state as unknown as Parameters<typeof enterGroupChat>[0],

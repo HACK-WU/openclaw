@@ -5,6 +5,12 @@
  * Follows the same handler pattern as group.ts.
  */
 
+import {
+  clearProjectIdFromGroups,
+  findGroupsByProjectId,
+  loadGroupMeta,
+  updateGroupMeta,
+} from "../../group-chat/group-store.js";
 import { getLogger } from "../../logging.js";
 import {
   createProject,
@@ -123,6 +129,7 @@ const handleProjectsUpdate: GatewayRequestHandler = async ({ params, respond }) 
     return;
   }
 
+  const name = params.name as string | undefined;
   const directory = params.directory as string | undefined;
   const documents = params.documents as string[] | undefined;
   const description = params.description as string | undefined;
@@ -145,6 +152,7 @@ const handleProjectsUpdate: GatewayRequestHandler = async ({ params, respond }) 
   try {
     const updated = await updateProjectMeta(projectId, (meta) => ({
       ...meta,
+      ...(name !== undefined ? { name: name.trim() } : {}),
       ...(directory !== undefined ? { directory: directory.trim() } : {}),
       ...(documents !== undefined ? { documents } : {}),
       ...(description !== undefined ? { description: description.trim() || undefined } : {}),
@@ -179,7 +187,8 @@ const handleProjectsDelete: GatewayRequestHandler = async ({ params, respond }) 
   }
 
   try {
-    // TODO: Phase 2 — 清除关联群聊的 projectId（待 GroupSessionEntry 添加 projectId 字段后实现）
+    // Clear projectId from all associated groups
+    await clearProjectIdFromGroups(projectId);
 
     await deleteProject(projectId);
     log.info(`Project deleted: ${projectId} (${meta.name})`);
@@ -369,6 +378,100 @@ const handleProjectsRulesDelete: GatewayRequestHandler = async ({ params, respon
   }
 };
 
+// ─── Export Handlers (moved to end of file) ───
+
+// ─── Group Integration (Phase 2) ───
+
+const handleProjectsGetLinkedGroups: GatewayRequestHandler = ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  if (!projectId) {
+    respond(false, undefined, { message: "projectId is required", code: 400 });
+    return;
+  }
+
+  const meta = loadProjectMeta(projectId);
+  if (!meta) {
+    respond(false, undefined, { message: "Project not found", code: 404 });
+    return;
+  }
+
+  const groups = findGroupsByProjectId(projectId);
+  respond(true, groups);
+};
+
+const handleProjectsLinkGroup: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const groupId = params.groupId as string;
+
+  if (!projectId || !groupId) {
+    respond(false, undefined, { message: "projectId and groupId are required", code: 400 });
+    return;
+  }
+
+  const projectMeta = loadProjectMeta(projectId);
+  if (!projectMeta) {
+    respond(false, undefined, { message: "Project not found", code: 404 });
+    return;
+  }
+
+  const groupMeta = loadGroupMeta(groupId);
+  if (!groupMeta) {
+    respond(false, undefined, { message: "Group not found", code: 404 });
+    return;
+  }
+
+  try {
+    await updateGroupMeta(groupId, (meta) => ({
+      ...meta,
+      projectId,
+      // Inherit project settings if not already set
+      project: meta.project ?? {
+        directory: projectMeta.directory,
+        docs: projectMeta.documents,
+      },
+    }));
+    log.info(`Group ${groupId} linked to project ${projectId}`);
+    respond(true, { ok: true });
+  } catch (err) {
+    log.error(`Failed to link group: ${String(err)}`);
+    respond(false, undefined, { message: "Failed to link group", code: 500 });
+  }
+};
+
+const handleProjectsUnlinkGroup: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const groupId = params.groupId as string;
+
+  if (!projectId || !groupId) {
+    respond(false, undefined, { message: "projectId and groupId are required", code: 400 });
+    return;
+  }
+
+  const groupMeta = loadGroupMeta(groupId);
+  if (!groupMeta) {
+    respond(false, undefined, { message: "Group not found", code: 404 });
+    return;
+  }
+
+  // Verify the group is actually linked to this project
+  if (groupMeta.projectId !== projectId) {
+    respond(false, undefined, { message: "Group is not linked to this project", code: 400 });
+    return;
+  }
+
+  try {
+    await updateGroupMeta(groupId, (meta) => {
+      const { projectId: _, ...rest } = meta;
+      return rest as typeof meta;
+    });
+    log.info(`Group ${groupId} unlinked from project ${projectId}`);
+    respond(true, { ok: true });
+  } catch (err) {
+    log.error(`Failed to unlink group: ${String(err)}`);
+    respond(false, undefined, { message: "Failed to unlink group", code: 500 });
+  }
+};
+
 // ─── Export Handlers ───
 
 export const projectsHandlers: GatewayRequestHandlers = {
@@ -383,4 +486,8 @@ export const projectsHandlers: GatewayRequestHandlers = {
   "projects.rules.create": handleProjectsRulesCreate,
   "projects.rules.update": handleProjectsRulesUpdate,
   "projects.rules.delete": handleProjectsRulesDelete,
+  // Phase 2: Group integration
+  "projects.getLinkedGroups": handleProjectsGetLinkedGroups,
+  "projects.linkGroup": handleProjectsLinkGroup,
+  "projects.unlinkGroup": handleProjectsUnlinkGroup,
 };

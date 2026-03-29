@@ -16,6 +16,7 @@ import type {
   ProjectDeleteDialogState,
   ProjectEditDialogState,
   ProjectIndexEntry,
+  ProjectManageDialogState,
   ProjectRule,
   ProjectRuleCreateDialogState,
   ProjectRuleDeleteDialogState,
@@ -358,6 +359,7 @@ export type AppViewState = {
     projectCreateDialog: ProjectCreateDialogState | null;
     projectEditDialog: ProjectEditDialogState | null;
     projectDeleteDialog: ProjectDeleteDialogState | null;
+    projectManageDialog: ProjectManageDialogState | null;
     projectError: string | null;
     // Project rules state
     projectRules: ProjectRule[];

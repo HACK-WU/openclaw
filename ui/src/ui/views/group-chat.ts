@@ -259,6 +259,8 @@ export type GroupChatViewProps = {
   groupInfoPanelOpen: boolean;
   // Agents
   agentsList: Array<{ id: string; identity?: { name?: string; emoji?: string } }>;
+  // Projects (Phase 2: group-chat integration)
+  projectsList: Array<{ id: string; name: string; directory: string; documentsCount: number }>;
   // Callbacks
   onEnterGroup: (groupId: string) => void;
   onLeaveGroup: () => void;
@@ -269,6 +271,7 @@ export type GroupChatViewProps = {
     name?: string;
     members: Array<{ agentId: string; role: "assistant" | "member" | "bridge-assistant" }>;
     messageMode?: "unicast" | "broadcast";
+    projectId?: string;
     project?: { directory?: string; docs?: string[] };
   }) => void;
   onDeleteGroup: (groupId: string) => void;
@@ -1544,6 +1547,24 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
         <div class="group-info-panel__section">
           <label>${t("chat.group.projectConfiguration")}</label>
           <div class="group-info-panel__settings">
+            ${
+              meta.projectId
+                ? html`
+                  <!-- Associated Project (Phase 2) -->
+                  <div class="group-info-panel__setting-item">
+                    <div class="group-info-panel__setting-header">
+                      <span class="group-info-panel__setting-name">${t("chat.group.project.associated")}</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px; padding: 4px 0;">
+                      ${icons.folder}
+                      <span class="group-info-panel__project-link" style="cursor: pointer; color: var(--color-primary);">
+                        ${props.projectsList.find((p) => p.id === meta.projectId)?.name ?? meta.projectId}
+                      </span>
+                    </div>
+                  </div>
+                `
+                : nothing
+            }
             <div class="group-info-panel__setting-item">
               <div class="group-info-panel__setting-header">
                 <span class="group-info-panel__setting-name">${t("chat.group.projectDirectory")}</span>
@@ -1552,10 +1573,10 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
                 meta.project?.directory
                   ? html`
                   <div class="mono" style="font-size: 12px; padding: 4px 0; display: flex; align-items: center; gap: 6px;">
-                    <span>🔒</span>
+                    <span>${meta.projectId ? "📁" : "🔒"}</span>
                     <span>${meta.project.directory}</span>
                   </div>
-                  <span class="group-info-panel__setting-desc">${t("chat.group.projectDirectoryLockedDesc")}</span>
+                  ${!meta.projectId ? html`<span class="group-info-panel__setting-desc">${t("chat.group.projectDirectoryLockedDesc")}</span>` : nothing}
                 `
                   : html`
                       <span class="group-info-panel__setting-desc muted">${t("chat.group.projectDirectoryNotConfigured")}</span>
@@ -1571,53 +1592,65 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
                   (doc, idx) => html`
                     <div style="display: flex; align-items: center; gap: 6px;">
                       <span class="mono" style="font-size: 12px; flex: 1;">${doc}</span>
-                      <button
-                        class="btn btn--sm btn--icon"
-                        style="padding: 2px;"
-                        title=${t("action.remove")}
-                        @click=${() => {
-                          const updated = [...(meta.project?.docs ?? [])];
-                          updated.splice(idx, 1);
-                          props.onUpdateProjectDocs(updated);
-                        }}
-                      >${icons.x}</button>
+                      ${
+                        !meta.projectId
+                          ? html`
+                        <button
+                          class="btn btn--sm btn--icon"
+                          style="padding: 2px;"
+                          title=${t("action.remove")}
+                          @click=${() => {
+                            const updated = [...(meta.project?.docs ?? [])];
+                            updated.splice(idx, 1);
+                            props.onUpdateProjectDocs(updated);
+                          }}
+                        >${icons.x}</button>
+                      `
+                          : nothing
+                      }
                     </div>
                   `,
                 )}
-                <div style="display: flex; gap: 6px; margin-top: 4px;">
-                  <input
-                    type="text"
-                    class="field"
-                    style="font-size: 12px; flex: 1;"
-                    placeholder="path/to/doc.md"
-                    id="project-doc-input"
-                    @keydown=${(e: KeyboardEvent) => {
-                      if (e.key === "Enter") {
-                        const input = e.target as HTMLInputElement;
-                        const val = input.value.trim();
-                        if (val) {
-                          props.onUpdateProjectDocs([...(meta.project?.docs ?? []), val]);
+                ${
+                  !meta.projectId
+                    ? html`
+                  <div style="display: flex; gap: 6px; margin-top: 4px;">
+                    <input
+                      type="text"
+                      class="field"
+                      style="font-size: 12px; flex: 1;"
+                      placeholder="path/to/doc.md"
+                      id="project-doc-input"
+                      @keydown=${(e: KeyboardEvent) => {
+                        if (e.key === "Enter") {
+                          const input = e.target as HTMLInputElement;
+                          const val = input.value.trim();
+                          if (val) {
+                            props.onUpdateProjectDocs([...(meta.project?.docs ?? []), val]);
+                            input.value = "";
+                          }
+                        }
+                      }}
+                    />
+                    <button
+                      class="btn btn--sm btn--secondary"
+                      @click=${() => {
+                        const input = document.getElementById(
+                          "project-doc-input",
+                        ) as HTMLInputElement | null;
+                        if (input && input.value.trim()) {
+                          props.onUpdateProjectDocs([
+                            ...(meta.project?.docs ?? []),
+                            input.value.trim(),
+                          ]);
                           input.value = "";
                         }
-                      }
-                    }}
-                  />
-                  <button
-                    class="btn btn--sm btn--secondary"
-                    @click=${() => {
-                      const input = document.getElementById(
-                        "project-doc-input",
-                      ) as HTMLInputElement | null;
-                      if (input && input.value.trim()) {
-                        props.onUpdateProjectDocs([
-                          ...(meta.project?.docs ?? []),
-                          input.value.trim(),
-                        ]);
-                        input.value = "";
-                      }
-                    }}
-                  >+ ${t("action.add")}</button>
-                </div>
+                      }}
+                    >+ ${t("action.add")}</button>
+                  </div>
+                `
+                    : nothing
+                }
               </div>
               <span class="group-info-panel__setting-desc">${t("chat.group.projectDocsDesc")}</span>
             </div>
@@ -1966,6 +1999,11 @@ function renderCreateGroupDialog(props: GroupChatViewProps) {
     return nothing;
   }
 
+  // Find selected project
+  const selectedProject = dialog.selectedProjectId
+    ? props.projectsList.find((p) => p.id === dialog.selectedProjectId)
+    : null;
+
   return html`
     <div class="modal-overlay" role="dialog" aria-modal="true">
       <div class="modal-card group-create-dialog">
@@ -1985,6 +2023,39 @@ function renderCreateGroupDialog(props: GroupChatViewProps) {
                 dialog.name = (e.target as HTMLInputElement).value;
               }}
             />
+          </div>
+          <!-- Project Selection (Phase 2) -->
+          <div class="form-field group-create__field">
+            <label class="group-create__label">${t("chat.group.project.select")}</label>
+            <select
+              class="field group-create__input"
+              .value=${dialog.selectedProjectId ?? ""}
+              @change=${(e: Event) => {
+                const value = (e.target as HTMLSelectElement).value;
+                if (value) {
+                  const project = props.projectsList.find((p) => p.id === value);
+                  if (project) {
+                    dialog.selectedProjectId = value;
+                    dialog.projectDirectory = project.directory;
+                    // Note: documents are stored in project, not displayed in the input
+                  }
+                } else {
+                  dialog.selectedProjectId = undefined;
+                  dialog.projectDirectory = "";
+                  dialog.projectDocs = "";
+                }
+              }}
+            >
+              <option value="">${t("chat.group.project.noProject")}</option>
+              ${props.projectsList.map(
+                (project) => html`
+                  <option value=${project.id} ?selected=${dialog.selectedProjectId === project.id}>
+                    ${project.name} (${project.documentsCount} ${t("chat.group.project.docs.count", { count: String(project.documentsCount) })})
+                  </option>
+                `,
+              )}
+            </select>
+            <span class="group-create__hint">${t("chat.group.project.select.hint")}</span>
           </div>
           <div class="form-field group-create__field">
             <label class="group-create__label">${t("chat.group.selectAgents")}</label>
@@ -2077,61 +2148,79 @@ function renderCreateGroupDialog(props: GroupChatViewProps) {
               <option value="broadcast">Broadcast</option>
             </select>
           </div>
-          <!-- Project Configuration (optional) -->
-          <div class="form-field group-create__field ${dialog.directoryError ? "group-create__field--error" : ""}">
-            <label class="group-create__label">${t("chat.group.projectDirectory")}</label>
-            <input
-              type="text"
-              class="field group-create__input"
-              placeholder="/home/user/my-project"
-              .value=${dialog.projectDirectory}
-              @keydown=${(e: KeyboardEvent) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  // Trigger validation on Enter
+          <!-- Project Configuration (optional, disabled if project selected) -->
+          ${
+            !dialog.selectedProjectId
+              ? html`
+            <div class="form-field group-create__field ${dialog.directoryError ? "group-create__field--error" : ""}">
+              <label class="group-create__label">${t("chat.group.projectDirectory")}</label>
+              <input
+                type="text"
+                class="field group-create__input"
+                placeholder="/home/user/my-project"
+                .value=${dialog.projectDirectory}
+                ?disabled=${!!dialog.selectedProjectId}
+                @keydown=${(e: KeyboardEvent) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void validateProjectDirectory(props, dialog);
+                  }
+                }}
+                @blur=${() => {
                   void validateProjectDirectory(props, dialog);
-                }
-              }}
-              @blur=${() => {
-                // Trigger validation on blur
-                void validateProjectDirectory(props, dialog);
-              }}
-              @input=${(e: Event) => {
-                dialog.projectDirectory = (e.target as HTMLInputElement).value;
-                // Clear error when user types
-                dialog.directoryError = undefined;
-              }}
-            />
-            <span class="group-create__hint">${t("chat.group.projectDirectoryHint")}</span>
-            ${dialog.directoryError ? html`<span class="group-create__error">${dialog.directoryError}</span>` : nothing}
-          </div>
-          <div class="form-field group-create__field ${dialog.docsError ? "group-create__field--error" : ""}">
-            <label class="group-create__label">${t("chat.group.projectDocs")}</label>
-            <input
-              type="text"
-              class="field group-create__input"
-              placeholder="README.md, docs/architecture.md"
-              .value=${dialog.projectDocs}
-              @keydown=${(e: KeyboardEvent) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  // Trigger validation on Enter
+                }}
+                @input=${(e: Event) => {
+                  dialog.projectDirectory = (e.target as HTMLInputElement).value;
+                  dialog.directoryError = undefined;
+                }}
+              />
+              <span class="group-create__hint">${t("chat.group.projectDirectoryHint")}</span>
+              ${dialog.directoryError ? html`<span class="group-create__error">${dialog.directoryError}</span>` : nothing}
+            </div>
+            <div class="form-field group-create__field ${dialog.docsError ? "group-create__field--error" : ""}">
+              <label class="group-create__label">${t("chat.group.projectDocs")}</label>
+              <input
+                type="text"
+                class="field group-create__input"
+                placeholder="README.md, docs/architecture.md"
+                .value=${dialog.projectDocs}
+                ?disabled=${!!dialog.selectedProjectId}
+                @keydown=${(e: KeyboardEvent) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void validateProjectDocs(props, dialog);
+                  }
+                }}
+                @blur=${() => {
                   void validateProjectDocs(props, dialog);
+                }}
+                @input=${(e: Event) => {
+                  dialog.projectDocs = (e.target as HTMLInputElement).value;
+                  dialog.docsError = undefined;
+                }}
+              />
+              <span class="group-create__hint">${t("chat.group.projectDocsHint")}</span>
+              ${dialog.docsError ? html`<span class="group-create__error">${dialog.docsError}</span>` : nothing}
+            </div>
+          `
+              : html`
+            <!-- Show selected project info -->
+            <div class="form-field group-create__field">
+              <label class="group-create__label">${t("chat.group.project.selected")}</label>
+              <div class="group-create__project-info">
+                <div class="group-create__project-name">${selectedProject?.name}</div>
+                <div class="group-create__project-directory mono">${selectedProject?.directory}</div>
+                ${
+                  selectedProject && selectedProject.documentsCount > 0
+                    ? html`
+                  <div class="group-create__project-docs">${t("chat.group.project.docs.count", { count: String(selectedProject.documentsCount) })}</div>
+                `
+                    : nothing
                 }
-              }}
-              @blur=${() => {
-                // Trigger validation on blur
-                void validateProjectDocs(props, dialog);
-              }}
-              @input=${(e: Event) => {
-                dialog.projectDocs = (e.target as HTMLInputElement).value;
-                // Clear error when user types
-                dialog.docsError = undefined;
-              }}
-            />
-            <span class="group-create__hint">${t("chat.group.projectDocsHint")}</span>
-            ${dialog.docsError ? html`<span class="group-create__error">${dialog.docsError}</span>` : nothing}
-          </div>
+              </div>
+            </div>
+          `
+          }
           ${dialog.error ? html`<div class="modal-error">${dialog.error}</div>` : nothing}
         </div>
         <div class="modal-actions group-create-dialog__actions">
@@ -2160,6 +2249,7 @@ function renderCreateGroupDialog(props: GroupChatViewProps) {
                 name: dialog.name || undefined,
                 members: dialog.selectedAgents,
                 messageMode: dialog.messageMode,
+                projectId: dialog.selectedProjectId,
                 ...(project.directory || project.docs ? { project } : {}),
               });
             }}
