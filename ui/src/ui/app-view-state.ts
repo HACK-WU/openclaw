@@ -11,6 +11,7 @@ import type {
   GroupSessionMeta,
 } from "./controllers/group-chat.ts";
 import type {
+  LinkedGroupEntry,
   Project,
   ProjectCreateDialogState,
   ProjectDeleteDialogState,
@@ -367,6 +368,9 @@ export type AppViewState = {
     projectRuleCreateDialog: ProjectRuleCreateDialogState | null;
     projectRuleEditDialog: ProjectRuleEditDialogState | null;
     projectRuleDeleteDialog: ProjectRuleDeleteDialogState | null;
+    // Project linked groups state
+    projectLinkedGroups: LinkedGroupEntry[];
+    projectLinkedGroupsLoading: boolean;
     handleDeleteSessionConfirm: () => Promise<void>;
     handleDeleteSessionCancel: () => void;
     connect: () => void;

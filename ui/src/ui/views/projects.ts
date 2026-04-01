@@ -8,6 +8,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type {
+  LinkedGroupEntry,
   Project,
   ProjectCreateDialogState,
   ProjectDeleteDialogState,
@@ -42,6 +43,9 @@ export type ProjectsViewProps = {
   projectRuleCreateDialog: ProjectRuleCreateDialogState | null;
   projectRuleEditDialog: ProjectRuleEditDialogState | null;
   projectRuleDeleteDialog: ProjectRuleDeleteDialogState | null;
+  // 关联群聊
+  projectLinkedGroups: LinkedGroupEntry[];
+  projectLinkedGroupsLoading: boolean;
   // 回调
   onLoadProjectInfo: (projectId: string) => void;
   onOpenCreateDialog: () => void;
@@ -527,6 +531,34 @@ function renderManageOverviewTab(
           `
           : nothing
       }
+
+      <!-- 关联群聊 -->
+      <div class="projects-manage-dialog__section">
+        <h4 class="projects-manage-dialog__section-title">${t("project.groups.title")}</h4>
+        ${
+          props.projectLinkedGroupsLoading
+            ? html`<div class="projects-manage-dialog__loading">${t("action.loading")}</div>`
+            : props.projectLinkedGroups.length > 0
+              ? html`
+              <div class="projects-manage-dialog__groups">
+                ${props.projectLinkedGroups.map(
+                  (group) => html`
+                    <div class="projects-manage-dialog__group-item">
+                      ${icons.messageSquare}
+                      <span>${group.groupName || group.groupId}</span>
+                      ${
+                        group.archived
+                          ? html`<span class="projects-manage-dialog__group-badge">${t("project.groups.archived")}</span>`
+                          : nothing
+                      }
+                    </div>
+                  `,
+                )}
+              </div>
+            `
+              : html`<div class="projects-manage-dialog__empty-hint">${t("project.groups.empty.title")}</div>`
+        }
+      </div>
 
       <!-- 时间信息 -->
       <div class="projects-manage-dialog__section projects-manage-dialog__section--muted">

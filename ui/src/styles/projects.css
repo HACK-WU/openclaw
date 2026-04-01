@@ -640,6 +640,7 @@
   flex-direction: column;
   gap: 0.25rem;
 }
+
 .projects-manage-dialog__doc-item {
   display: flex;
   align-items: center;
@@ -647,6 +648,7 @@
   font-size: 0.85rem;
   color: var(--fg);
 }
+
 .projects-manage-dialog__doc-item svg {
   width: 14px;
   height: 14px;
@@ -660,11 +662,13 @@
   line-height: 1.5;
   white-space: pre-wrap;
 }
+
 .projects-manage-dialog__groups {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
 }
+
 .projects-manage-dialog__group-item {
   display: flex;
   align-items: center;
@@ -672,11 +676,21 @@
   font-size: 0.85rem;
   color: var(--fg);
 }
+
 .projects-manage-dialog__group-item svg {
   width: 14px;
   height: 14px;
   color: var(--accent);
   flex-shrink: 0;
+}
+
+.projects-manage-dialog__group-badge {
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: var(--bg-raised, rgba(255, 255, 255, 0.05));
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius-sm, 6px);
+  margin-left: auto;
 }
 
 .projects-manage-dialog__empty-hint {

@@ -113,6 +113,7 @@ import {
   createProjectRule,
   deleteProject,
   deleteProjectRule,
+  loadLinkedGroups,
   loadProjectInfo,
   loadProjectRules,
   updateProject,
@@ -630,11 +631,13 @@ export function renderApp(state: AppViewState) {
                   // 异步加载数据（不阻塞弹框显示）
                   void loadProjectInfo(state as unknown as ProjectsHost, projectId);
                   void loadProjectRules(state as unknown as ProjectsHost, projectId);
+                  void loadLinkedGroups(state as unknown as ProjectsHost, projectId);
                 },
                 onCloseManageDialog: () => {
                   state.projectManageDialog = null;
                   state.activeProject = null;
                   state.projectRules = [];
+                  state.projectLinkedGroups = [];
                 },
                 onSetManageTab: (tab) => {
                   if (state.projectManageDialog) {
@@ -647,6 +650,9 @@ export function renderApp(state: AppViewState) {
                 // 规则管理
                 projectRules: state.projectRules,
                 projectRulesLoading: state.projectRulesLoading,
+                // 关联群聊
+                projectLinkedGroups: state.projectLinkedGroups,
+                projectLinkedGroupsLoading: state.projectLinkedGroupsLoading,
                 projectRuleCreateDialog: state.projectRuleCreateDialog,
                 projectRuleEditDialog: state.projectRuleEditDialog,
                 projectRuleDeleteDialog: state.projectRuleDeleteDialog,

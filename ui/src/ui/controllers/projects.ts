@@ -97,6 +97,14 @@ export type ProjectRuleDeleteDialogState = {
   error: string | null;
 };
 
+// 关联群聊条目（从后端 GroupIndexEntry 映射）
+export type LinkedGroupEntry = {
+  groupId: string;
+  groupName?: string;
+  updatedAt: number;
+  archived?: boolean;
+};
+
 // 管理弹框状态
 export type ProjectManageDialogState = {
   projectId: string;
@@ -122,6 +130,9 @@ export type ProjectsState = {
   projectRuleCreateDialog: ProjectRuleCreateDialogState | null;
   projectRuleEditDialog: ProjectRuleEditDialogState | null;
   projectRuleDeleteDialog: ProjectRuleDeleteDialogState | null;
+  // 关联群聊
+  projectLinkedGroups: LinkedGroupEntry[];
+  projectLinkedGroupsLoading: boolean;
 };
 
 export const DEFAULT_PROJECTS_STATE: ProjectsState = {
@@ -138,6 +149,8 @@ export const DEFAULT_PROJECTS_STATE: ProjectsState = {
   projectRuleCreateDialog: null,
   projectRuleEditDialog: null,
   projectRuleDeleteDialog: null,
+  projectLinkedGroups: [],
+  projectLinkedGroupsLoading: false,
 };
 
 export type ProjectsHost = {
@@ -351,6 +364,26 @@ export async function deleteProjectRule(
   }
 }
 
+// ─── Linked Groups ───
+
+export async function loadLinkedGroups(host: ProjectsHost, projectId: string): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  host.projectLinkedGroupsLoading = true;
+  try {
+    const result = await host.client.request<LinkedGroupEntry[]>("projects.getLinkedGroups", {
+      projectId,
+    });
+    host.projectLinkedGroups = result ?? [];
+  } catch (err) {
+    host.projectError = String(err);
+    host.projectLinkedGroups = [];
+  } finally {
+    host.projectLinkedGroupsLoading = false;
+  }
+}
+
 // ─── Manage Dialog Functions ───
 
 export async function openProjectManageDialog(
@@ -373,6 +406,7 @@ export function closeProjectManageDialog(host: ProjectsHost): void {
   host.projectManageDialog = null;
   host.activeProject = null;
   host.projectRules = [];
+  host.projectLinkedGroups = [];
 }
 
 export function setProjectManageTab(host: ProjectsHost, tab: "overview" | "rules"): void {
