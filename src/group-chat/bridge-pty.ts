@@ -297,6 +297,57 @@ export function writeToPty(groupId: string, agentId: string, data: string): bool
   }
 }
 
+// ─── Write-with-Enter (retry-aware) ────────────────────────────────────
+
+/** Default delay (ms) between writing text and sending Enter. */
+const ENTER_DELAY_MS = 500;
+
+/** Max retries for the Enter key if the TUI may not have processed it. */
+const ENTER_MAX_RETRIES = 2;
+
+/** Delay between Enter retry attempts (ms). */
+const ENTER_RETRY_DELAY_MS = 80;
+
+/**
+ * Write text content to a PTY, wait for the TUI to process it, then send
+ * Enter (`\r`) with automatic retries.
+ *
+ * This solves a class of bugs where ink / raw-mode TUIs haven't finished
+ * processing keystrokes by the time `\r` arrives, causing the Enter key to
+ * be silently swallowed.  Content and Enter are **always** written in
+ * separate `write()` calls — they must never be concatenated.
+ *
+ * @returns `true` if the final Enter write succeeded (best-effort).
+ */
+export async function writeToPtyWithEnter(
+  groupId: string,
+  agentId: string,
+  textContent: string,
+): Promise<boolean> {
+  // Step 1 – write the visible text content.
+  if (!writeToPty(groupId, agentId, textContent)) {
+    return false;
+  }
+
+  // Step 2 – let the TUI render / digest the input.
+  await new Promise<void>((r) => setTimeout(r, ENTER_DELAY_MS));
+
+  // Step 3 – send Enter with retries.
+  let submitted = false;
+  for (let attempt = 0; attempt <= ENTER_MAX_RETRIES; attempt++) {
+    submitted = writeToPty(groupId, agentId, "\r");
+    if (!submitted) {
+      break;
+    } // write failed — no point retrying
+    if (attempt < ENTER_MAX_RETRIES) {
+      // Wait before retry so we can observe whether the TUI consumed
+      // the previous \r.
+      await new Promise<void>((r) => setTimeout(r, ENTER_RETRY_DELAY_MS));
+    }
+  }
+  return submitted;
+}
+
 /**
  * Toggle the input-phase flag on a Bridge Agent's PTY.
  *

@@ -591,7 +591,7 @@ const handleCliAgentsTestSendInput: GatewayRequestHandler = async ({ params, res
   }
   const testGroupId = `__test__${agentId}`;
   try {
-    const { writeToPty, isPtyRunning } = await import("../../group-chat/bridge-pty.js");
+    const { isPtyRunning, writeToPtyWithEnter } = await import("../../group-chat/bridge-pty.js");
     if (!isPtyRunning(testGroupId, agentId)) {
       respond(false, undefined, { message: "No running test PTY", code: 404 });
       return;
@@ -600,9 +600,8 @@ const handleCliAgentsTestSendInput: GatewayRequestHandler = async ({ params, res
     // ink's raw-mode TUI treats \r as the Enter/submit key.
     // Sending them together can cause the TUI to misinterpret the input;
     // the delay lets the TUI process the text before receiving Enter.
-    writeToPty(testGroupId, agentId, input);
-    await new Promise<void>((resolve) => setTimeout(resolve, 50));
-    const ok = writeToPty(testGroupId, agentId, "\r");
+    // writeToPtyWithEnter adds a longer delay + retry on Enter for reliability.
+    const ok = await writeToPtyWithEnter(testGroupId, agentId, input);
     respond(true, { ok, agentId });
   } catch (err) {
     respond(false, undefined, {

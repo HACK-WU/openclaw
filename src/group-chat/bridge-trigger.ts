@@ -29,6 +29,7 @@ import {
   updateLastTranscriptIndex,
   waitForFrontendExtractedText,
   writeToPty,
+  writeToPtyWithEnter,
 } from "./bridge-pty.js";
 import type { BridgeConfig } from "./bridge-types.js";
 import {
@@ -262,23 +263,11 @@ async function triggerBridgeAgentInternal(
     //     user input from CLI output during text extraction.
     const INPUT_END_MARKER = "# ──── End of Input ────";
     const requestWithMarker = `${requestContent}\n${INPUT_END_MARKER}`;
-    const writtenRequest = writeToPty(groupId, agentId, requestWithMarker);
-    if (!writtenRequest) {
-      run.status = "error";
-      run.completedAt = Date.now();
-      broadcastGroupStream(broadcast, {
-        groupId,
-        runId,
-        agentId,
-        agentName: agentId,
-        state: "error",
-        error: "Failed to write CLI request",
-      });
-      return { run, chainState };
-    }
 
-    await new Promise<void>((resolve) => setTimeout(resolve, 50));
-    const submitted = writeToPty(groupId, agentId, "\r");
+    // Use writeToPtyWithEnter which separates content + \r into
+    // independent writes, adds a longer initial delay, and retries
+    // Enter up to 2× in case ink/raw-mode TUI swallows the first \r.
+    const submitted = await writeToPtyWithEnter(groupId, agentId, requestWithMarker);
     if (!submitted) {
       run.status = "error";
       run.completedAt = Date.now();
