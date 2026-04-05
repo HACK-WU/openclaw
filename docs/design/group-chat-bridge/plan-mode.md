@@ -133,6 +133,27 @@
 └──────────────────────┬──────────────────────────┘
                        ▼
 ┌─────────────────────────────────────────────────┐
+│ Phase 2.5: Owner 确认                            │
+│                                                  │
+│ UI 自动呈现分工(jobs.md)和计划(PLAN.md)内容：     │
+│ → 状态栏显示"待确认"阶段                          │
+│ → 弹出确认面板，展示分工和计划的完整内容           │
+│ → 提供"同意执行"和"修改意见"两个按钮               │
+│                                                  │
+│ Owner 用户审核并决策：                            │
+│ ├─ 点击"同意执行" → 进入 Phase 3 执行循环         │
+│ │  （助手 Agent 收到确认消息后开始 @mention）      │
+│ │                                                │
+│ └─ 输入"修改意见" → 返回 Phase 1/2 调整           │
+│    （助手 Agent 根据反馈重新分工或调整计划）        │
+│                                                  │
+│ 等待确认期间：                                    │
+│ → phase = "pending_approval"                     │
+│ → 助手 Agent 不主动触发任何执行                    │
+│ → 其他 Agent 不参与（无 @mention）                 │
+└──────────────────────┬──────────────────────────┘
+                       ▼
+┌─────────────────────────────────────────────────┐
 │ Phase 3: 执行循环                                 │
 │                                                  │
 │ 助手 Agent 按 PLAN.md 中的顺序触发执行：           │
@@ -176,6 +197,59 @@
 | 是否调整计划 | 某步骤失败或发现新需求时，助手可更新 PLAN.md 并继续                                    |
 | 是否完成     | 助手根据 PROGRESS.md 判断所有步骤是否达标                                              |
 | 是否需要回退 | 某步骤的输出不符合预期，助手可要求重做                                                 |
+
+### 2.3 Owner 的决策权（Phase 2.5）
+
+在分工和计划完成后，Owner（群聊创建者）拥有以下决策权：
+
+| 决策点           | 说明                                                             |
+| ---------------- | ---------------------------------------------------------------- |
+| 是否同意执行     | Owner 审核 jobs.md 和 PLAN.md 后，点击"同意执行"按钮启动执行循环 |
+| 是否提出修改意见 | Owner 可输入修改意见，助手 Agent 根据反馈重新分工或调整计划      |
+| 是否取消任务     | Owner 可在确认阶段取消任务，清空所有文件并返回 idle 状态         |
+
+**确认阶段的交互流程**：
+
+```
+PLAN.md 写入完成
+     │
+     ▼
+UI 检测到 phase = "pending_approval"
+     │
+     ▼
+弹出确认面板，展示：
+  - jobs.md 内容（分工详情）
+  - PLAN.md 内容（执行步骤）
+  - 预计执行时间 / 参与 Agent
+     │
+     ├─ Owner 点击"同意执行"
+     │     │
+     │     ▼
+     │  调用 group.approvePlan RPC
+     │     │
+     │     ▼
+     │  meta.planApproved = true
+     │     │
+     │     ▼
+     │  广播 plan_approved 事件
+     │     │
+     │     ▼
+     │  phase → "planning"
+     │     │
+     │     ▼
+     │  助手 Agent 收到确认消息 → 开始 @mention 执行者
+     │
+     └─ Owner 输入修改意见
+           │
+           ▼
+        发送修改消息到群聊
+           │
+           ▼
+        助手 Agent 根据反馈调整 jobs.md / PLAN.md
+           │
+           ▼
+        phase 保持 "pending_approval"，等待再次确认
+```
 
 ---
 
@@ -460,6 +534,8 @@ export type GroupSessionEntry = {
 export type PlanModeConfig = {
   /** Whether assistant can skip clarification phase. Default: true. */
   allowSkipClarification?: boolean;
+  /** Whether owner has approved the plan. Set to true after Phase 2.5 confirmation. */
+  planApproved?: boolean;
 };
 ```
 
@@ -520,12 +596,18 @@ export function buildGroupChatContext(params: {
 
 3. **计划**：将任务拆解为具体步骤，明确每步的负责人、依赖关系和执行顺序。写入 `.openclaw-group/PLAN.md`。
 
-4. **执行**：按计划触发 Agent 执行：
+4. **等待 Owner 确认**：完成分工和计划后，**停止并等待群 Owner 确认**。
+   - 不要 @mention 任何执行者 Agent
+   - 在群聊中发送简短提示："分工和计划已完成，请 Owner 确认后开始执行"
+   - 等待 Owner 点击"同意执行"或提供修改意见
+   - 如果 Owner 提出修改意见，根据反馈调整 jobs.md 或 PLAN.md，然后再次等待确认
+
+5. **执行**：收到 Owner 确认后，按计划触发 Agent 执行：
    - 步骤之间有依赖 → **一次 @mention 一个 Agent**（串行）
    - 步骤之间无依赖 → **一次 @mention 多个 Agent**（并行）
    - 每轮执行结束后，检查 `.openclaw-group/PROGRESS.md`，决定下一步
 
-5. **总结**：所有步骤完成后，汇总结果写入 `.openclaw-group/RESULTS.md`，通知用户。
+6. **总结**：所有步骤完成后，汇总结果写入 `.openclaw-group/RESULTS.md`，通知用户。
 
 #### 文件规则
 
@@ -536,7 +618,10 @@ export function buildGroupChatContext(params: {
 
 #### 决策准则
 
-- 每轮结束后读取 PROGRESS.md，判断：
+- **等待确认阶段**：完成 PLAN.md 后，检查 `meta.planApproved`：
+  - `planApproved === false` → 发送确认提示，等待 Owner 操作
+  - `planApproved === true` → 开始执行，@mention 第一批执行者
+- **执行阶段**：每轮结束后读取 PROGRESS.md，判断：
   - 所有步骤 ✅ → 写入 RESULTS.md，任务完成
   - 仍有 ⏳/🔄 步骤 → 继续触发下一批
   - 有 ❌ 步骤 → 分析原因，决定重试或调整计划
@@ -870,9 +955,59 @@ Tester:
   // UI 可以根据文件存在情况推断当前阶段：
   // 无文件 → idle
   // 有 jobs.md 但无 PLAN.md → clarifying/assigning
-  // 有 PLAN.md 但无 PROGRESS.md → planning
+  // 有 PLAN.md 但无 PROGRESS.md 且无 owner 确认 → pending_approval
+  // 有 PLAN.md 且 owner 已确认但无 PROGRESS.md → planning
   // 有 PROGRESS.md 但无 RESULTS.md → executing
   // 有 RESULTS.md → completed
+}
+```
+
+### 9.3 Owner 确认计划
+
+> Phase 2.5 的核心 RPC，用于 Owner 同意执行计划。
+
+```typescript
+// group.approvePlan
+{
+  method: "group.approvePlan",
+  params: {
+    groupId: string;
+  }
+}
+// Response:
+{
+  success: boolean;
+  phase: "planning";  // 确认后进入 planning 阶段
+}
+
+// Backend logic:
+async function handleGroupApprovePlan(params: { groupId: string }) {
+  const group = await getGroup(params.groupId);
+
+  // 验证调用者是 Owner
+  if (group.ownerId !== getCurrentUserId()) {
+    throw new Error("Only group owner can approve the plan");
+  }
+
+  // 验证 PLAN.md 存在（已完成 Phase 2）
+  const planFile = await readPlanFile(params.groupId, "PLAN.md");
+  if (!planFile) {
+    throw new Error("Plan file not found. Please wait for assistant to complete planning.");
+  }
+
+  // 更新 meta.planApproved = true
+  group.meta.planConfig = {
+    ...group.meta.planConfig,
+    planApproved: true,
+  };
+  await saveGroup(group);
+
+  // 广播 plan_approved 事件
+  await broadcastGroupSystem(params.groupId, "plan_approved", {
+    approvedBy: getCurrentUserId(),
+  });
+
+  return { success: true, phase: "planning" };
 }
 ```
 
@@ -940,6 +1075,17 @@ Tester:
 > 这一步是计划模式的**全部后端核心实现**。
 > 不需要新建 `plan-mode-trigger.ts`，不需要修改 `chain-state-store.ts`，不需要修改 `message-dispatch.ts`。
 
+### Phase 2.5: Owner 确认机制 (0.5 天)
+
+| 任务                          | 文件                   | 工作量 |
+| ----------------------------- | ---------------------- | ------ |
+| `PlanModeConfig.planApproved` | `types.ts`             | 0.5h   |
+| `group.approvePlan` RPC       | `group.ts`             | 1h     |
+| 确认面板 UI 组件              | `group-chat.ts`        | 2h     |
+| pending_approval 阶段处理     | `plan-mode-context.ts` | 1h     |
+
+> Owner 确认机制确保用户对分工和计划有最终控制权，防止助手 Agent 自动进入执行阶段。
+
 ### Phase 3: UI 扩展 (1-2 天)
 
 | 任务                        | 说明                            | 工作量 |
@@ -1002,9 +1148,12 @@ function inferPlanPhase(files: {
     return "assigning";
   }
 
-  // 有计划但无进度 → 计划中，尚未开始执行
+  // 有计划但无进度 → 待 owner 确认
+  // 需要结合 meta.planApproved 字段判断
   if (files.plan && !files.progress) {
-    return "planning";
+    // 如果 owner 已确认，返回 "planning"（准备进入执行）
+    // 否则返回 "pending_approval"（等待确认）
+    return meta.planApproved ? "planning" : "pending_approval";
   }
 
   // 有进度但无结果 → 执行中
@@ -1045,15 +1194,16 @@ function calculateProgress(
 
 ### 14.3 状态更新触发时机
 
-| 事件                   | 文件变化              | 阶段转换                     |
-| ---------------------- | --------------------- | ---------------------------- |
-| 用户发送新任务         | 无（助手尚未写入）    | idle → assigning             |
-| 助手写入 jobs.md       | jobs.md 创建          | assigning                    |
-| 助手写入 PLAN.md       | PLAN.md 创建          | assigning → planning         |
-| 助手 @mention 执行者   | 无变化                | planning → executing         |
-| 执行者更新 PROGRESS.md | PROGRESS.md 创建/更新 | executing                    |
-| 助手写入 RESULTS.md    | RESULTS.md 创建       | executing → completed        |
-| 用户发送新任务         | 所有文件被清空        | completed → idle → assigning |
+| 事件                   | 文件变化               | 阶段转换                     |
+| ---------------------- | ---------------------- | ---------------------------- |
+| 用户发送新任务         | 无（助手尚未写入）     | idle → assigning             |
+| 助手写入 jobs.md       | jobs.md 创建           | assigning                    |
+| 助手写入 PLAN.md       | PLAN.md 创建           | assigning → pending_approval |
+| Owner 点击"同意执行"   | meta.planApproved=true | pending_approval → planning  |
+| 助手 @mention 执行者   | 无变化                 | planning → executing         |
+| 执行者更新 PROGRESS.md | PROGRESS.md 创建/更新  | executing                    |
+| 助手写入 RESULTS.md    | RESULTS.md 创建        | executing → completed        |
+| 用户发送新任务         | 所有文件被清空         | completed → idle → assigning |
 
 ---
 
@@ -1078,12 +1228,18 @@ function calculateProgress(
 
 3. **计划**：将任务拆解为具体步骤，明确每步的负责人、依赖关系和执行顺序。写入 `.openclaw-group/PLAN.md`。
 
-4. **执行**：按计划触发 Agent 执行：
+4. **等待 Owner 确认**：完成分工和计划后，**停止并等待群 Owner 确认**。
+   - 不要 @mention 任何执行者 Agent
+   - 在群聊中发送简短提示："分工和计划已完成，请 Owner 确认后开始执行"
+   - 等待 Owner 点击"同意执行"或提供修改意见
+   - 如果 Owner 提出修改意见，根据反馈调整 jobs.md 或 PLAN.md，然后再次等待确认
+
+5. **执行**：收到 Owner 确认后，按计划触发 Agent 执行：
    - 步骤之间有依赖 → **一次 @mention 一个 Agent**（串行）
    - 步骤之间无依赖 → **一次 @mention 多个 Agent**（并行）
    - 每轮执行结束后，检查 `.openclaw-group/PROGRESS.md`，决定下一步
 
-5. **总结**：所有步骤完成后，汇总结果写入 `.openclaw-group/RESULTS.md`，通知用户。
+6. **总结**：所有步骤完成后，汇总结果写入 `.openclaw-group/RESULTS.md`，通知用户。
 
 ### 协作文件
 
@@ -1375,12 +1531,13 @@ Migration successful.
 
 ```typescript
 type PlanModeStatusBarProps = {
-  phase: "idle" | "assigning" | "planning" | "executing" | "completed";
+  phase: "idle" | "assigning" | "planning" | "pending_approval" | "executing" | "completed";
   completedSteps: number;
   totalSteps: number;
   onViewJobs: () => void;
   onViewPlan: () => void;
   onViewProgress: () => void;
+  onApprovePlan?: () => void; // Owner 确认执行
 };
 
 function renderPlanModeStatusBar(props: PlanModeStatusBarProps) {
@@ -1388,6 +1545,7 @@ function renderPlanModeStatusBar(props: PlanModeStatusBarProps) {
     idle: "空闲",
     assigning: "分工中",
     planning: "计划中",
+    pending_approval: "待确认",
     executing: "执行中",
     completed: "已完成",
   };
