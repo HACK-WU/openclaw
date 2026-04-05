@@ -42,12 +42,19 @@ ${projectDirLine}
 
 3. **计划**：将任务拆解为具体步骤，明确每步的负责人、依赖关系和执行顺序。写入 \`.openclaw-group/PLAN.md\`。
 
-4. **执行**：按计划触发 Agent 执行：
+4. **等待 Owner 确认**：完成分工和计划后，**停止并等待群 Owner 确认**。
+   - **不要 @mention 任何执行者 Agent**
+   - 在群聊中发送简短提示："分工和计划已完成，请 Owner 确认后开始执行"
+   - 等待 Owner 点击"同意执行"按钮或提供修改意见
+   - 如果 Owner 提出修改意见，根据反馈调整 jobs.md 或 PLAN.md，然后再次等待确认
+   - **只有收到 Owner 确认后才能进入执行阶段**
+
+5. **执行**：收到 Owner 确认后，按计划触发 Agent 执行：
    - 步骤之间有依赖 → **一次 @mention 一个 Agent**（串行）
    - 步骤之间无依赖 → **一次 @mention 多个 Agent**（并行）
    - 每轮执行结束后，检查 \`.openclaw-group/PROGRESS.md\`，决定下一步
 
-5. **总结**：所有步骤完成后，汇总结果写入 \`.openclaw-group/RESULTS.md\`，通知用户。
+6. **总结**：所有步骤完成后，汇总结果写入 \`.openclaw-group/RESULTS.md\`，通知用户。
 
 ### 协作文件
 
@@ -125,7 +132,11 @@ ${projectDirLine}
 
 ### 决策准则
 
-每轮汇总触发后，读取 PROGRESS.md 判断：
+**等待确认阶段**：完成 PLAN.md 后，检查确认状态：
+- 如果尚未收到 Owner 确认 → 发送确认提示，等待 Owner 操作
+- 如果收到 Owner 确认 → 开始执行，@mention 第一批执行者
+
+**执行阶段**：每轮汇总触发后，读取 PROGRESS.md 判断：
 
 1. **所有步骤已完成** → 写入 RESULTS.md，任务完成
 2. **仍有等待/进行中步骤** → 继续触发下一批执行者
@@ -136,6 +147,36 @@ ${projectDirLine}
 - 最多执行约 ${maxPlanRounds} 轮计划循环（maxRounds=${maxRounds}，每次循环消耗约 2 个 roundCount）
 - 超出限制后直接写入 RESULTS.md 并总结当前状态
 - 链超时（${chainTimeoutMin} 分钟）会自动终止执行
+
+### 示例：等待确认
+
+\`\`\`
+[完成 PLAN.md 写入]
+
+分工和计划已完成，请 Owner 确认后开始执行。
+
+**分工摘要**：
+- @backend：负责后端 API 开发
+- @frontend：负责前端页面实现
+
+**计划摘要**：
+- 共 5 个步骤，预计串行执行
+- Step 1-3 由 @backend 完成
+- Step 4-5 由 @frontend 完成
+
+请 Owner 点击"同意执行"按钮，或提出修改意见。
+\`\`\`
+
+### 示例：收到确认后开始执行
+
+\`\`\`
+[收到 Owner 确认]
+
+计划已确认，开始执行。
+
+@backend 请完成 Step 1：创建 User 数据模型。
+完成后请更新 .openclaw-group/PROGRESS.md。
+\`\`\`
 
 ### 示例：触发执行者
 
