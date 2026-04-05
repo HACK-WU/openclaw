@@ -663,6 +663,8 @@ type ChainState = {
   lastMessageAt: number; // Timestamp of last message
   mentionedAgents: string[]; // Agents already triggered in this chain (deduped, ordered)
   pendingMentions: PendingMention[]; // Repeated @mentions waiting for delivery
+  /** Internal: timestamp when isConversationBusy was first detected. Used for anti-deadlock. */
+  _stuckBusySince?: number;
 };
 
 const groupChainStates = new Map<string, ChainState>();
@@ -754,12 +756,57 @@ function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
   cancelSummaryTimer(groupId);
 
   if (isConversationBusy) {
+    // Anti-deadlock: if stuck in "busy" state for too long (e.g. Bridge Agent
+    // completion signal never arrives), force execution after a timeout.
+    // This prevents pending mentions from being permanently stuck.
+    const now = Date.now();
+    const stuckSince = chain._stuckBusySince ?? now;
+    if (!chain._stuckBusySince) {
+      chain._stuckBusySince = now;
+    }
+    const STUCK_TIMEOUT_MS = 60_000; // Force summary after 60s of being stuck
+
+    if (now - stuckSince > STUCK_TIMEOUT_MS) {
+      console.warn(
+        `[group-chat] anti-deadlock triggered: group=${groupId} stuck busy for ${Math.round((now - stuckSince) / 1000)}s, forcing summary flow. ` +
+          `pendingAgents=[${[...chain.pendingAgents].join(",")}] activeStreams=${activeStreamCount}`,
+      );
+      chain._stuckBusySince = undefined;
+      // Force-clear the stuck state so execution can proceed
+      chain.pendingAgents.clear();
+      const nextHostPending = new Set(host.groupPendingAgents);
+      // Only clear agents that have no active streams (they're truly stuck)
+      const activeStreamSet = groupActiveStreamKeys.get(groupId) ?? new Set();
+      for (const agentId of host.groupPendingAgents) {
+        let hasActiveStreamForAgent = false;
+        for (const key of activeStreamSet) {
+          if (key.startsWith(`${agentId}:`)) {
+            hasActiveStreamForAgent = true;
+            break;
+          }
+        }
+        if (!hasActiveStreamForAgent) {
+          nextHostPending.delete(agentId);
+        }
+      }
+      host.groupPendingAgents = nextHostPending;
+
+      // Force execution: bypass normal scheduling and run summary flow directly.
+      // The executeSummaryFlow finally block won't re-schedule because delivered=false
+      // and summaryRerunRequested is empty in this path.
+      void executeSummaryFlow(host, groupId);
+      return;
+    }
+
     const timer = window.setTimeout(() => {
       scheduleSummaryCheck(host, groupId);
     }, 1000);
     summaryTimers.set(groupId, timer);
     return;
   }
+
+  // Conversation not busy — reset stuck timer
+  chain._stuckBusySince = undefined;
 
   const now = Date.now();
   const elapsed = now - chain.lastMessageAt;
@@ -858,6 +905,25 @@ async function deliverPendingMentions(host: GroupHost, groupId: string): Promise
     }
 
     agentsToDeliver.push(agentId);
+
+    // Mark agent as pending in both chain state AND host state so that:
+    // 1. The stop button shows correctly
+    // 2. scheduleSummaryCheck's isConversationBusy is accurate
+    chain.pendingAgents.add(agentId);
+  }
+
+  // Initialize host.groupPendingAgents for all delivered agents so UI shows stop button
+  if (agentsToDeliver.length > 0) {
+    const nextHostPending = new Set(host.groupPendingAgents);
+    for (const id of agentsToDeliver) {
+      nextHostPending.add(id);
+    }
+    host.groupPendingAgents = nextHostPending;
+  }
+
+  // Send delivery requests to backend
+  for (const agentId of agentsToDeliver) {
+    const pendings = deliverMap.get(agentId)!;
     const messages = pendings
       .toSorted((a, b) => a.message.timestamp - b.message.timestamp)
       .map((p) => `[${p.fromAgentId}]: ${p.message.content}`);
@@ -872,6 +938,11 @@ async function deliverPendingMentions(host: GroupHost, groupId: string): Promise
       });
     } catch (err) {
       console.error(`[group-chat] failed to deliver pending mentions to ${agentId}:`, err);
+      // Clean up pending state on failure
+      const nextHostPending = new Set(host.groupPendingAgents);
+      nextHostPending.delete(agentId);
+      host.groupPendingAgents = nextHostPending;
+      chain.pendingAgents.delete(agentId);
     }
   }
 
@@ -944,6 +1015,18 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
   }
 
   try {
+    // Mark initiators as pending in both chain state AND host state so that:
+    // 1. The stop button shows correctly
+    // 2. scheduleSummaryCheck's isConversationBusy is accurate
+    for (const id of validInitiators) {
+      chain.pendingAgents.add(id);
+    }
+    const nextHostPending = new Set(host.groupPendingAgents);
+    for (const id of validInitiators) {
+      nextHostPending.add(id);
+    }
+    host.groupPendingAgents = nextHostPending;
+
     await host.client.request("group.send", {
       groupId,
       message: summaryContent,
@@ -964,6 +1047,7 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
       lastMessageAt: now,
       mentionedAgents: [],
       pendingMentions: [],
+      _stuckBusySince: undefined, // Reset stuck timer for new summary round
     });
   } catch (err) {
     console.error(`[group-chat] summary failed: group=${groupId}`, err);
@@ -2277,8 +2361,21 @@ function mapPtyStatusToTerminalStatus(
 }
 
 /**
+ * Terminal data buffer for pending bridge agents whose <bridge-terminal>
+ * component hasn't connected yet. Prevents data loss during re-render cycles.
+ */
+const pendingTerminalDataBuffers = new Map<string, string[]>();
+
+function getPendingBufferKey(groupId: string, agentId: string): string {
+  return `${groupId}:${agentId}`;
+}
+
+/**
  * Handle `group.terminal` event — raw PTY data from a Bridge Agent.
  * Routes data to the corresponding BridgeTerminal component.
+ *
+ * If the terminal component isn't registered yet (common during re-render after
+ * second @mention), data is buffered and replayed once the component connects.
  */
 export function handleGroupTerminalEvent(
   host: GroupChatState,
@@ -2291,17 +2388,42 @@ export function handleGroupTerminalEvent(
   const terminal = getBridgeTerminal(payload.groupId, payload.agentId);
 
   if (terminal) {
-    // Decode base64 back to raw bytes before writing to xterm.
-    // Writing the binary string returned by atob() directly will corrupt
-    // multibyte UTF-8 characters (for example Chinese text) and can trigger
-    // xterm parser errors.
+    // Terminal component exists — write directly and replay any buffered data.
     try {
       const binary = atob(payload.data);
       const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
       terminal.writeBinaryData(bytes);
     } catch {
-      // If decoding fails, fall back to raw text so output is still visible.
       terminal.writeData(payload.data);
+    }
+
+    // Replay any previously buffered data that arrived before this component connected
+    const bufferKey = getPendingBufferKey(payload.groupId, payload.agentId);
+    const buffered = pendingTerminalDataBuffers.get(bufferKey);
+    if (buffered && buffered.length > 0) {
+      for (const buf of buffered) {
+        try {
+          const bin = atob(buf);
+          const bts = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+          terminal.writeBinaryData(bts);
+        } catch {
+          terminal.writeData(buf);
+        }
+      }
+      pendingTerminalDataBuffers.delete(bufferKey);
+    }
+  } else {
+    // Component not yet connected — buffer the data for later replay.
+    const bufferKey = getPendingBufferKey(payload.groupId, payload.agentId);
+    let buf = pendingTerminalDataBuffers.get(bufferKey);
+    if (!buf) {
+      buf = [];
+      pendingTerminalDataBuffers.set(bufferKey, buf);
+    }
+    buf.push(payload.data);
+    // Limit buffer size to prevent unbounded memory growth (keep last 500KB)
+    if (buf.length > 1000) {
+      buf.splice(0, buf.length - 1000);
     }
   }
 
@@ -2357,9 +2479,16 @@ export function handleGroupTerminalStatusEvent(
     mappedStatus === "error" ||
     mappedStatus === "disconnected"
   ) {
+    // Clean up host-level pending state (UI stop button)
     const nextPending = new Set(host.groupPendingAgents);
     nextPending.delete(payload.agentId);
     host.groupPendingAgents = nextPending;
+
+    // Also clean up chain-level pending state (summary scheduling)
+    const chain = groupChainStates.get(payload.groupId);
+    if (chain) {
+      chain.pendingAgents.delete(payload.agentId);
+    }
   }
 
   if (mappedStatus === "working") {
@@ -2367,6 +2496,12 @@ export function handleGroupTerminalStatusEvent(
     const nextStreams = new Map(host.groupStreams);
     nextStreams.delete(payload.agentId);
     host.groupStreams = nextStreams;
+    setBridgeSnapshotsTerminalVisible(host, payload.agentId, false);
+  }
+
+  // When receiving "ready" status (new interaction on existing PTY session),
+  // also clean up old bridge snapshots so the new terminal can render via orphan path.
+  if (mappedStatus === "ready") {
     setBridgeSnapshotsTerminalVisible(host, payload.agentId, false);
   }
 
