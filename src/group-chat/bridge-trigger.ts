@@ -16,6 +16,7 @@
 import { randomUUID } from "node:crypto";
 import type { GatewayBroadcastFn } from "../gateway/server-broadcast.js";
 import { getLogger } from "../logging.js";
+import { loadProjectMeta } from "../projects/project-store.js";
 import type { TriggerAgentParams, TriggerAgentResult } from "./agent-trigger.js";
 import { updateChainState } from "./anti-loop.js";
 import { buildCoreFilesContentSection, buildCoreFilesPathSection } from "./bridge-context.js";
@@ -146,8 +147,14 @@ async function triggerBridgeAgentInternal(
     let isFirstInteraction = !ptyRunning;
 
     if (!ptyRunning) {
-      // Determine effective cwd
-      const effectiveCwd = meta.project?.directory ?? bridgeConfig.cwd;
+      // Determine effective cwd: prefer explicit project.directory,
+      // then resolve from associated projectId, then fallback to bridgeConfig.cwd
+      const resolvedProject = meta.project?.directory
+        ? meta.project
+        : meta.projectId
+          ? (loadProjectMeta(meta.projectId) ?? undefined)
+          : undefined;
+      const effectiveCwd = resolvedProject?.directory ?? bridgeConfig.cwd;
 
       let outputReceived = false;
 
@@ -455,12 +462,17 @@ async function buildCliContextMessage(params: {
       sections.push(`# - 公告：${meta.announcement}`);
     }
 
-    // Project info
-    if (meta.project?.directory) {
-      sections.push(`# - 项目目录：${meta.project.directory}`);
+    // Project info — resolve from projectId if not already set in meta.project
+    const resolvedProjectForContext = meta.project?.directory
+      ? meta.project
+      : meta.projectId
+        ? (loadProjectMeta(meta.projectId) ?? undefined)
+        : undefined;
+    if (resolvedProjectForContext?.directory) {
+      sections.push(`# - 项目目录：${resolvedProjectForContext.directory}`);
     }
-    if (meta.project?.docs && meta.project.docs.length > 0) {
-      sections.push(`# - 项目文档：${meta.project.docs.join(", ")}`);
+    if (resolvedProjectForContext?.documents && resolvedProjectForContext.documents.length > 0) {
+      sections.push(`# - 项目文档：${resolvedProjectForContext.documents.join(", ")}`);
     }
 
     sections.push("");
@@ -708,8 +720,16 @@ async function waitForCompletion(params: {
     }, timeoutMs);
     globalTimer.unref();
 
-    // 3. Abort signal
+    // 3. Abort signal — terminate PTY and broadcast aborted status
     const onAbort = () => {
+      broadcastTerminalStatus(
+        broadcast,
+        groupId,
+        agentId,
+        "disconnected",
+        "CLI agent aborted by user",
+      );
+      void killBridgePty(groupId, agentId, "user_abort");
       finish("");
     };
     signal.addEventListener("abort", onAbort, { once: true });

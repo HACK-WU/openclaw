@@ -80,6 +80,8 @@ export type GetReplyOptions = {
   reasoningLevel?: ReasoningLevel;
   /** Override verbose level for this run (used by group chat). */
   verboseLevel?: VerboseLevel;
+  /** Override workspace directory for this run (used by group chat to use project directory). */
+  workspaceDirOverride?: string;
 };
 
 export type ReplyPayload = {

@@ -108,7 +108,10 @@ export async function getReplyFromConfig(
     }
   }
 
-  const workspaceDirRaw = resolveAgentWorkspaceDir(cfg, agentId) ?? DEFAULT_AGENT_WORKSPACE_DIR;
+  const workspaceDirRaw =
+    resolvedOpts?.workspaceDirOverride ??
+    resolveAgentWorkspaceDir(cfg, agentId) ??
+    DEFAULT_AGENT_WORKSPACE_DIR;
   const identityDirRaw = resolveAgentIdentityDir(cfg, agentId);
   const workspace = await ensureAgentWorkspace({
     dir: workspaceDirRaw,

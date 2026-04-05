@@ -563,6 +563,13 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
   const hasActiveStreams = groupStreams.size > 0;
   const hasPendingAgents = groupPendingAgents.size > 0;
 
+  // Check if any bridge terminal is active (working or ready state)
+  const hasActiveBridgeTerminals = props.bridgeTerminalStatuses
+    ? [...props.bridgeTerminalStatuses.values()].some(
+        (status) => status === "working" || status === "ready",
+      )
+    : false;
+
   const pendingOnly = [...groupPendingAgents].filter((id) => {
     if (groupStreams.has(id)) {
       return false;
@@ -795,7 +802,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
               ${renderMentionDropdown(props.agentsList)}
               <div class="chat-compose__actions">
                 ${
-                  hasActiveStreams || hasPendingAgents
+                  hasActiveStreams || hasPendingAgents || hasActiveBridgeTerminals
                     ? html`
                       <button
                         class="btn"
@@ -817,7 +824,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                 }
                 <button
                   class="btn primary"
-                  ?disabled=${!props.connected || (!props.groupDraft.trim() && !hasActiveStreams && !hasPendingAgents && !props.groupAttachments?.length)}
+                  ?disabled=${!props.connected || (!props.groupDraft.trim() && !hasActiveStreams && !hasPendingAgents && !hasActiveBridgeTerminals && !props.groupAttachments?.length)}
                   @click=${() => {
                     const hasGroupAttachments = (props.groupAttachments?.length ?? 0) > 0;
                     if (props.groupDraft.trim() || hasGroupAttachments) {
@@ -1555,8 +1562,7 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
                     <div class="group-info-panel__setting-header">
                       <span class="group-info-panel__setting-name">${t("chat.group.project.associated")}</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 8px; padding: 4px 0;">
-                      ${icons.folder}
+                    <div style="padding: 4px 0;">
                       <span class="group-info-panel__project-link" style="cursor: pointer; color: var(--color-primary);">
                         ${props.projectsList.find((p) => p.id === meta.projectId)?.name ?? meta.projectId}
                       </span>
@@ -1572,8 +1578,7 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
               ${
                 meta.project?.directory
                   ? html`
-                  <div class="mono" style="font-size: 12px; padding: 4px 0; display: flex; align-items: center; gap: 6px;">
-                    <span>${meta.projectId ? "📁" : "🔒"}</span>
+                  <div class="mono" style="font-size: 12px; padding: 4px 0;">
                     <span>${meta.project.directory}</span>
                   </div>
                   ${!meta.projectId ? html`<span class="group-info-panel__setting-desc">${t("chat.group.projectDirectoryLockedDesc")}</span>` : nothing}

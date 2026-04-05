@@ -20,6 +20,7 @@ import {
   timestampOptsFromConfig,
 } from "../gateway/server-methods/agent-timestamp.js";
 import { getLogger } from "../logging.js";
+import { loadProjectMeta } from "../projects/project-store.js";
 import { stripReasoningTagsFromText } from "../shared/text/reasoning-tags.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
 import { triggerBridgeAgent } from "./bridge-trigger.js";
@@ -292,6 +293,12 @@ export async function triggerAgentReasoning(
     };
 
     // Call dispatchInboundMessage — same pattern as chat.send
+    // Resolve project directory for LLM agent workspace override
+    const resolvedProjectForWorkspace = meta.project?.directory
+      ? meta.project
+      : meta.projectId
+        ? (loadProjectMeta(meta.projectId) ?? undefined)
+        : undefined;
     await dispatchInboundMessage({
       ctx,
       cfg,
@@ -303,6 +310,7 @@ export async function triggerAgentReasoning(
         suppressTyping: true,
         agentId, // Pass explicit agentId for group chat
         skillFilter: meta.groupSkills.length > 0 ? meta.groupSkills : undefined,
+        workspaceDirOverride: resolvedProjectForWorkspace?.directory,
         onPartialReply: (payload) => {
           // Broadcast text content
           if (payload.text) {
