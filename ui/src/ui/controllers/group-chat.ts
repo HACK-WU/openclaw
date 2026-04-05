@@ -661,10 +661,9 @@ type ChainState = {
   initiators: string[]; // Ordered list of agents who @mentioned others (deduped)
   pendingAgents: Set<string>; // Agents triggered but not yet replied
   lastMessageAt: number; // Timestamp of last message
+  lastProgressAt: number; // Timestamp of last real progress (agent completion, delivery, etc.)
   mentionedAgents: string[]; // Agents already triggered in this chain (deduped, ordered)
   pendingMentions: PendingMention[]; // Repeated @mentions waiting for delivery
-  /** Internal: timestamp when isConversationBusy was first detected. Used for anti-deadlock. */
-  _stuckBusySince?: number;
 };
 
 const groupChainStates = new Map<string, ChainState>();
@@ -690,6 +689,7 @@ function getOrCreateChainState(groupId: string): ChainState {
       initiators: [],
       pendingAgents: new Set(),
       lastMessageAt: now,
+      lastProgressAt: now,
       mentionedAgents: [],
       pendingMentions: [],
     };
@@ -755,27 +755,29 @@ function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
 
   cancelSummaryTimer(groupId);
 
-  if (isConversationBusy) {
-    // Anti-deadlock: if stuck in "busy" state for too long (e.g. Bridge Agent
-    // completion signal never arrives), force execution after a timeout.
-    // This prevents pending mentions from being permanently stuck.
-    const now = Date.now();
-    const stuckSince = chain._stuckBusySince ?? now;
-    if (!chain._stuckBusySince) {
-      chain._stuckBusySince = now;
-    }
-    const STUCK_TIMEOUT_MS = 60_000; // Force summary after 60s of being stuck
+  // Progress-based anti-deadlock:
+  // Instead of resetting a "stuck" timer every time isConversationBusy flips,
+  // we track lastProgressAt — updated whenever an agent completes, delivery
+  // happens, or summary round starts. If no progress occurs within the timeout
+  // window despite agents rapidly turning over (high-frequency @ chain),
+  // we force execution to prevent permanent stall.
+  //
+  // This handles the scenario where:
+  //   A completes → B triggered → B completes → C triggered → C stuck
+  //   Each completion resets old _stuckBusySince but C never replies.
+  const now = Date.now();
+  const STUCK_TIMEOUT_MS = 30_000; // Force after 30s without any progress
 
-    if (now - stuckSince > STUCK_TIMEOUT_MS) {
+  if (isConversationBusy) {
+    const timeSinceProgress = now - (chain.lastProgressAt ?? now);
+    if (timeSinceProgress > STUCK_TIMEOUT_MS) {
       console.warn(
-        `[group-chat] anti-deadlock triggered: group=${groupId} stuck busy for ${Math.round((now - stuckSince) / 1000)}s, forcing summary flow. ` +
+        `[group-chat] anti-deadlock triggered: group=${groupId} no progress for ${Math.round(timeSinceProgress / 1000)}s, ` +
           `pendingAgents=[${[...chain.pendingAgents].join(",")}] activeStreams=${activeStreamCount}`,
       );
-      chain._stuckBusySince = undefined;
-      // Force-clear the stuck state so execution can proceed
+      // Force-clear stuck state and execute
       chain.pendingAgents.clear();
       const nextHostPending = new Set(host.groupPendingAgents);
-      // Only clear agents that have no active streams (they're truly stuck)
       const activeStreamSet = groupActiveStreamKeys.get(groupId) ?? new Set();
       for (const agentId of host.groupPendingAgents) {
         let hasActiveStreamForAgent = false;
@@ -791,13 +793,11 @@ function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
       }
       host.groupPendingAgents = nextHostPending;
 
-      // Force execution: bypass normal scheduling and run summary flow directly.
-      // The executeSummaryFlow finally block won't re-schedule because delivered=false
-      // and summaryRerunRequested is empty in this path.
       void executeSummaryFlow(host, groupId);
       return;
     }
 
+    // Still busy but not yet stuck — poll again in 1s
     const timer = window.setTimeout(() => {
       scheduleSummaryCheck(host, groupId);
     }, 1000);
@@ -805,10 +805,7 @@ function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
     return;
   }
 
-  // Conversation not busy — reset stuck timer
-  chain._stuckBusySince = undefined;
-
-  const now = Date.now();
+  // Conversation not busy — proceed with normal scheduling
   const elapsed = now - chain.lastMessageAt;
   const totalWait = now - chain.startedAt;
   const delay = totalWait >= MAX_PENDING_WAIT_MS ? 0 : Math.max(0, SUMMARY_DELAY_MS - elapsed);
@@ -921,8 +918,9 @@ async function deliverPendingMentions(host: GroupHost, groupId: string): Promise
     host.groupPendingAgents = nextHostPending;
   }
 
-  // Send delivery requests to backend
-  for (const agentId of agentsToDeliver) {
+  // Send delivery requests to backend in PARALLEL (not serial) for faster delivery
+  // in high-frequency @ chains. Each agent gets its own independent request.
+  const deliveryPromises = agentsToDeliver.map(async (agentId) => {
     const pendings = deliverMap.get(agentId)!;
     const messages = pendings
       .toSorted((a, b) => a.message.timestamp - b.message.timestamp)
@@ -944,7 +942,9 @@ async function deliverPendingMentions(host: GroupHost, groupId: string): Promise
       host.groupPendingAgents = nextHostPending;
       chain.pendingAgents.delete(agentId);
     }
-  }
+  });
+
+  await Promise.allSettled(deliveryPromises);
 
   if (agentsToDeliver.length > 0) {
     appendSystemMessageToUI(
@@ -1045,9 +1045,9 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
       initiators: [],
       pendingAgents: new Set(validInitiators),
       lastMessageAt: now,
+      lastProgressAt: now, // Reset progress timestamp for new summary round
       mentionedAgents: [],
       pendingMentions: [],
-      _stuckBusySince: undefined, // Reset stuck timer for new summary round
     });
   } catch (err) {
     console.error(`[group-chat] summary failed: group=${groupId}`, err);
@@ -1230,6 +1230,7 @@ export async function detectAndForwardMentions(
   // Update chain state
   chain.count += 1;
   chain.lastMessageAt = now;
+  chain.lastProgressAt = now; // Forward is real progress
 
   // Track pending agents (who will be triggered)
   for (const id of firstTimeMentions) {
@@ -1467,6 +1468,7 @@ export async function sendGroupMessage(
     initiators: existingInitiators,
     pendingAgents: new Set(),
     lastMessageAt: now,
+    lastProgressAt: now, // New message resets progress timer
     mentionedAgents: [],
     pendingMentions: [],
   });
@@ -1950,6 +1952,7 @@ export function handleGroupMessageEvent(
   if (chain) {
     chain.pendingAgents.delete(payload.sender.agentId);
     chain.lastMessageAt = Date.now();
+    chain.lastProgressAt = Date.now(); // Agent message arrival is progress
   }
 
   if (hasParsedMentionMessage(payload.groupId, payload.id)) {
@@ -2058,6 +2061,7 @@ export function handleGroupStreamEvent(host: GroupChatState, payload: GroupStrea
     if (chain) {
       chain.pendingAgents.delete(payload.agentId);
       chain.lastMessageAt = Date.now();
+      chain.lastProgressAt = Date.now(); // Stream completion is progress
     }
 
     if (!isActiveGroup) {
