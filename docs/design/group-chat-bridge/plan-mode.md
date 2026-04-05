@@ -1,8 +1,14 @@
 # 群聊计划模式 (Plan Mode)
 
-> **版本**: v1.0 | **日期**: 2026-04-03
+> **版本**: v1.1 | **日期**: 2026-04-05
 
 计划模式为群聊引入 **Plan → Execute → Summarize** 的自动化协作循环。启用后，助手 Agent 自动承担**协调者/编排者**角色，通过四个持久化文件驱动多 Agent 协同完成复杂任务。
+
+## 核心设计原则
+
+1. **状态即文件**：不维护额外状态机，完全通过文件存在性和内容推断当前阶段
+2. **上下文驱动**：Agent 行为由 system prompt 指导，无需新增触发逻辑
+3. **复用现有机制**：消息分发、汇总触发、防循环全部复用现有实现
 
 ## 文档导航
 
@@ -30,7 +36,7 @@
 
 | 文件          | 英文标识 | 写入者       | 读取者      | 生命周期                   |
 | ------------- | -------- | ------------ | ----------- | -------------------------- |
-| `ROLES.md`    | 分工     | 助手 Agent   | 所有 Agent  | 每次新任务时由助手清理重写 |
+| `jobs.md`     | 分工     | 助手 Agent   | 所有 Agent  | 每次新任务时由助手清理重写 |
 | `PLAN.md`     | 计划     | 助手 Agent   | 所有 Agent  | 每次新任务时由助手清理重写 |
 | `PROGRESS.md` | 进度     | 执行者 Agent | 助手 Agent  | 各步骤完成时追加更新       |
 | `RESULTS.md`  | 结果     | 助手 Agent   | 用户 / 所有 | 任务完成时由助手写入       |
@@ -40,11 +46,11 @@
 ```
 <projectDir>/
 ├── .openclaw-group/
-│   ├── ROLES.md        # 分工
-│   ├── PLAN.md         # 计划
-│   ├── PROGRESS.md     # 进度
-│   └── RESULTS.md      # 结果
-└── ...                 # 项目源码
+│   ├── jobs.md          # 分工
+│   ├── PLAN.md          # 计划
+│   ├── PROGRESS.md      # 进度
+│   └── RESULTS.md       # 结果
+└── ...                  # 项目源码
 ```
 
 > 当群聊未配置 `project.directory` 时，回退到 `{stateDir}/groups/{groupId}/.openclaw-group/`。
@@ -107,12 +113,12 @@
 └──────────────────────┬──────────────────────────┘
                        ▼
 ┌─────────────────────────────────────────────────┐
-│ Phase 1: 分工 (ROLES.md)                         │
+│ Phase 1: 分工 (jobs.md)                          │
 │                                                  │
-│ 助手 Agent 根据任务需求和各 Agent 的能力：         │
-│ 1. 清空旧的 ROLES.md / PLAN.md / PROGRESS.md     │
+│ 助手 Agent 根据任务需求和各 Agent 的能力：        │
+│ 1. 清空旧的 jobs.md / PLAN.md / PROGRESS.md      │
 │ 2. 为每个参与的 Agent 分配明确职责                 │
-│ 3. 写入 ROLES.md                                 │
+│ 3. 写入 jobs.md                                  │
 │ 4. 在群聊中发送分工摘要                           │
 └──────────────────────┬──────────────────────────┘
                        ▼
@@ -175,14 +181,14 @@
 
 ## 3. 文件内容格式与示例
 
-### 3.1 ROLES.md — 分工文件
+### 3.1 jobs.md — 分工文件
 
 **写入时机**：Phase 1 开始时，助手 Agent 清空并重写。
 
 **格式规范**：
 
 ```markdown
-# 任务分工
+# 分工
 
 > 任务：为项目添加 JWT 认证功能
 > 创建时间：2026-04-03 10:00
@@ -510,7 +516,7 @@ export function buildGroupChatContext(params: {
 
 1. **澄清（可选）**：如果用户任务描述不清晰，你可以直接向用户提问以澄清细节。如果任务足够明确，跳过此步骤。
 
-2. **分工**：分析任务和群内各 Agent 的能力，为每个 Agent 分配职责。写入 `.openclaw-group/ROLES.md`。
+2. **分工**：分析任务和群内各 Agent 的能力，为每个 Agent 分配职责。写入 `.openclaw-group/jobs.md`。
 
 3. **计划**：将任务拆解为具体步骤，明确每步的负责人、依赖关系和执行顺序。写入 `.openclaw-group/PLAN.md`。
 
@@ -523,8 +529,8 @@ export function buildGroupChatContext(params: {
 
 #### 文件规则
 
-- **你（助手）**可以写入：ROLES.md、PLAN.md、RESULTS.md
-- **你（助手）**在新任务开始时必须清空 ROLES.md、PLAN.md、PROGRESS.md
+- **你（助手）**可以写入：jobs.md、PLAN.md、RESULTS.md
+- **你（助手）**在新任务开始时必须清空 jobs.md、PLAN.md、PROGRESS.md
 - **执行者 Agent** 完成步骤后应更新 PROGRESS.md（仅自己负责的部分）
 - 每次触发执行者时，提醒他们完成后更新 PROGRESS.md
 
@@ -549,7 +555,7 @@ export function buildGroupChatContext(params: {
 #### 你的工作流程
 
 1. 阅读 `.openclaw-group/PLAN.md` 了解当前计划和你负责的步骤
-2. 阅读 `.openclaw-group/ROLES.md` 了解你的职责范围
+2. 阅读 `.openclaw-group/jobs.md` 了解你的职责范围
 3. 执行分配给你的步骤
 4. 完成后更新 `.openclaw-group/PROGRESS.md`，在你负责的步骤下记录：
    - 完成时间
@@ -635,7 +641,7 @@ const bypassAtomicCheck = skipTranscript && resolvedSender.type === "owner";
   │
   ▼
 助手 Agent（planMode 上下文）:
-  → 写入 ROLES.md + PLAN.md
+  → 写入 jobs.md + PLAN.md
   → 回复 "@backend 请实现认证 API"（@mention）
   │
   ▼
@@ -701,7 +707,7 @@ Owner: 为项目添加一个 /health 健康检查端点
 Architect (助手):
   任务很清晰，开始分配。
 
-  [写入 ROLES.md]
+  [写入 jobs.md]
   [写入 PLAN.md — 2 步：① backend 实现端点 ② tester 写测试]
 
   计划已制定，共 2 个步骤。
@@ -746,7 +752,7 @@ Owner: 邮箱注册就行，需要管理员和普通用户两个角色，不需�
 Architect (助手):
   明白了。
 
-  [写入 ROLES.md — backend: API 开发, frontend: 页面开发, tester: 测试]
+  [写入 jobs.md — backend: API 开发, frontend: 页面开发, tester: 测试]
   [写入 PLAN.md — 6 步计划]
 
   计划已制定。Step 1（数据模型）先行，然后 Step 2（API）和 Step 3（页面）可并行。
@@ -817,7 +823,7 @@ Tester:
 | 用户行为            | 系统处理                                               |
 | ------------------- | ------------------------------------------------------ |
 | 发送新消息（无@）   | 助手 Agent 接收并响应（可能暂停当前计划）              |
-| 修改需求            | 助手 Agent 更新 ROLES.md / PLAN.md，从当前进度继续     |
+| 修改需求            | 助手 Agent 更新 jobs.md / PLAN.md，从当前进度继续      |
 | 要求停止            | 助手 Agent 写入 RESULTS.md（记录已完成部分），结束计划 |
 | 发送新任务          | 助手 Agent 清理旧文件，开启新的计划流程                |
 | @mention 特定 Agent | 现有 @mention 逻辑正常执行，不受计划模式影响           |
@@ -856,14 +862,14 @@ Tester:
 {
   planMode: boolean;
   files: {
-    roles: boolean;   // ROLES.md 是否存在
-    plan: boolean;    // PLAN.md 是否存在
-    progress: boolean; // PROGRESS.md 是否存在
-    results: boolean;  // RESULTS.md 是否存在
+    jobs: boolean;         // jobs.md 是否存在
+    plan: boolean;         // PLAN.md 是否存在
+    progress: boolean;     // PROGRESS.md 是否存在
+    results: boolean;      // RESULTS.md 是否存在
   }
   // UI 可以根据文件存在情况推断当前阶段：
   // 无文件 → idle
-  // 有 ROLES.md 但无 PLAN.md → clarifying/assigning
+  // 有 jobs.md 但无 PLAN.md → clarifying/assigning
   // 有 PLAN.md 但无 PROGRESS.md → planning
   // 有 PROGRESS.md 但无 RESULTS.md → executing
   // 有 RESULTS.md → completed
@@ -936,11 +942,11 @@ Tester:
 
 ### Phase 3: UI 扩展 (1-2 天)
 
-| 任务                        | 说明                             | 工作量 |
-| --------------------------- | -------------------------------- | ------ |
-| 群聊设置添加 Plan Mode 开关 | 复选框 + 配置项                  | 2h     |
-| 群聊界面状态指示栏          | 阶段显示 + 文件查看链接          | 2h     |
-| 协作文件侧边栏查看器        | 渲染 ROLES/PLAN/PROGRESS/RESULTS | 3h     |
+| 任务                        | 说明                            | 工作量 |
+| --------------------------- | ------------------------------- | ------ |
+| 群聊设置添加 Plan Mode 开关 | 复选框 + 配置项                 | 2h     |
+| 群聊界面状态指示栏          | 阶段显示 + 文件查看链接         | 2h     |
+| 协作文件侧边栏查看器        | 渲染 jobs/PLAN/PROGRESS/RESULTS | 3h     |
 
 ### Phase 4: 测试 (0.5 天)
 
@@ -957,7 +963,7 @@ Tester:
 | 风险                | 影响 | 缓解措施                                                  |
 | ------------------- | ---- | --------------------------------------------------------- |
 | 助手 Agent 陷入循环 | 高   | 现有 `maxRounds`（20）+ `chainTimeout`（15 分钟）自动兜底 |
-| 文件写入冲突        | 中   | 约定：助手写 ROLES/PLAN/RESULTS，执行者只写 PROGRESS      |
+| 文件写入冲突        | 中   | 约定：助手写 jobs/PLAN/RESULTS，执行者只写 PROGRESS       |
 | Agent 不更新进度    | 中   | 助手在 system prompt 中强调；超时后助手主动询问           |
 | 用户中途改需求      | 低   | 助手能理解新消息并调整计划                                |
 | LLM 不遵循格式      | 中   | system prompt 中给出明确的格式示例和约束                  |
@@ -970,3 +976,464 @@ Tester:
 - [CLI Agent 上下文](./cli-agent-context.md) — 上下文注入机制
 - [技术实现](./implementation.md) — Bridge Agent 实施阶段
 - [风险与兼容性](./risks.md) — 技术风险评估
+
+---
+
+## 14. 状态推断机制
+
+> **核心原则**：后端不维护 PlanState，前端通过读取四个文件判断当前阶段。
+
+### 14.1 阶段推断逻辑
+
+```typescript
+function inferPlanPhase(files: {
+  jobs: boolean;
+  plan: boolean;
+  progress: boolean;
+  results: boolean;
+}): PlanPhase {
+  // 无任何文件 → 空闲状态
+  if (!files.jobs && !files.plan && !files.progress && !files.results) {
+    return "idle";
+  }
+
+  // 有分工但无计划 → 澄清/分配中
+  if (files.jobs && !files.plan) {
+    return "assigning";
+  }
+
+  // 有计划但无进度 → 计划中，尚未开始执行
+  if (files.plan && !files.progress) {
+    return "planning";
+  }
+
+  // 有进度但无结果 → 执行中
+  if (files.progress && !files.results) {
+    return "executing";
+  }
+
+  // 有结果 → 已完成
+  if (files.results) {
+    return "completed";
+  }
+
+  return "idle";
+}
+```
+
+### 14.2 进度计算逻辑
+
+执行阶段的进度（如 "3/6 步骤完成"）来自解析 `PROGRESS.md`：
+
+```typescript
+function calculateProgress(
+  progressContent: string,
+  planContent: string,
+): {
+  completed: number;
+  total: number;
+} {
+  // 从 PLAN.md 统计总步骤数
+  const totalSteps = (planContent.match(/^## Step \d+:/gm) || []).length;
+
+  // 从 PROGRESS.md 统计已完成步骤数（✅ 标记）
+  const completedSteps = (progressContent.match(/## Step \d+:.+✅/g) || []).length;
+
+  return { completed: completedSteps, total: totalSteps };
+}
+```
+
+### 14.3 状态更新触发时机
+
+| 事件                   | 文件变化              | 阶段转换                     |
+| ---------------------- | --------------------- | ---------------------------- |
+| 用户发送新任务         | 无（助手尚未写入）    | idle → assigning             |
+| 助手写入 jobs.md       | jobs.md 创建          | assigning                    |
+| 助手写入 PLAN.md       | PLAN.md 创建          | assigning → planning         |
+| 助手 @mention 执行者   | 无变化                | planning → executing         |
+| 执行者更新 PROGRESS.md | PROGRESS.md 创建/更新 | executing                    |
+| 助手写入 RESULTS.md    | RESULTS.md 创建       | executing → completed        |
+| 用户发送新任务         | 所有文件被清空        | completed → idle → assigning |
+
+---
+
+## 15. System Prompt 详细规范
+
+> **这是计划模式的核心实现**。通过上下文注入，让 Agent 自主按照计划模式的要求行事。
+
+### 15.1 助手 Agent 上下文注入
+
+当 `planMode === true` 且 Agent 角色为 `assistant` 时，注入以下内容：
+
+````markdown
+## 计划模式 — 你是协调者
+
+你当前处于**计划模式**。你的职责是协调群内 Agent 协作完成用户的任务。
+
+### 工作流程
+
+1. **澄清（可选）**：如果用户任务描述不清晰，你可以直接向用户提问以澄清细节。如果任务足够明确，跳过此步骤。
+
+2. **分工**：分析任务和群内各 Agent 的能力，为每个 Agent 分配职责。写入 `.openclaw-group/jobs.md`。
+
+3. **计划**：将任务拆解为具体步骤，明确每步的负责人、依赖关系和执行顺序。写入 `.openclaw-group/PLAN.md`。
+
+4. **执行**：按计划触发 Agent 执行：
+   - 步骤之间有依赖 → **一次 @mention 一个 Agent**（串行）
+   - 步骤之间无依赖 → **一次 @mention 多个 Agent**（并行）
+   - 每轮执行结束后，检查 `.openclaw-group/PROGRESS.md`，决定下一步
+
+5. **总结**：所有步骤完成后，汇总结果写入 `.openclaw-group/RESULTS.md`，通知用户。
+
+### 协作文件
+
+| 文件        | 你的操作                           |
+| ----------- | ---------------------------------- |
+| jobs.md     | 写入：为每个 Agent 分配职责        |
+| PLAN.md     | 写入：拆解任务为步骤，定义依赖关系 |
+| PROGRESS.md | 读取：检查各步骤完成状态           |
+| RESULTS.md  | 写入：汇总最终结果                 |
+
+**文件路径**：`.openclaw-group/` 目录下。
+
+### 分工格式 (jobs.md)
+
+```markdown
+# 分工
+
+> 任务：{任务描述}
+> 创建时间：{时间}
+> 协调者：{你的 agentId}
+
+## 参与成员
+
+### {agentId}（{角色}）
+
+- **职责**：{具体职责}
+- **关注点**：{需要关注的方面}
+- **工作目录**：{项目路径}（如适用）
+
+## 协作约定
+
+- {协作规则1}
+- {协作规则2}
+```
+````
+
+### 计划格式 (PLAN.md)
+
+```markdown
+# 执行计划
+
+> 任务：{任务描述}
+> 创建时间：{时间}
+> 最后更新：{时间}
+
+## 步骤总览
+
+| #   | 步骤   | 负责人 | 依赖 | 执行方式 | 状态    |
+| --- | ------ | ------ | ---- | -------- | ------- |
+| 1   | {描述} | @{id}  | 无   | 串行     | pending |
+| 2   | {描述} | @{id}  | #1   | 串行     | pending |
+
+## 步骤详情
+
+### Step 1: {步骤名称}
+
+- **负责人**：@{agentId}
+- **描述**：{详细描述}
+- **产出**：{预期产出文件}
+- **完成标准**：{验收标准}
+```
+
+### 进度格式 (PROGRESS.md) — 执行者更新
+
+```markdown
+## Step {N}: {步骤名称} {状态标记}
+
+- **负责人**：{agentId}
+- **完成时间**：{时间}
+- **产出**：
+  - {文件1}
+  - {文件2}
+- **备注**：{关键信息}
+```
+
+**状态标记**：⏳ 等待中 | 🔄 进行中 | ✅ 已完成 | ❌ 失败 | 🔁 需重做
+
+### 决策准则
+
+每轮汇总触发后，读取 PROGRESS.md 判断：
+
+1. **所有步骤 ✅** → 写入 RESULTS.md，任务完成
+2. **仍有 ⏳/🔄 步骤** → 继续触发下一批执行者
+3. **有 ❌ 步骤** → 分析原因，决定重试或调整计划
+
+### 安全限制
+
+- 最多执行约 {maxRounds/2} 轮计划循环
+- 超出限制后直接写入 RESULTS.md 并总结当前状态
+- 链超时（{chainTimeout} 分钟）会自动终止执行
+
+### 示例：触发执行者
+
+```
+计划已制定，共 3 个步骤。
+
+Step 1 先行，Step 2 和 Step 3 可并行。
+
+@backend 请完成 Step 1：创建 User 数据模型。
+完成后请更新 .openclaw-group/PROGRESS.md。
+```
+
+### 示例：检查进度后继续
+
+```
+[读取 PROGRESS.md — Step 1 ✅, Step 2 ⏳, Step 3 ⏳]
+
+Step 1 已完成。Step 2 和 Step 3 无依赖，同时开始。
+
+@backend 请实现认证 API（Step 2）
+@frontend 请实现登录页面（Step 3）
+
+完成后请更新 .openclaw-group/PROGRESS.md。
+```
+
+### 示例：任务完成
+
+```
+[读取 PROGRESS.md — 全部 ✅]
+
+[写入 RESULTS.md]
+
+✅ 任务完成！已为项目添加 JWT 认证功能。
+
+**变更摘要**：
+- 新增 8 个文件
+- 修改 3 个文件
+- 测试覆盖率 95%+
+
+详细结果请查看 .openclaw-group/RESULTS.md。
+```
+
+````
+
+### 15.2 执行者 Agent 上下文注入
+
+当 `planMode === true` 且 Agent 角色为 `member` 或 `bridge-assistant` 时，注入以下内容：
+
+```markdown
+## 计划模式 — 你是执行者
+
+当前群聊处于**计划模式**。你有具体的执行任务。
+
+### 你的工作流程
+
+1. **阅读计划**：查看 `.openclaw-group/PLAN.md` 了解当前计划和你负责的步骤
+2. **了解职责**：查看 `.openclaw-group/jobs.md` 了解你的职责范围
+3. **执行任务**：完成分配给你的步骤
+4. **更新进度**：完成后更新 `.openclaw-group/PROGRESS.md`
+
+### 进度更新格式
+
+在你负责的步骤下追加以下内容：
+
+```markdown
+## Step {N}: {步骤名称} ✅
+
+- **负责人**：{你的 agentId}
+- **完成时间**：{当前时间}
+- **产出**：
+  - {创建的文件1}
+  - {创建的文件2}
+- **备注**：{关键信息、接口文档、注意事项等}
+````
+
+**状态标记**：
+
+- ✅ 已完成
+- ❌ 失败（需说明原因）
+- 🔁 需重做（助手要求修改时）
+
+### 注意事项
+
+- **只更新你自己负责的步骤**
+- 如果遇到阻塞问题，标记 ❌ 并说明原因
+- 完成后回复助手 Agent，简要说明完成情况
+- 如果助手要求重做，更新状态为 🔁 并说明修改内容
+
+### 示例：成功完成
+
+```markdown
+## Step 2: 认证 API 开发 ✅
+
+- **负责人**：backend
+- **完成时间**：2026-04-03 10:45
+- **产出**：
+  - `src/server/auth/routes.ts` — 注册、登录、获取用户信息三个端点
+  - `src/server/auth/middleware.ts` — JWT 验证中间件
+- **接口文档**：
+  - `POST /api/auth/register` — body: `{ email, password }` → `{ user, token }`
+  - `POST /api/auth/login` — body: `{ email, password }` → `{ user, token }`
+- **备注**：JWT 有效期 7 天，secret 从环境变量读取
+```
+
+### 示例：遇到问题
+
+```markdown
+## Step 5: E2E 测试 ❌
+
+- **负责人**：tester
+- **失败时间**：2026-04-03 11:30
+- **失败原因**：登录后跳转未生效，AuthGuard 组件未正确读取 Token
+- **错误日志**：
+```
+
+AssertionError: Expected URL to be "/dashboard"
+Actual: "/login"
+
+```
+- **建议**：需要 frontend 检查 AuthGuard 的 Token 读取逻辑
+```
+
+````
+
+### 15.3 Bridge Agent 特殊上下文
+
+对于 Bridge Agent（CLI Agent），额外注入以下内容：
+
+```markdown
+### Bridge Agent 特殊说明
+
+作为 Bridge Agent，你通过 CLI 工具执行任务。请注意：
+
+1. **工作目录**：在 jobs.md 中指定的目录下执行命令
+2. **工具使用**：使用可用的 CLI 工具（如 `read_file`、`write_to_file`、`execute_command`）
+3. **进度更新**：CLI 命令执行完成后，务必更新 PROGRESS.md
+4. **错误处理**：如果命令失败，在 PROGRESS.md 中标记 ❌ 并附上错误输出
+
+### 可用工具
+
+- `read_file` — 读取文件
+- `write_to_file` — 写入文件
+- `execute_command` — 执行 shell 命令
+- `search_content` — 搜索文件内容
+- `search_file` — 搜索文件名
+
+### 示例：CLI 任务执行
+
+````
+
+[读取 PLAN.md — Step 1: 创建 User 模型]
+
+[执行命令]
+$ npx prisma migrate dev --name add-user-model
+
+[检查结果]
+Migration successful.
+
+[更新 PROGRESS.md]
+
+## Step 1: 数据模型设计 ✅
+
+- **负责人**：backend
+- **完成时间**：2026-04-03 10:20
+- **产出**：
+  - `prisma/schema.prisma` — 新增 User 模型
+  - `prisma/migrations/20260403_add_user_model/`
+
+```
+
+```
+
+### 15.4 上下文注入时机
+
+| 触发点               | 注入内容                       | 条件                             |
+| -------------------- | ------------------------------ | -------------------------------- |
+| 用户发送消息         | 助手上下文                     | `planMode === true` 且角色为助手 |
+| 助手 @mention 执行者 | 执行者上下文                   | `planMode === true` 且角色非助手 |
+| 汇总消息触发助手     | 助手上下文 + 当前阶段提示      | `planMode === true`              |
+| Bridge Agent 被触发  | 执行者上下文 + Bridge 特殊说明 | `planMode === true` 且是 Bridge  |
+
+### 15.5 动态上下文变量
+
+上下文中可以包含以下动态变量：
+
+| 变量             | 来源                     | 示例值               |
+| ---------------- | ------------------------ | -------------------- |
+| `{maxRounds}`    | `meta.maxRounds`         | 20                   |
+| `{chainTimeout}` | `meta.chainTimeout`      | 15 分钟              |
+| `{projectDir}`   | `meta.project.directory` | `/home/user/project` |
+| `{agentId}`      | 当前 Agent ID            | `backend`            |
+| `{groupId}`      | 群聊 ID                  | `grp_abc123`         |
+
+---
+
+## 16. UI 状态指示实现
+
+### 16.1 状态栏组件
+
+```typescript
+type PlanModeStatusBarProps = {
+  phase: "idle" | "assigning" | "planning" | "executing" | "completed";
+  completedSteps: number;
+  totalSteps: number;
+  onViewJobs: () => void;
+  onViewPlan: () => void;
+  onViewProgress: () => void;
+};
+
+function renderPlanModeStatusBar(props: PlanModeStatusBarProps) {
+  const phaseLabels = {
+    idle: "空闲",
+    assigning: "分工中",
+    planning: "计划中",
+    executing: "执行中",
+    completed: "已完成",
+  };
+
+  return html`
+    <div class="plan-mode-status-bar">
+      <div class="plan-mode-status-bar__left">
+        <span class="plan-mode-status-bar__icon">📋</span>
+        <span class="plan-mode-status-bar__phase">
+          计划模式 — ${phaseLabels[props.phase]}
+          ${props.phase === "executing"
+            ? `(${props.completedSteps}/${props.totalSteps} 步骤完成)`
+            : nothing}
+        </span>
+      </div>
+      <div class="plan-mode-status-bar__actions">
+        <button class="btn btn--sm btn--link" @click=${props.onViewJobs}>查看分工</button>
+        <button class="btn btn--sm btn--link" @click=${props.onViewPlan}>查看计划</button>
+        <button class="btn btn--sm btn--link" @click=${props.onViewProgress}>查看进度</button>
+      </div>
+    </div>
+  `;
+}
+```
+
+### 16.2 状态更新流程
+
+```
+前端轮询（每 5 秒）或文件变更事件
+    │
+    ▼
+调用 group.getPlanState RPC
+    │
+    ▼
+获取文件存在性 { jobs, plan, progress, results }
+    │
+    ▼
+推断阶段：inferPlanPhase(files)
+    │
+    ▼
+如果 phase === 'executing'：
+    │
+    ├─ 读取 PLAN.md → 统计总步骤数
+    │
+    └─ 读取 PROGRESS.md → 统计已完成步骤数
+    │
+    ▼
+更新 UI 状态栏
+```

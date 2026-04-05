@@ -41,6 +41,7 @@ import {
   MAX_SINGLE_MESSAGE_CHARS,
 } from "./bridge-types.js";
 import { broadcastGroupMessage, broadcastGroupStream } from "./parallel-stream.js";
+import { buildPlanModeExecutorPrompt } from "./plan-mode-context.js";
 import { broadcastTerminalData, broadcastTerminalStatus } from "./terminal-events.js";
 import { appendGroupMessage } from "./transcript.js";
 import type { GroupAgentRun, GroupChatMessage, GroupSessionEntry } from "./types.js";
@@ -554,6 +555,21 @@ async function buildCliContextMessage(params: {
   // The actual request (trigger message — the last user/agent message)
   const triggerMsg = transcriptSnapshot[transcriptSnapshot.length - 1];
   const requestContent = extractVisibleRequestContent(triggerMsg);
+
+  // ─── Plan Mode 上下文注入（Bridge Agent 执行者） ───
+  if (meta.planMode && member?.role !== "assistant") {
+    const planModePrompt = buildPlanModeExecutorPrompt(meta);
+    // Convert to # comment format for CLI injection
+    const planModeLines = planModePrompt.split("\n").map((line) => `# ${line}`);
+    sections.push(
+      "# ================================================================================",
+      "# 计划模式指令（当前群聊处于计划模式，你有具体的执行任务）",
+      "# ================================================================================",
+      "",
+      ...planModeLines,
+      "",
+    );
+  }
 
   sections.push(
     "# ========================== [OPENCLAW_CTX_END] ==========================",

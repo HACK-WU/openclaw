@@ -46,6 +46,27 @@ export function resolveGroupTranscriptPath(groupId: string): string {
   return path.join(resolveGroupDir(groupId), "transcript.jsonl");
 }
 
+/**
+ * Resolve the directory for Plan Mode collaboration files (.openclaw-group/).
+ *
+ * Primary: <projectDir>/.openclaw-group/  (if group has a project directory)
+ * Fallback: <groupDir>/.openclaw-group/  (state directory)
+ */
+export function resolvePlanFilesDir(meta: GroupSessionEntry): string {
+  if (meta.project?.directory) {
+    return path.join(meta.project.directory, ".openclaw-group");
+  }
+  return path.join(resolveGroupDir(meta.groupId), ".openclaw-group");
+}
+
+/** Plan Mode collaboration file names. */
+export const PLAN_FILES = {
+  jobs: "jobs.md",
+  plan: "PLAN.md",
+  progress: "PROGRESS.md",
+  results: "RESULTS.md",
+} as const;
+
 // ─── Lock mechanism (per-groupId memory queue) ───
 
 const groupLocks = new Map<string, Promise<void>>();

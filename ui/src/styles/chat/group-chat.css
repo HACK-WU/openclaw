@@ -1396,6 +1396,52 @@
   }
 }
 
+/* ─── Plan Mode Status Bar ─── */
+
+.plan-mode-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--accent-subtle);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.plan-mode-status-bar__left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plan-mode-status-bar__icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.plan-mode-status-bar__phase {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.plan-mode-status-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.plan-mode-status-bar__actions .btn--link {
+  font-size: 12px;
+  padding: 2px 8px;
+  color: var(--accent-2);
+}
+
+.plan-mode-status-bar__actions .btn--link:hover {
+  color: var(--accent);
+}
+
 /* ─── Mention Dropdown ─── */
 
 .mention-dropdown {

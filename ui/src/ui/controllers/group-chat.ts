@@ -74,6 +74,10 @@ export type GroupSessionMeta = {
   bridgeTerminalStatuses?: Record<string, string>;
   /** Terminal replay buffers for Bridge Agents (Base64-encoded, for content restoration) */
   bridgeTerminalReplayBuffers?: Record<string, string>;
+  /** Whether plan mode is enabled for this group. */
+  planMode?: boolean;
+  /** Plan mode configuration. */
+  planConfig?: { allowSkipClarification?: boolean };
 };
 
 // Tool message for real-time display
@@ -220,6 +224,9 @@ export type GroupChatState = {
   bridgeTerminalStatuses?: Map<string, BridgeTerminalStatus>;
   /** Terminal replay buffers (Base64-encoded, for page refresh restoration) */
   bridgeTerminalReplayBuffers?: Map<string, string>;
+  // ─── Plan Mode state ───
+  /** Current plan mode state (null when plan mode is disabled or not yet loaded) */
+  planModeState?: PlanModeState | null;
 };
 
 export type GroupCreateDialogState = {
@@ -297,6 +304,7 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   groupClearMessagesDialog: null,
   groupInfoPanelOpen: false,
   bridgeTerminalStatuses: new Map(),
+  planModeState: null,
 };
 
 // ─── Helpers ───
@@ -927,6 +935,9 @@ async function deliverPendingMentions(host: GroupHost, groupId: string): Promise
       .map((p) => `[${p.fromAgentId}]: ${p.message.content}`);
 
     try {
+      if (!host.client) {
+        return;
+      }
       await host.client.request("group.send", {
         groupId,
         message: messages.join("\n\n"),
@@ -1530,6 +1541,19 @@ export async function abortGroupChat(host: GroupHost, groupId: string): Promise<
   }
   try {
     await host.client.request("group.abort", { groupId });
+
+    // Clear local state immediately after abort request
+    // This ensures UI updates even if backend doesn't send aborted events
+    if (host.activeGroupId === groupId) {
+      host.groupPendingAgents = new Set();
+      host.groupStreams = new Map();
+      host.groupBridgeSnapshots = new Map();
+      host.groupToolMessages = new Map();
+      streamBuffers.clear();
+    }
+
+    // Clear chain state to prevent further auto-forwards
+    resetChainState(groupId);
   } catch {
     // best-effort
   }
@@ -1772,6 +1796,146 @@ export async function updateGroupProjectDocs(
   docs: string[],
 ): Promise<void> {
   return updateGroupSettings(host, groupId, "setProjectDocs", { docs });
+}
+
+// ─── Plan Mode Phase & State ───
+
+export type PlanModePhase = "idle" | "assigning" | "planning" | "executing" | "completed";
+
+export type PlanModeFilesState = {
+  jobs: boolean;
+  plan: boolean;
+  progress: boolean;
+  results: boolean;
+};
+
+export type PlanModeState = {
+  planMode: boolean;
+  phase: PlanModePhase;
+  completedSteps: number;
+  totalSteps: number;
+};
+
+const PHASE_LABELS: Record<PlanModePhase, string> = {
+  idle: "空闲",
+  assigning: "分工中",
+  planning: "计划中",
+  executing: "执行中",
+  completed: "已完成",
+};
+
+export function getPlanPhaseLabel(phase: PlanModePhase): string {
+  return PHASE_LABELS[phase] ?? phase;
+}
+
+/**
+ * Infer the current plan phase from the existence of collaboration files.
+ * Matches the backend design: no state machine, pure file-based inference.
+ */
+export function inferPlanPhase(files: PlanModeFilesState): PlanModePhase {
+  if (!files.jobs && !files.plan && !files.progress && !files.results) {
+    return "idle";
+  }
+  if (files.jobs && !files.plan) {
+    return "assigning";
+  }
+  if (files.plan && !files.progress) {
+    return "planning";
+  }
+  if (files.progress && !files.results) {
+    return "executing";
+  }
+  if (files.results) {
+    return "completed";
+  }
+  return "idle";
+}
+
+/**
+ * Calculate progress (completed/total steps) by parsing PLAN.md and PROGRESS.md content.
+ */
+export function calculateProgress(
+  progressContent: string,
+  planContent: string,
+): { completed: number; total: number } {
+  const totalSteps = (planContent.match(/^## Step \d+:/gm) || []).length;
+  const completedSteps = (progressContent.match(/## Step \d+:.+✅/g) || []).length;
+  return { completed: completedSteps, total: totalSteps };
+}
+
+/**
+ * Fetch plan mode state from backend via group.getPlanState RPC.
+ */
+export async function fetchPlanState(host: GroupHost, groupId: string): Promise<PlanModeState> {
+  if (!host.client || !host.connected) {
+    return {
+      planMode: false,
+      phase: "idle",
+      completedSteps: 0,
+      totalSteps: 0,
+    };
+  }
+  try {
+    const result = await host.client.request<{
+      planMode: boolean;
+      files: PlanModeFilesState;
+    }>("group.getPlanState", { groupId });
+
+    if (!result?.planMode) {
+      return {
+        planMode: false,
+        phase: "idle",
+        completedSteps: 0,
+        totalSteps: 0,
+      };
+    }
+
+    const phase = inferPlanPhase(result.files);
+
+    // For executing phase, we need file contents to calculate progress
+    let completedSteps = 0;
+    let totalSteps = 0;
+
+    if (phase === "executing" || phase === "completed") {
+      try {
+        const planContent = await host.client.request<{ content: string }>("group.readPlanFile", {
+          groupId,
+          file: "PLAN.md",
+        });
+        const progressContent = await host.client.request<{ content: string }>(
+          "group.readPlanFile",
+          { groupId, file: "PROGRESS.md" },
+        );
+        if (planContent?.content) {
+          const prog = calculateProgress(progressContent?.content ?? "", planContent.content);
+          completedSteps = prog.completed;
+          totalSteps = prog.total;
+        }
+      } catch {
+        // File reading failed — show phase without progress numbers
+      }
+    }
+
+    return { planMode: true, phase, completedSteps, totalSteps };
+  } catch {
+    return {
+      planMode: false,
+      phase: "idle",
+      completedSteps: 0,
+      totalSteps: 0,
+    };
+  }
+}
+
+/**
+ * Enable or disable Plan Mode for a group.
+ */
+export async function updateGroupPlanMode(
+  host: GroupHost,
+  groupId: string,
+  planMode: boolean,
+): Promise<void> {
+  return updateGroupSettings(host, groupId, "setPlanMode", { enabled: planMode });
 }
 
 export async function disbandGroup(host: GroupHost, groupId: string): Promise<void> {
@@ -2235,6 +2399,7 @@ export function handleGroupSystemEvent(host: GroupChatState, payload: GroupSyste
     "skills_changed",
     "context_config_changed",
     "project_docs_changed",
+    "plan_mode_changed",
   ]);
 
   if (shouldRefreshMeta.has(eventName)) {
@@ -2475,9 +2640,9 @@ export function handleGroupTerminalStatusEvent(
   statuses.set(payload.agentId, mappedStatus);
   host.bridgeTerminalStatuses = statuses;
 
+  // Only clean up pending state when agent is truly done
+  // "working" and "ready" mean the agent is still active
   if (
-    mappedStatus === "working" ||
-    mappedStatus === "ready" ||
     mappedStatus === "completed" ||
     mappedStatus === "timeout" ||
     mappedStatus === "error" ||

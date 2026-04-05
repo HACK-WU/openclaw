@@ -2197,6 +2197,18 @@ export function renderApp(state: AppViewState) {
                     })();
                   }
                 },
+                onUpdatePlanMode: (enabled) => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { updateGroupPlanMode } = await import("./controllers/group-chat.ts");
+                      await updateGroupPlanMode(
+                        state as unknown as Parameters<typeof updateGroupPlanMode>[0],
+                        state.activeGroupId!,
+                        enabled,
+                      );
+                    })();
+                  }
+                },
                 showThinking: state.settings.groupShowThinking,
                 onToggleShowThinking: () => {
                   state.applySettings({

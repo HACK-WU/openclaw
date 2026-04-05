@@ -48,6 +48,14 @@ export type GroupCompactionConfig = {
   reserveTokensFloor: number; // default 20_000
 };
 
+// ─── Plan Mode ───
+
+/** Configuration for Plan Mode (coordinated multi-agent task execution). */
+export type PlanModeConfig = {
+  /** Whether assistant can skip clarification phase. Default: true. */
+  allowSkipClarification?: boolean;
+};
+
 // ─── Group Session Entry (meta.json) ───
 
 export type GroupSessionEntry = {
@@ -86,6 +94,11 @@ export type GroupSessionEntry = {
   };
   /** Context configuration for CLI agent interactions. */
   contextConfig?: ContextConfig;
+  // ─── Plan Mode ───
+  /** Whether plan mode is enabled for this group. Default: false. */
+  planMode?: boolean;
+  /** Plan mode configuration. */
+  planConfig?: PlanModeConfig;
 };
 
 // ─── Group Index Entry (index.json — lightweight) ───

@@ -7,16 +7,21 @@ import type {
 } from "./group-chat.ts";
 import {
   DEFAULT_GROUP_CHAT_STATE,
+  calculateProgress,
   cancelSummary,
   extractDedicatedMentions,
+  fetchPlanState,
+  getPlanPhaseLabel,
   handleGroupMessageEvent,
   handleGroupStreamEvent,
   handleGroupSystemEvent,
+  inferPlanPhase,
   leaveGroupChat,
   processMentionDisplay,
   resetChainState,
   sendGroupMessage,
   triggerSummary,
+  updateGroupPlanMode,
 } from "./group-chat.ts";
 
 // Setup fake timers
@@ -802,6 +807,141 @@ Some text here
       const content = "邮箱 a\\@b.com 和 @dev";
       const result = processMentionDisplay(content, memberIds);
       expect(result).toBe('邮箱 a@b.com 和 <mark class="mention">@dev</mark>');
+    });
+  });
+});
+
+describe("plan mode", () => {
+  describe("inferPlanPhase", () => {
+    it("returns idle when no files exist", () => {
+      expect(inferPlanPhase({ jobs: false, plan: false, progress: false, results: false })).toBe(
+        "idle",
+      );
+    });
+
+    it("returns assigning when only jobs.md exists", () => {
+      expect(inferPlanPhase({ jobs: true, plan: false, progress: false, results: false })).toBe(
+        "assigning",
+      );
+    });
+
+    it("returns planning when plan exists but no progress", () => {
+      expect(inferPlanPhase({ jobs: true, plan: true, progress: false, results: false })).toBe(
+        "planning",
+      );
+    });
+
+    it("returns executing when progress exists but no results", () => {
+      expect(inferPlanPhase({ jobs: true, plan: true, progress: true, results: false })).toBe(
+        "executing",
+      );
+    });
+
+    it("returns completed when results exist", () => {
+      expect(inferPlanPhase({ jobs: true, plan: true, progress: true, results: true })).toBe(
+        "completed",
+      );
+      // Even if only results exist, it means the task is completed
+      expect(inferPlanPhase({ jobs: false, plan: false, progress: false, results: true })).toBe(
+        "completed",
+      );
+    });
+  });
+
+  describe("getPlanPhaseLabel", () => {
+    it("returns Chinese labels for all phases", () => {
+      expect(getPlanPhaseLabel("idle")).toBe("空闲");
+      expect(getPlanPhaseLabel("assigning")).toBe("分工中");
+      expect(getPlanPhaseLabel("planning")).toBe("计划中");
+      expect(getPlanPhaseLabel("executing")).toBe("执行中");
+      expect(getPlanPhaseLabel("completed")).toBe("已完成");
+    });
+  });
+
+  describe("calculateProgress", () => {
+    it("counts total steps from PLAN.md and completed from PROGRESS.md", () => {
+      const planContent = `# 执行计划
+
+## Step 1: 数据模型设计
+## Step 2: API 开发
+## Step 3: 前端集成`;
+
+      const progressContent = `## Step 1: 数据模型设计 ✅
+- **负责人**: backend
+
+## Step 2: API 开发 ✅
+- **负责人**: backend`;
+
+      const result = calculateProgress(progressContent, planContent);
+      expect(result.total).toBe(3);
+      expect(result.completed).toBe(2);
+    });
+
+    it("returns zeros when plan content is empty", () => {
+      const result = calculateProgress("", "");
+      expect(result.total).toBe(0);
+      expect(result.completed).toBe(0);
+    });
+  });
+
+  describe("updateGroupPlanMode", () => {
+    it("calls group.setPlanMode RPC with correct params", async () => {
+      const host = makeHost();
+      host.activeGroupId = "g1";
+
+      await updateGroupPlanMode(host as GroupHost, "g1", true);
+
+      expect(host.client.request).toHaveBeenCalledWith("group.setPlanMode", {
+        groupId: "g1",
+        enabled: true,
+      });
+    });
+
+    it("calls group.setPlanMode with enabled false to disable", async () => {
+      const host = makeHost();
+
+      await updateGroupPlanMode(host as GroupHost, "g1", false);
+
+      expect(host.client.request).toHaveBeenCalledWith("group.setPlanMode", {
+        groupId: "g1",
+        enabled: false,
+      });
+    });
+  });
+
+  describe("fetchPlanState", () => {
+    it("returns idle state when not connected", async () => {
+      const host = makeHost();
+      host.connected = false;
+
+      const result = await fetchPlanState(host as GroupHost, "g1");
+      expect(result.planMode).toBe(false);
+      expect(result.phase).toBe("idle");
+    });
+
+    it("returns idle state when planMode is false", async () => {
+      const host = makeHost();
+
+      const result = await fetchPlanState(host as GroupHost, "g1");
+      // Mock client returns {} for unknown methods, so planMode is undefined
+      expect(result.planMode).toBe(false);
+    });
+
+    it("infers phase from files when planMode is true", async () => {
+      const host = makeHost();
+      host.client.request = vi.fn().mockImplementation((method: string) => {
+        if (method === "group.getPlanState") {
+          return Promise.resolve({
+            planMode: true,
+            files: { jobs: true, plan: true, progress: false, results: false },
+          });
+        }
+        return Promise.resolve({});
+      });
+
+      const result = await fetchPlanState(host as GroupHost, "g1");
+      expect(result.planMode).toBe(true);
+      expect(result.phase).toBe("planning");
     });
   });
 });

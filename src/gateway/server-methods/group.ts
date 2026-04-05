@@ -41,6 +41,7 @@ import {
   loadGroupMeta,
   updateGroupMeta,
 } from "../../group-chat/group-store.js";
+import { PLAN_FILES, resolvePlanFilesDir } from "../../group-chat/group-store.js";
 import { resolveDispatchTargets } from "../../group-chat/message-dispatch.js";
 import {
   abortGroupRun,
@@ -61,6 +62,7 @@ import type {
   GroupChatMessage,
   MessageSender,
   GroupIndexEntry as RawGroupIndexEntry,
+  PlanModeConfig,
 } from "../../group-chat/types.js";
 import { getLogger } from "../../logging.js";
 import type { ChatImageContent } from "../chat-attachments.js";
@@ -1375,6 +1377,98 @@ const handleGroupClearMessages: GatewayRequestHandler = async ({ params, respond
   respond(true, { ok: true });
 };
 
+// ─── Plan Mode Handlers ───
+
+/**
+ * Enable or disable Plan Mode for a group.
+ * Plan Mode turns the assistant into a coordinator that orchestrates
+ * multi-agent task execution via collaboration files.
+ */
+const handleGroupSetPlanMode: GatewayRequestHandler = async ({ params, respond, context }) => {
+  const groupId = params.groupId as string;
+  const enabled = params.enabled as boolean;
+  const config = params.config as PlanModeConfig | undefined;
+
+  if (!groupId || typeof enabled !== "boolean") {
+    respond(false, undefined, { message: "groupId and enabled are required", code: 400 });
+    return;
+  }
+
+  const updated = await updateGroupMeta(groupId, (meta) => {
+    meta.planMode = enabled;
+    if (config !== undefined) {
+      meta.planConfig = config;
+    } else if (!enabled) {
+      // Clear config when disabling
+      meta.planConfig = undefined;
+    }
+    return meta;
+  });
+
+  respond(true, {
+    ok: true,
+    planMode: updated.planMode,
+    planConfig: updated.planConfig ?? null,
+  });
+
+  broadcastGroupSystem(context.broadcast, groupId, "plan_mode_changed", {
+    planMode: updated.planMode,
+    planConfig: updated.planConfig,
+  });
+};
+
+/**
+ * Get the current Plan Mode state for a group.
+ * Returns file existence info so the frontend can infer the current phase
+ * (idle → assigning → planning → executing → completed).
+ */
+const handleGroupGetPlanState: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  const meta = loadGroupMeta(groupId);
+  if (!meta) {
+    respond(false, undefined, { message: "Group not found", code: 404 });
+    return;
+  }
+
+  if (!meta.planMode) {
+    respond(true, {
+      planMode: false,
+      files: { jobs: false, plan: false, progress: false, results: false },
+    });
+    return;
+  }
+
+  // Check which collaboration files exist
+  const fs = await import("node:fs/promises");
+  const planDir = resolvePlanFilesDir(meta);
+
+  const fileExists = async (name: string): Promise<boolean> => {
+    try {
+      await fs.access(path.join(planDir, name));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const [jobs, plan, progress, results] = await Promise.all([
+    fileExists(PLAN_FILES.jobs),
+    fileExists(PLAN_FILES.plan),
+    fileExists(PLAN_FILES.progress),
+    fileExists(PLAN_FILES.results),
+  ]);
+
+  respond(true, {
+    planMode: true,
+    files: { jobs, plan, progress, results },
+  });
+};
+
 // ─── Export handler map ───
 
 export const groupHandlers: GatewayRequestHandlers = {
@@ -1405,4 +1499,7 @@ export const groupHandlers: GatewayRequestHandlers = {
   "group.setAntiLoopConfig": handleGroupSetAntiLoopConfig,
   // Clear messages
   "group.clearMessages": handleGroupClearMessages,
+  // Plan Mode
+  "group.setPlanMode": handleGroupSetPlanMode,
+  "group.getPlanState": handleGroupGetPlanState,
 };

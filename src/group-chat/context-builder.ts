@@ -7,6 +7,7 @@
  * Includes: group info, member list, announcement, role prompt, constraints.
  */
 
+import { buildPlanModeAssistantPrompt, buildPlanModeExecutorPrompt } from "./plan-mode-context.js";
 import { resolveRolePrompt } from "./role-prompt.js";
 import type { GroupSessionEntry } from "./types.js";
 import { isBridgeAssistant } from "./types.js";
@@ -139,6 +140,15 @@ Use \`@agentId\` on its **own line** to route your message to another agent.
 - Keep responses concise and focused
 - Do NOT announce "let me ask..." — just ask directly with \`@agentId\`
 - **Escape \`@\` with \`\\@\`** when you need to display it literally (emails, casual references)`);
+  }
+
+  // 7. Plan Mode context injection
+  if (meta.planMode) {
+    if (member.role === "assistant") {
+      sections.push(buildPlanModeAssistantPrompt(meta));
+    } else {
+      sections.push(buildPlanModeExecutorPrompt(meta));
+    }
   }
 
   return sections.join("\n\n");

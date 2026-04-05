@@ -30,6 +30,7 @@ import type {
   GroupSessionMeta,
   GroupStreamEntry,
   GroupToolMessage,
+  PlanModeState,
 } from "../controllers/group-chat.ts";
 import { getMentionedAgents, isBridgeAssistantAgent } from "../controllers/group-chat.ts";
 import { stripThinkingTags } from "../format.ts";
@@ -303,6 +304,7 @@ export type GroupChatViewProps = {
     includeSystemMessages?: boolean;
   }) => void;
   onUpdateProjectDocs: (docs: string[]) => void;
+  onUpdatePlanMode: (enabled: boolean) => void;
   onOpenDisbandDialog: () => void;
   onCloseDisbandDialog: () => void;
   onConfirmDisbandGroup: () => void;
@@ -342,6 +344,10 @@ export type GroupChatViewProps = {
   // Image attachments
   groupAttachments?: ChatAttachment[];
   onGroupAttachmentsChange?: (attachments: ChatAttachment[]) => void;
+  // Plan Mode state
+  planModeState?: PlanModeState | null;
+  onRefreshPlanState?: () => void;
+  onViewPlanFile?: (file: string) => void;
 };
 
 // ─── Main Render ───
@@ -646,6 +652,51 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
           </button>
         </div>
       </div>
+
+      ${
+        props.planModeState?.planMode
+          ? html`
+          <div class="plan-mode-status-bar">
+            <div class="plan-mode-status-bar__left">
+              <span class="plan-mode-status-bar__icon">&#x1F4CB;</span>
+              <span class="plan-mode-status-bar__phase">
+                计划模式 — ${
+                  props.planModeState.phase === "executing"
+                    ? `执行中 (${props.planModeState.completedSteps}/${props.planModeState.totalSteps} 步骤完成)`
+                    : props.planModeState.phase === "idle"
+                      ? "空闲"
+                      : props.planModeState.phase === "assigning"
+                        ? "分工中"
+                        : props.planModeState.phase === "planning"
+                          ? "计划中"
+                          : "已完成"
+                }
+              </span>
+            </div>
+            <div class="plan-mode-status-bar__actions">
+              <button
+                class="btn btn--sm btn--link"
+                @click=${() => props.onViewPlanFile?.("jobs.md")}
+              >
+                查看分工
+              </button>
+              <button
+                class="btn btn--sm btn--link"
+                @click=${() => props.onViewPlanFile?.("PLAN.md")}
+              >
+                查看计划
+              </button>
+              <button
+                class="btn btn--sm btn--link"
+                @click=${() => props.onViewPlanFile?.("PROGRESS.md")}
+              >
+                查看进度
+              </button>
+            </div>
+          </div>
+        `
+          : nothing
+      }
 
       ${groupError ? html`<div class="group-chat-room__error">${groupError}</div>` : nothing}
 
@@ -1658,6 +1709,28 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
                 }
               </div>
               <span class="group-info-panel__setting-desc">${t("chat.group.projectDocsDesc")}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Plan Mode -->
+        <div class="group-info-panel__section">
+          <label>计划模式</label>
+          <div class="group-info-panel__settings">
+            <div class="group-info-panel__setting-item">
+              <div class="group-info-panel__setting-header">
+                <span class="group-info-panel__setting-name">启用计划模式</span>
+                <input
+                  type="checkbox"
+                  .checked=${meta.planMode ?? false}
+                  @change=${(e: Event) => {
+                    props.onUpdatePlanMode((e.target as HTMLInputElement).checked);
+                  }}
+                />
+              </div>
+              <span class="group-info-panel__setting-desc">
+                助手 Agent 将自动协调成员完成用户任务（分工 → 计划 → 执行 → 总结）
+              </span>
             </div>
           </div>
         </div>
