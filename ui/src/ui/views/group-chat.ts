@@ -814,12 +814,22 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                       props.onSendMessage(text, mentions, props.groupAttachments);
                       // Scroll to bottom after sending
                       scrollGroupChatToBottom(true);
+                      // Reset textarea height
+                      const textarea = document.getElementById(
+                        "group-chat-textarea",
+                      ) as HTMLTextAreaElement | null;
+                      if (textarea) {
+                        textarea.style.height = "58px";
+                      }
                     }
                   }}
                   @input=${(e: Event) => {
                     const target = e.target as HTMLTextAreaElement;
-                    target.style.height = "auto";
-                    target.style.height = `${target.scrollHeight}px`;
+                    // Temporarily set a small height to get accurate scrollHeight
+                    target.style.height = "4px";
+                    // Calculate new height based on content, with minimum of 58px (2 lines) and max of 150px
+                    const newHeight = Math.min(150, Math.max(58, target.scrollHeight));
+                    target.style.height = `${newHeight}px`;
                     const value = target.value;
                     const cursorPos = target.selectionStart;
                     props.onDraftChange(value);
@@ -887,6 +897,13 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                       props.onSendMessage(text, mentions, props.groupAttachments);
                       // Scroll to bottom after sending
                       scrollGroupChatToBottom(true);
+                      // Reset textarea height
+                      const textarea = document.getElementById(
+                        "group-chat-textarea",
+                      ) as HTMLTextAreaElement | null;
+                      if (textarea) {
+                        textarea.style.height = "58px";
+                      }
                     }
                   }}
                 >

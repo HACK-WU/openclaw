@@ -426,10 +426,10 @@
   background: linear-gradient(to bottom, transparent, var(--bg) 20%);
 }
 
-/* Match single chat textarea height */
+/* Match single chat textarea height - default 2 lines */
 .group-chat-room .chat-compose .chat-compose__field textarea {
-  height: 40px !important;
-  min-height: 40px !important;
+  height: 58px;
+  min-height: 58px;
   max-height: 150px !important;
   padding: 9px 12px !important;
 }
