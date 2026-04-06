@@ -679,12 +679,15 @@ const groupChainStates = new Map<string, ChainState>();
 // Summary timers and counters
 const summaryTimers = new Map<string, number>();
 const summaryRounds = new Map<string, number>();
+// Tracks groups where summary was force-triggered (pending agents skipped).
+// Used to preserve initiators so skipped agents can still trigger summary later.
+const forceTriggeredGroups = new Set<string>();
 
 const MAX_CHAIN_FORWARDS = 10;
 const MAX_CHAIN_DURATION_MS = 5 * 60_000; // 5 minutes
 const SUMMARY_DELAY_MS = 10_000; // Wait after all agents replied (summary trigger)
-const MAX_PENDING_WAIT_MS = 30_000; // Max wait for pending agents
-const MAX_SUMMARY_ROUNDS = 3;
+const MAX_PENDING_WAIT_MS = 60_000; // Max wait for pending agents
+const MAX_SUMMARY_ROUNDS = 15;
 
 /** Get or create chain state for a group */
 function getOrCreateChainState(groupId: string): ChainState {
@@ -784,6 +787,9 @@ function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
           `pendingAgents=[${[...chain.pendingAgents].join(",")}] activeStreams=${activeStreamCount}`,
       );
       // Force-clear stuck state and execute
+      // Mark as force-triggered so initiators are preserved after summary,
+      // allowing skipped agents to still trigger summary when they reply.
+      forceTriggeredGroups.add(groupId);
       chain.pendingAgents.clear();
       const nextHostPending = new Set(host.groupPendingAgents);
       const activeStreamSet = groupActiveStreamKeys.get(groupId) ?? new Set();
@@ -1048,12 +1054,16 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
 
     // Reset chain state for summary round, but KEEP the original startedAt
     // so that the chain duration limit can eventually fire.
+    // If force-triggered (some agents skipped), preserve initiators so that
+    // when skipped agents reply, summary can still be triggered to them.
+    const wasForceTriggered = forceTriggeredGroups.has(groupId);
+    forceTriggeredGroups.delete(groupId);
     const originalStartedAt = chain.startedAt;
     const now = Date.now();
     groupChainStates.set(groupId, {
       count: chain.count, // Preserve count — summary is part of the same chain
       startedAt: originalStartedAt, // Keep original start time for duration limit
-      initiators: [],
+      initiators: wasForceTriggered ? chain.initiators : [],
       pendingAgents: new Set(validInitiators),
       lastMessageAt: now,
       lastProgressAt: now, // Reset progress timestamp for new summary round
@@ -1071,6 +1081,7 @@ export function resetChainState(groupId: string): void {
   cancelSummaryTimer(groupId);
   summaryInFlight.delete(groupId);
   summaryRerunRequested.delete(groupId);
+  forceTriggeredGroups.delete(groupId);
   clearParsedMentionMessages(groupId);
 }
 
@@ -1083,6 +1094,7 @@ export function getMentionedAgents(groupId: string): string[] {
 /** Cancel summary manually */
 export function cancelSummary(host: GroupHost, groupId: string): void {
   cancelSummaryTimer(groupId);
+  forceTriggeredGroups.delete(groupId);
   appendSystemMessageToUI(host, groupId, "已取消自动汇总。");
 }
 
@@ -1093,6 +1105,7 @@ export async function triggerSummary(host: GroupHost, groupId: string): Promise<
     return;
   }
   cancelSummaryTimer(groupId);
+  forceTriggeredGroups.delete(groupId); // Manual trigger is not force-triggered
   await sendSummaryMessage(host, groupId);
 }
 
@@ -1130,6 +1143,7 @@ export async function detectAndForwardMentions(
   const currentChain = groupChainStates.get(message.groupId);
   const initiatorSet = new Set(currentChain?.initiators ?? []);
   const memberIds = allMemberIds.filter((id) => !initiatorSet.has(id));
+  const senderAgentId = message.sender.type === "agent" ? message.sender.agentId : undefined;
 
   const cleanContent =
     message.role === "assistant" ? stripThinkingTags(message.content) : message.content;
@@ -1138,6 +1152,13 @@ export async function detectAndForwardMentions(
   if (dedicatedMentions.length === 0) {
     const chain = groupChainStates.get(message.groupId);
     if (chain && chain.initiators.length > 0) {
+      // If sender is an initiator, don't trigger summary (avoids loop after
+      // force-triggered summary where initiator just replied). Initiators will
+      // be cleared when all agents have replied via normal summary flow.
+      if (senderAgentId && chain.initiators.includes(senderAgentId)) {
+        chain.lastMessageAt = Date.now();
+        return;
+      }
       chain.lastMessageAt = Date.now();
       requestSummaryCheck(host, message.groupId);
       return;
@@ -1147,12 +1168,15 @@ export async function detectAndForwardMentions(
   }
 
   // Exclude sender from mentions
-  const senderAgentId = message.sender.type === "agent" ? message.sender.agentId : undefined;
   const mentionedIds = [...new Set(dedicatedMentions.filter((id) => id !== senderAgentId))];
 
   if (mentionedIds.length === 0) {
     const chain = groupChainStates.get(message.groupId);
     if (chain && chain.initiators.length > 0) {
+      if (senderAgentId && chain.initiators.includes(senderAgentId)) {
+        chain.lastMessageAt = Date.now();
+        return;
+      }
       chain.lastMessageAt = Date.now();
       requestSummaryCheck(host, message.groupId);
       return;
@@ -1471,6 +1495,7 @@ export async function sendGroupMessage(
   cancelSummaryTimer(groupId);
   summaryRounds.delete(groupId);
   summaryRerunRequested.delete(groupId);
+  forceTriggeredGroups.delete(groupId);
 
   const now = Date.now();
   groupChainStates.set(groupId, {

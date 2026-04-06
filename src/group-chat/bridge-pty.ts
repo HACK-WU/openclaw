@@ -195,6 +195,18 @@ export async function createBridgePty(params: {
   const spawn = await loadPtySpawn();
   const cfg = params.config;
 
+  // Normalize command: if command contains spaces and args is empty,
+  // split command into executable and args to support shell-like command entry
+  let effectiveCommand = cfg.command;
+  let effectiveArgs = cfg.args ?? [];
+  if (effectiveCommand.includes(" ") && effectiveArgs.length === 0) {
+    const parts = effectiveCommand.split(/\s+/).filter((p) => p.length > 0);
+    if (parts.length > 1) {
+      effectiveCommand = parts[0];
+      effectiveArgs = parts.slice(1);
+    }
+  }
+
   const cwd = params.effectiveCwd ?? cfg.cwd ?? process.cwd();
   const env: Record<string, string> = {
     ...stringifyEnv(process.env),
@@ -206,12 +218,12 @@ export async function createBridgePty(params: {
   log.info("[BRIDGE_PTY_CREATE]", {
     groupId: params.groupId,
     agentId: params.agentId,
-    command: cfg.command,
-    args: cfg.args,
+    command: effectiveCommand,
+    args: effectiveArgs,
     cwd,
   });
 
-  const handle = spawn(cfg.command, cfg.args ?? [], {
+  const handle = spawn(effectiveCommand, effectiveArgs, {
     name: "xterm-256color",
     cols: DEFAULT_PTY_COLS,
     rows: DEFAULT_PTY_ROWS,
