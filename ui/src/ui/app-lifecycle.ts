@@ -249,7 +249,9 @@ export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unk
       }
       const distanceFromBottom =
         container.scrollHeight - container.scrollTop - container.clientHeight;
-      const isNearBottom = distanceFromBottom < 450;
+      // Only auto-scroll when truly near bottom (within 100px)
+      // This prevents auto-scroll from interrupting user's manual scroll
+      const isNearBottom = distanceFromBottom < 100;
       // Auto-scroll if near bottom, on initial group enter, or on initial message load
       if (isNearBottom || isGroupEnter || isInitialLoad) {
         // Use instant scroll for initial load/enter, smooth for subsequent updates
