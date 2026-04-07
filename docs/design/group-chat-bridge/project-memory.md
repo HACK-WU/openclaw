@@ -108,6 +108,15 @@
 
 - JWT 认证，token 24h，refresh token 7d
 - PostgreSQL + Prisma
+- 三层架构：Controller → Service → Repository
+
+## 代码结构
+
+- 认证模块：src/auth/（JWT 生成/验证、OAuth 回调）
+- API 路由注册：src/routes/index.ts，按 v1/v2 分目录
+- 中间件：src/middleware/（auth、rateLimit、errorHandler）
+- 数据库模型：prisma/schema.prisma，迁移在 prisma/migrations/
+- 定时任务：src/scheduler.ts（基于 node-cron）
 
 ## 编码约定
 
@@ -185,6 +194,9 @@
 
 - auth 模块 JWT secret 通过环境变量 AUTH_SECRET 注入
 - Prisma SQLite 下不支持 enum，改用 string 类型
+- refresh token 逻辑在 src/auth/refresh.ts，依赖 src/auth/jwt.ts 的 verifyToken()
+- 数据库连接池配置在 src/config/database.ts，默认 pool_size=10
+- src/utils/retry.ts 提供统一重试逻辑（指数退避，最多 3 次）
 
 ## Session
 
@@ -267,6 +279,8 @@ interface MemoryMergeState {
   lastMergeAt: number | null; // 上次合并完成的时间戳（ms）
   lastMergeSource: "auto" | "manual-merge" | "manual-compact" | null; // 上次触发来源
   dirtyAfterMerge: boolean; // 上次合并后是否有 Agent 写入新记忆
+  merging: boolean; // 是否正在执行合并
+  mergingStartedAt: number | null; // 合并开始时间（用于超时保护）
 }
 ```
 
@@ -274,13 +288,22 @@ interface MemoryMergeState {
 
 | 规则             | 说明                                                                                                                                                |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **冷却期**       | 上次合并完成后 **10 分钟**内，拒绝新的合并请求（可配置）                                                                                            |
+| **冷却期**       | 上次合并完成后 **5 分钟**内，拒绝新的合并请求（可配置）                                                                                             |
 | **自动触发跳过** | 发起者汇总时，如果在冷却期内，跳过记忆合并指令。汇总的其他工作（如对话总结）不受影响                                                                |
 | **手动触发排队** | 用户点击"合并记忆"/"精简记忆"按钮时，如果在冷却期内，前端弹出提示"距上次合并不到 X 分钟，是否强制执行？"，用户确认后才发送                          |
 | **脏标记检查**   | 自动触发时额外检查 `dirtyAfterMerge`：如果上次合并后没有任何 Agent 写入过记忆文件，即使冷却期已过也跳过（无新内容，合并无意义）。手动触发不受此限制 |
 | **并发锁**       | 如果一次合并正在进行中（助理 Agent 尚未完成），新的合并请求直接丢弃。通过 `merging` 标记实现                                                        |
+| **合并超时保护** | 如果 `merging` 为 true 超过 **3 分钟**仍未完成，自动释放锁（`merging = false`）。防止助理 Agent PTY 崩溃或卡死导致锁永久占用                        |
 
-#### 4.2.3 冷却流程
+#### 4.2.3 合并完成检测
+
+系统如何知道助理 Agent 完成了合并？有两种互补机制：
+
+1. **文件变更检测（主要）**：系统监听 `MEMORY.md` 和 `SESSION.md` 的文件变更（`fs.watch` 或 `mtime` 检查）。当助理 Agent 写入这两个文件后，视为合并完成。设置一个短暂的去抖动（2 秒），等待两个文件都写入完毕后标记完成
+2. **回复检测（辅助）**：助理 Agent 在合并提示词中被要求完成后回复确认消息。系统检测到助理 Agent 的回复中包含"合并完成"/"精简完成"等关键词时，也标记完成
+3. **超时兜底**：如果 3 分钟内以上两种机制都未触发，自动释放锁并记录警告日志
+
+#### 4.2.4 冷却流程
 
 ```
 收到合并请求（自动/手动）
@@ -288,7 +311,7 @@ interface MemoryMergeState {
     ├── 检查 merging == true?
     │      └── 是 → 丢弃请求，提示"合并正在进行中"
     │
-    ├── 检查冷却期（now - lastMergeAt < 10min）?
+    ├── 检查冷却期（now - lastMergeAt < cooldown）?
     │      └── 是 →
     │           ├── 自动触发 → 静默跳过
     │           └── 手动触发 → 前端弹出确认"距上次合并不到 X 分钟"
@@ -308,7 +331,7 @@ interface MemoryMergeState {
     └── done
 ```
 
-#### 4.2.4 脏标记更新
+#### 4.2.5 脏标记更新
 
 当系统检测到任何 Agent 写入了其专属记忆文件 `{agentId}.md` 时，将 `dirtyAfterMerge` 设为 `true`。
 
@@ -347,7 +370,9 @@ interface MemoryMergeState {
 
 ### 4.4 助理 Agent 合并提示词
 
-当触发助理 Agent 汇总时，系统在上下文中注入以下指令。Agent 专属记忆文件列表由系统动态扫描目录获得：
+> **注入方式**：合并提示词**由前端作为对话消息发送**（消息类型为系统指令，页面不显示给用户），不需要后端在上下文中注入。前端在发送时动态填充文件路径和 Agent 列表。
+
+当触发合并时，前端发送以下消息（@助理 Agent），Agent 专属记忆文件列表由前端动态扫描目录获得：
 
 ```
 # ================================================================================
@@ -365,7 +390,9 @@ interface MemoryMergeState {
 
 # 3. 更新 MEMORY.md（共享永久记忆）：
 #    - 从各 Agent 专属记忆的 Permanent 部分提取与项目相关的关键信息
-#    - 只记录重要内容：架构决策、编码约定、踩坑记录、项目知识
+#    - 只记录重要内容：架构决策、代码结构、编码约定、踩坑记录、项目知识
+#    - 特别注意提取代码结构知识：关键模块路径、核心架构分层、重要文件职责
+#      （这些信息能帮助所有 Agent 避免重复搜索代码库）
 #    - 不要记录与项目无关的内容
 #    - 去重：如果信息已存在于 MEMORY.md 中，跳过
 #    - 保持内容简短概括，用一两句话总结关键点
@@ -383,7 +410,7 @@ interface MemoryMergeState {
 #    - 各 Agent 会自行管理自己文件中的内容
 ```
 
-> `{agentFileList}` 由系统动态生成，扫描 `{memoryDir}/` 下的 `*.md` 文件，排除 `MEMORY.md` 和 `SESSION.md`，格式如：
+> `{agentFileList}` 由前端动态生成，扫描 `{memoryDir}/` 下的 `*.md` 文件，排除 `MEMORY.md` 和 `SESSION.md`，格式如：
 >
 > ```
 > #    - {memoryDir}/claude-code.md
@@ -392,7 +419,9 @@ interface MemoryMergeState {
 
 ### 4.5 精简记忆提示词
 
-当用户点击"精简记忆"按钮时，系统 @助理 Agent 并注入：
+> **注入方式**：同 §4.4，由前端作为对话消息发送（页面不显示）。
+
+当用户点击"精简记忆"按钮时，前端发送以下消息（@助理 Agent）：
 
 ```
 # ================================================================================
@@ -414,9 +443,11 @@ interface MemoryMergeState {
 
 ## 5. CLI Agent 提示词设计
 
-### 5.1 记忆管理提示词（每次交互注入）
+### 5.1 记忆管理提示词（降频注入）
 
-在 `buildCliContextMessage()` 构建上下文时，注入以下记忆管理指令。注入位置在群聊历史消息之前、用户请求之前。
+> **注入频率**：不需要每次对话都注入完整的记忆管理提示词。采用**降频注入**策略：PTY 启动时首次注入，之后每 **5 次交互**注入一次。在未注入的交互中，Agent 仍能正常工作（记忆文件路径和内容照常提供），只是缺少详细的写入规则提醒——但 Agent 在前几次交互中已经学会了规则。
+
+在 `buildCliContextMessage()` 构建上下文时，按降频策略注入以下记忆管理指令。注入位置在群聊历史消息之前、用户请求之前。
 
 ```
 # ================================================================================
@@ -457,6 +488,30 @@ interface MemoryMergeState {
 # 6. 内容必须简短，每条记忆用一两句话概括关键信息
 # 7. 使用简洁的 Markdown 格式，保持文件结构清晰
 
+# ─── 代码知识记忆（开发项目重点） ───
+#
+# 如果你正在参与的是一个开发项目（有源代码目录），请特别注意记录以下代码相关知识。
+# 这些记忆能帮助你（和其他 Agent）避免反复搜索代码库，显著提升工作效率：
+#
+# ✅ **关键代码路径**：核心模块/文件的位置和职责
+#    例："认证逻辑在 src/auth/jwt.ts，中间件在 src/middleware/auth.ts"
+#    例："API 路由统一注册在 src/routes/index.ts，按 v1/v2 分目录"
+#
+# ✅ **核心架构**：项目的整体架构模式和分层
+#    例："三层架构：Controller(src/controllers) → Service(src/services) → Repository(src/repos)"
+#    例："微服务通过 gRPC 通信，proto 定义在 proto/ 目录"
+#
+# ✅ **关键模块作用**：重要模块/类/函数的简要说明
+#    例："TaskScheduler(src/scheduler.ts) 负责定时任务，基于 node-cron"
+#    例："src/utils/retry.ts 提供统一的重试逻辑，指数退避，最多 3 次"
+#
+# ✅ **数据流和依赖关系**：模块间的调用关系和数据流向
+#    例："请求流程：nginx → Express(8080) → AuthMiddleware → Router → Controller"
+#    例："消息队列：Producer(src/mq/publish.ts) → RabbitMQ → Consumer(src/mq/consume.ts)"
+#
+# ⚠️ 不要记录代码的具体实现细节（如函数体内容），只记路径和职责概要
+# ⚠️ 保持精简，每条不超过一两句话
+
 # ─── 去重规则 ───
 #
 # 不要为了去重而刻意去读取共享记忆文件。只有在你正常工作过程中恰好读到了
@@ -480,14 +535,60 @@ interface MemoryMergeState {
 # - （当前会话的临时记忆）
 ```
 
-### 5.2 注入策略
+### 5.2 临时记忆管理提示词（未关联项目时注入）
+
+当群聊未关联项目时，使用简化版提示词。不涉及共享记忆文件，仅管理 Agent 专属记忆。
+
+```
+# ================================================================================
+# 记忆系统（临时模式）
+# ================================================================================
+
+# 你在群聊中有一个专属记忆文件，用于存储你认为需要记住的关键信息。
+# 当前群聊未关联项目，没有共享记忆文件。
+
+# 文件路径：
+# - 你的专属记忆：{agentMemoryFile}
+
+# ─── 写入规则 ───
+#
+# 1. 以下情况应该记录到 Permanent 部分：
+#    ✅ 发现了重要的技术细节或 bug
+#    ✅ 重要的决策及其原因
+#    ✅ 发现的未文档化行为或环境特性
+#
+# 2. 以下情况应该记录到 Session 部分：
+#    ✅ 当前正在做的事情及进度
+#    ✅ 遇到的阻塞问题和待确认事项
+#
+# 3. 以下情况不应该记录：
+#    ❌ 常规操作（如运行命令、读文件）
+#    ❌ 中间调试步骤和临时尝试
+#
+# 4. 写入前先读取文件现有内容，避免重复
+# 5. 内容必须简短，每条记忆用一两句话概括
+
+# ─── 文件格式 ───
+#
+# # {agentId} Memory
+#
+# ## Permanent
+#
+# - （永久记忆）
+#
+# ## Session
+#
+# - （临时记忆）
+```
+
+### 5.3 注入策略
 
 | 文件           | PTY 启动时                     | 后续交互                                       |
 | -------------- | ------------------------------ | ---------------------------------------------- |
 | `MEMORY.md`    | 注入文件内容                   | **只注入路径**，不注入内容                     |
 | `SESSION.md`   | 注入文件内容                   | **每次都注入内容**（内容短、变化频繁）         |
 | `{agentId}.md` | 注入文件内容（如存在）         | **每次都注入内容**（Agent 需要看到自己的记忆） |
-| 记忆管理提示词 | **每次都注入**（保持行为一致） |
+| 记忆管理提示词 | **首次注入** + 每 5 次交互注入 | 降频注入（节省 token）                         |
 
 > **注**："PTY 启动时"等同于 `cli-agent-context.md` 中定义的"首次交互"——即 PTY 进程创建后的第一次交互。PTY 重启（包括崩溃恢复）视为新的"PTY 启动"。
 
@@ -496,11 +597,11 @@ interface MemoryMergeState {
 - `MEMORY.md` 后续只给路径：内容长、不常变，Agent 需要时可自行读取
 - `SESSION.md` 每次注入内容：内容短、变化频繁，Agent 需要了解当前会话全局进展
 - `{agentId}.md` 每次注入内容：Agent 需要看到自己之前记了什么，决定是否需要补充
-- 记忆管理提示词每次都注入：确保 Agent 始终遵守写入规则
+- 记忆管理提示词**降频注入**：Agent 在首次交互时已学会写入规则，后续无需每次重复。每 5 次交互提醒一次即可保持行为一致性，同时节省 token 开销。如果检测到 Agent 出现不遵守规则的行为（如写入了 MEMORY.md），可在下次交互中强制注入提示词
 
-### 5.3 完整注入格式
+### 5.4 完整注入格式
 
-#### 5.3.1 PTY 启动时（首次交互）
+#### 5.4.1 PTY 启动时（首次交互）
 
 ```
 # ================================================================================
@@ -532,7 +633,7 @@ interface MemoryMergeState {
 # ================================================================================
 ```
 
-#### 5.3.2 后续交互
+#### 5.4.2 后续交互
 
 ```
 # ================================================================================
@@ -561,7 +662,7 @@ interface MemoryMergeState {
 # [{agentId}.md 文件内容，如为空则跳过]
 
 # ================================================================================
-# 记忆管理指令
+# 记忆管理指令（每 5 次交互注入，非每次注入时此段省略）
 # ================================================================================
 
 # 你在群聊中有一个专属记忆文件...
@@ -570,7 +671,7 @@ interface MemoryMergeState {
 # ================================================================================
 ```
 
-### 5.4 上下文注入顺序
+### 5.5 上下文注入顺序
 
 项目上下文注入的完整顺序（在群聊历史之前）：
 
@@ -580,7 +681,7 @@ interface MemoryMergeState {
 3. 角色提醒（如需要）                                      ← 达到间隔时
 4. 项目说明文档（README.md / ARCHITECTURE.md 等）          ← 群聊配置的 docs
 5. 项目记忆（MEMORY.md + SESSION.md + {agentId}.md）       ← 本次新增
-6. 记忆管理指令                                            ← 每次交互
+6. 记忆管理指令                                            ← 降频（首次 + 每5次）
 7. 群聊历史消息                                            ← 完整/增量
 8. 用户请求
 ```
@@ -612,7 +713,7 @@ interface MemoryMergeState {
 │                                                              │
 │ ─── 总计 ───                                                 │
 │                                                              │
-│ 总大小：19.6 KB / 50 KB                                     │
+│ 总大小：19.6 KB / 50 KB  ⚙️ 可设置                           │
 │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━░░░░░░░░░░░░░░░░░░░  39% │
 │                                                              │
 │ [合并记忆]  [精简记忆]                                       │
@@ -631,30 +732,40 @@ interface MemoryMergeState {
 
 ### 6.4 大小预警
 
-- 总大小接近 **50KB** 时，进度条变为黄色并显示提示：`⚠️ 记忆文件总大小接近上限（50KB），建议精简`
-- 总大小超过 **50KB** 时，进度条变为红色并显示提示：`🔴 记忆文件已超过 50KB 上限，请立即精简`
+> 记忆文件大小上限默认 **50KB**，支持在群聊设置中自定义调整（`memory.maxSize`，单位 KB）。预警阈值为上限的 80%。
+
+- 总大小接近上限的 **80%**（默认 40KB）时，进度条变为黄色并显示提示：`⚠️ 记忆文件总大小接近上限（{maxSize}KB），建议精简`
+- 总大小超过上限（默认 50KB）时，进度条变为红色并显示提示：`🔴 记忆文件已超过 {maxSize}KB 上限，请立即精简`
 
 ### 6.5 操作按钮
 
 #### "合并记忆"按钮
 
-点击后，系统在群聊中发送一条消息，自动 @助理 Agent：
+点击后，前端执行以下动作：
+
+1. **页面提示**：在群聊区域或面板中显示 toast 提示 `ℹ️ 已发送记忆合并指令，助理 Agent 正在处理...`
+2. **发送不可见消息**：在群聊中发送一条**不可见的系统指令消息**（页面不显示，但作为对话内容传入），@助理 Agent：
 
 ```
 @助理Agent 请执行记忆合并，将各 Agent 专属记忆中的关键信息汇总到共享记忆文件中。
 ```
 
-系统同时注入 §4.4 中的合并提示词到助理 Agent 的上下文。
+3. 前端同时将 §4.4 中的合并提示词作为消息内容一并发送
+4. **完成提示**：当系统检测到合并完成（见 §4.2.3 合并完成检测），在页面显示 toast 提示 `✅ 记忆合并完成`
 
 #### "精简记忆"按钮
 
-点击后，系统在群聊中发送一条消息，自动 @助理 Agent：
+点击后，前端执行以下动作：
+
+1. **页面提示**：显示 toast 提示 `ℹ️ 已发送记忆精简指令，助理 Agent 正在处理...`
+2. **发送不可见消息**：在群聊中发送一条**不可见的系统指令消息**（同上），@助理 Agent：
 
 ```
 @助理Agent 请精简记忆文件，清理过时、冗余或过于冗长的记忆条目。
 ```
 
-系统同时注入 §4.5 中的精简提示词到助理 Agent 的上下文。
+3. 前端同时将 §4.5 中的精简提示词作为消息内容一并发送
+4. **完成提示**：当系统检测到精简完成，在页面显示 toast 提示 `✅ 记忆精简完成`
 
 #### 按钮冷却状态（见 §4.2）
 
@@ -663,7 +774,7 @@ interface MemoryMergeState {
 | 状态             | 按钮表现                                                    | 说明                    |
 | ---------------- | ----------------------------------------------------------- | ----------------------- |
 | **合并进行中**   | 灰化 + 旋转图标 + 文字变为"合并中..."                       | 助理 Agent 正在执行合并 |
-| **冷却期内**     | 灰化 + 显示剩余时间 "X 分钟后可用"                          | 距上次合并不足 10 分钟  |
+| **冷却期内**     | 灰化 + 显示剩余时间 "X 分钟后可用"                          | 距上次合并不足 5 分钟   |
 | **冷却期内强制** | 点击后弹出确认框"距上次合并不到 X 分钟，确定要再次执行吗？" | 允许用户强制触发        |
 | **可用**         | 正常可点击                                                  | 冷却期已过              |
 
@@ -678,6 +789,16 @@ interface MemoryMergeState {
 打开一个编辑弹窗，支持直接修改文件内容（Markdown 编辑器）。保存后直接写入文件。
 
 > **注**：临时记忆模式下不显示"合并记忆"和"精简记忆"按钮（没有共享记忆文件）。
+
+### 6.6 记忆配置项
+
+记忆管理面板中的 `⚙️` 入口（或群聊设置页）提供以下可配置项：
+
+| 配置项       | 键名             | 默认值 | 说明                       |
+| ------------ | ---------------- | ------ | -------------------------- |
+| 记忆大小上限 | `memory.maxSize` | 50 KB  | 所有记忆文件总大小的上限值 |
+
+> 这些配置项存储在群聊配置中，由前端面板提供设置 UI。后端在计算预警阈值和 `MemoryStatus` 时读取该配置。
 
 ---
 
@@ -701,6 +822,12 @@ interface MemoryMergeState {
 | 群聊解散             | 系统删除（随群聊目录一起清理） |
 
 > **注**：SESSION.md **仅在群聊解散时**回收清理，不在 PTY 空闲回收时清空。这确保了会话上下文在群聊存续期间始终保持。
+
+**内容膨胀防护**：如果群聊存续数周，SESSION.md 可能持续增长。助理 Agent 在每次汇总时应遵循以下淘汰策略：
+
+- **覆盖而非追加**：SESSION.md 的内容是**全量替换**而非追加。每次汇总时，助理 Agent 重新整理当前会话状态，而非在末尾追加
+- **精简提示词兜底**：合并提示词（§4.4）中已要求"保持简短精炼"，助理 Agent 应自主精简过时内容
+- **大小上限**：如果 SESSION.md 超过 **10KB**，助理 Agent 在汇总时应更激进地精简（删除已完成任务、过时的待确认事项等）
 
 ### 7.3 Agent 专属记忆 `{agentId}.md`
 
@@ -738,7 +865,7 @@ interface MemoryMergeState {
 ```
 
 4. 如果用户点击"整理记忆并解散"：
-   - 系统在群聊中 @助理 Agent，注入以下提示词：
+   - 前端在群聊中发送一条不可见的系统指令消息，@助理 Agent，内容为以下提示词：
 
 ```
 # ================================================================================
@@ -774,12 +901,27 @@ interface MemoryMergeState {
 
 PTY 启动时（首次交互），系统自动创建记忆目录和必要的文件。
 
+**新群关联项目时的初始化**：如果项目级共享记忆 `{projectDir}/.openclaw/MEMORY.md` 已有内容（来自之前解散的群聊），系统在创建新群聊的 `MEMORY.md` 时，将项目级记忆的内容作为初始内容写入（而非空模板）。这样新群中的 Agent 从一开始就能获得前序群聊积累的项目知识。
+
+```typescript
+// 初始化群聊 MEMORY.md 时的逻辑
+const projectLevelMemory = await readFileOrNull(projectLevelMemoryFile);
+if (projectLevelMemory && !isEmptyTemplate(projectLevelMemory)) {
+  // 项目级记忆存在且非空 → 用它作为新群的初始共享记忆
+  await writeIfNotExists(sharedMemoryFile, projectLevelMemory);
+} else {
+  await writeIfNotExists(sharedMemoryFile, MEMORY_TEMPLATE);
+}
+```
+
 **MEMORY.md 初始模板**：
 
 ```markdown
 # Project Memory
 
 ## 架构决策
+
+## 代码结构
 
 ## 编码约定
 
@@ -927,13 +1069,15 @@ async function scanAgentMemoryFiles(memoryDir: string): Promise<string[]> {
 ```typescript
 // src/group-chat/bridge-memory.ts
 
-const DEFAULT_MERGE_COOLDOWN_MS = 10 * 60 * 1000; // 10 分钟
+const DEFAULT_MERGE_COOLDOWN_MS = 5 * 60 * 1000; // 5 分钟
+const MERGE_TIMEOUT_MS = 3 * 60 * 1000; // 3 分钟超时保护
 
 interface MemoryMergeState {
   lastMergeAt: number | null;
   lastMergeSource: "auto" | "manual-merge" | "manual-compact" | null;
   dirtyAfterMerge: boolean;
   merging: boolean;
+  mergingStartedAt: number | null; // 合并开始时间（用于超时保护）
 }
 
 // 每个群聊维护一个合并状态（存储在群聊运行时状态中）
@@ -946,6 +1090,7 @@ function getMergeState(groupId: string): MemoryMergeState {
       lastMergeSource: null,
       dirtyAfterMerge: true, // 初始视为脏，首次合并应执行
       merging: false,
+      mergingStartedAt: null,
     });
   }
   return mergeStates.get(groupId)!;
@@ -965,6 +1110,15 @@ function checkMergeCooldown(
   cooldownRemainMs?: number;
 } {
   const state = getMergeState(groupId);
+
+  // 0. 超时保护：如果合并已超过 3 分钟，自动释放锁
+  if (state.merging && state.mergingStartedAt) {
+    if (Date.now() - state.mergingStartedAt > MERGE_TIMEOUT_MS) {
+      console.warn(`[memory] merge timeout for group ${groupId}, releasing lock`);
+      state.merging = false;
+      state.mergingStartedAt = null;
+    }
+  }
 
   // 1. 正在合并中 → 拒绝
   if (state.merging) {
@@ -998,6 +1152,7 @@ function checkMergeCooldown(
 function markMergeStart(groupId: string): void {
   const state = getMergeState(groupId);
   state.merging = true;
+  state.mergingStartedAt = Date.now();
 }
 
 /**
@@ -1009,6 +1164,7 @@ function markMergeComplete(
 ): void {
   const state = getMergeState(groupId);
   state.merging = false;
+  state.mergingStartedAt = null;
   state.lastMergeAt = Date.now();
   state.lastMergeSource = source;
   state.dirtyAfterMerge = false;
@@ -1030,6 +1186,9 @@ function markMemoryDirty(groupId: string): void {
 
 const projectDir = meta?.config?.project?.directory;
 const groupName = meta?.groupName ?? meta?.groupId;
+
+// 交互计数器（用于记忆管理提示词降频注入）
+const MEMORY_PROMPT_INTERVAL = 5; // 每 5 次交互注入一次记忆管理提示词
 
 if (projectDir) {
   // 项目记忆模式
@@ -1074,10 +1233,14 @@ if (projectDir) {
     }
   }
 
-  // 记忆管理指令：每次注入
-  sections.push(
-    ...buildMemoryManagementPrompt(sharedMemoryFile, sharedSessionFile, agentMemoryFile, agentId),
-  );
+  // 记忆管理指令：降频注入（首次 + 每 N 次交互）
+  const shouldInjectMemoryPrompt =
+    isFirstInteraction || interactionCount % MEMORY_PROMPT_INTERVAL === 0;
+  if (shouldInjectMemoryPrompt) {
+    sections.push(
+      ...buildMemoryManagementPrompt(sharedMemoryFile, sharedSessionFile, agentMemoryFile, agentId),
+    );
+  }
 } else {
   // 临时记忆模式：只有 Agent 专属记忆
   const { agentMemoryFile } = resolveTempMemoryPaths(stateDir, groupId, agentId);
@@ -1093,8 +1256,12 @@ if (projectDir) {
     }
   }
 
-  // 临时记忆模式的简化提示词
-  sections.push(...buildTempMemoryManagementPrompt(agentMemoryFile, agentId));
+  // 临时记忆模式的简化提示词（见 §5.2）：同样降频注入
+  const shouldInjectMemoryPrompt =
+    isFirstInteraction || interactionCount % MEMORY_PROMPT_INTERVAL === 0;
+  if (shouldInjectMemoryPrompt) {
+    sections.push(...buildTempMemoryManagementPrompt(agentMemoryFile, agentId));
+  }
 }
 ```
 
@@ -1149,6 +1316,7 @@ async function cleanupGroupMemory(
 ```typescript
 /**
  * 获取记忆文件状态（供前端记忆管理面板使用）
+ * @param maxSizeKB 记忆文件总大小上限（KB），默认 50，可通过群聊配置 memory.maxSize 覆盖
  */
 async function getMemoryStatus(
   projectDir: string | undefined,
@@ -1156,6 +1324,7 @@ async function getMemoryStatus(
   groupId: string,
   groupName: string,
   agentIds: string[],
+  maxSizeKB: number = 50,
 ): Promise<MemoryStatus> {
   const files: MemoryFileInfo[] = [];
   let totalSize = 0;
@@ -1189,12 +1358,20 @@ async function getMemoryStatus(
     }
   }
 
+  const maxBytes = maxSizeKB * 1024;
+  const warningThresholdBytes = maxBytes * 0.8; // 80%
+
   return {
     files,
     totalSize,
-    maxSize: 50 * 1024, // 50KB
+    maxSize: maxBytes,
+    maxSizeKB,
     warning:
-      totalSize > 40 * 1024 ? "approaching-limit" : totalSize > 50 * 1024 ? "over-limit" : "ok",
+      totalSize > maxBytes
+        ? "over-limit"
+        : totalSize > warningThresholdBytes
+          ? "approaching-limit"
+          : "ok",
   };
 }
 
@@ -1207,7 +1384,8 @@ type MemoryFileInfo = {
 type MemoryStatus = {
   files: MemoryFileInfo[];
   totalSize: number;
-  maxSize: number;
+  maxSize: number; // bytes
+  maxSizeKB: number; // KB（原始配置值，供前端展示）
   warning: "ok" | "approaching-limit" | "over-limit";
 };
 ```
@@ -1216,33 +1394,38 @@ type MemoryStatus = {
 
 ## 9. 改动范围
 
-| 文件                                     | 改动               | 说明                                                                           |
-| ---------------------------------------- | ------------------ | ------------------------------------------------------------------------------ |
-| `src/group-chat/bridge-memory.ts`        | **新增** (~280 行) | 路径解析、模板定义、文件初始化、提示词构建、状态查询、扫描、清理、合并冷却机制 |
-| `src/group-chat/bridge-trigger.ts`       | ~50 行             | `buildCliContextMessage()` 集成项目记忆/临时记忆注入                           |
-| `src/gateway/server-methods/group.ts`    | ~30 行             | 群聊解散时检查记忆、触发整理流程                                               |
-| `ui/src/ui/views/group-settings.ts`      | ~120 行            | 记忆管理面板 UI（文件列表、大小展示、预警、操作按钮）                          |
-| `ui/src/ui/components/memory-preview.ts` | **新增** (~80 行)  | 记忆文件预览/编辑弹窗组件                                                      |
-| `cli-agent-context.md`                   | ~10 行             | 同步更新注入流程说明，增加记忆系统引用                                         |
-| `README.md`（导航表）                    | ~3 行              | 增加本文档的导航链接                                                           |
+| 文件                                     | 改动               | 说明                                                                                                             |
+| ---------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `src/group-chat/bridge-memory.ts`        | **新增** (~320 行) | 路径解析、模板定义、文件初始化（含项目级记忆继承）、提示词构建、状态查询、扫描、清理、合并冷却机制（含超时保护） |
+| `src/group-chat/bridge-trigger.ts`       | ~50 行             | `buildCliContextMessage()` 集成项目记忆/临时记忆注入                                                             |
+| `src/gateway/server-methods/group.ts`    | ~30 行             | 群聊解散时检查记忆、触发整理流程                                                                                 |
+| `ui/src/ui/views/group-settings.ts`      | ~120 行            | 记忆管理面板 UI（文件列表、大小展示、预警、操作按钮）                                                            |
+| `ui/src/ui/components/memory-preview.ts` | **新增** (~80 行)  | 记忆文件预览/编辑弹窗组件                                                                                        |
+| `cli-agent-context.md`                   | ~10 行             | 同步更新注入流程说明，增加记忆系统引用                                                                           |
+| `README.md`（导航表）                    | ~3 行              | 增加本文档的导航链接                                                                                             |
 
-**总改动量**：~573 行新增/修改代码，无现有文件破坏性修改。
+**总改动量**：~613 行新增/修改代码，无现有文件破坏性修改。
 
 ---
 
 ## 10. 安全考量
 
 1. **路径遍历**：`projectDir` 和 `groupName` 必须经过校验，防止路径遍历攻击。`groupName` 中的特殊字符（如 `/`、`..`、`\`）需要被过滤或转义
-2. **文件大小**：各文件建议上限 50KB，防止上下文过长。前端面板实时展示大小并提供预警
+2. **文件大小**：各文件总大小默认上限 50KB（可通过 `memory.maxSize` 配置调整），防止上下文过长。前端面板实时展示大小并提供预警（达到 80% 时黄色预警，超过上限时红色告警）
 3. **权限隔离**：通过提示词约束读写权限（CLI Agent 是 AI，能理解并遵守规则）
-4. **群名称安全**：群名称作为目录名使用时，需要做文件系统安全处理（去除非法字符、限制长度、处理重名）
+4. **群名称安全**：群名称作为目录名使用时，需要做文件系统安全处理：
+   - **非法字符过滤**：去除 `/`、`\`、`..`、`:` 等文件系统非法/危险字符，替换为 `_`
+   - **长度限制**：目录名不超过 64 字符（含 sanitize 后），超长部分截断并追加短 hash（如前 56 字符 + `-` + 7 字符 hash）
+   - **重名处理**：如果同一项目下有两个同名群聊（sanitize 后同名），在目录名后追加群聊 ID 的短 hash（如 `项目开发组-a3f2b1c/`）。系统在创建目录时检测冲突，仅在冲突时追加后缀
+   - **空名称**：群名称为空或全为非法字符时，fallback 使用 `group-{groupId短hash}` 作为目录名
 
 ---
 
 ## 11. 未来扩展
 
 - **记忆版本控制**：`MEMORY.md` 的变更历史可通过 Git 追踪
-- **冷却期可配置**：允许 Owner 在群聊设置中自定义合并冷却期（当前默认 10 分钟）
+- **冷却期可配置**：允许 Owner 在群聊设置中自定义合并冷却期（当前默认 5 分钟，见 §6.6 可配置项）
+- **记忆大小上限可配置**：已在 §6.6 纳入设计（`memory.maxSize`）
 - **记忆导出**：支持将记忆文件导出为其他格式（如 JSON）
 - **跨项目记忆**：Agent 在不同项目中积累的通用知识可共享
 
