@@ -15,6 +15,7 @@
 | [CLI Agent 上下文](./cli-agent-context.md)             | 上下文消息格式、首次/后续交互、截断策略、项目上下文注入        |
 | [终端内容提取到对话](./terminal-content-extraction.md) | 双通道架构、纯文本提取机制、完成检测、数据流、技术细节         |
 | [技术实现](./implementation.md)                        | 文件清单、模块设计、实施阶段                                   |
+| [项目级记忆文件](./project-memory.md)                  | 共享记忆、Agent 专属记忆、合并机制、前端记忆管理 UI            |
 | [风险与兼容性](./risks.md)                             | 技术风险、安全风险、向后兼容性                                 |
 
 ## 典型使用场景
