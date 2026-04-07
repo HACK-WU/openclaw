@@ -6,11 +6,11 @@
 
 群聊中每个 agent 被触发时，后台为其构建的上下文由三个独立层组成：
 
-| 层               | 内容                                   | 隔离方式                                 |
-| ---------------- | -------------------------------------- | ---------------------------------------- |
-| System Prompt 层 | 群组信息、角色身份、成员列表、角色提示 | 按 agentId 独立构建                      |
-| 对话历史层       | 群聊 transcript 中最近 30 条消息       | 共享 transcript，按 agentId 标注 `(you)` |
-| LLM Session 层   | 模型的会话记忆、session transcript     | 按 `group:<groupId>:<agentId>` 隔离      |
+| 层               | 内容                                               | 隔离方式                                 |
+| ---------------- | -------------------------------------------------- | ---------------------------------------- |
+| System Prompt 层 | 群组信息、角色身份、成员列表、角色提示             | 按 agentId 独立构建                      |
+| 对话历史层       | 群聊 transcript 中最近 N 条消息（默认 30，可配置） | 共享 transcript，按 agentId 标注 `(you)` |
+| LLM Session 层   | 模型的会话记忆、session transcript                 | 按 `group:<groupId>:<agentId>` 隔离      |
 
 ## 触发流程
 
@@ -65,7 +65,7 @@ You are the assistant of this group chat — the central coordinator...
 
 **② 对话历史**
 
-从群聊 transcript 中读取最近 30 条消息，格式化为：
+从群聊 transcript 中读取最近 N 条消息（N = `contextConfig.maxMessages`，默认 30，范围 5–100，Owner 可在群聊设置中调整），格式化为：
 
 ```
 [Owner]: 帮我写一个排序算法并 review
@@ -233,8 +233,8 @@ triggerAgentReasoning (per agent)
   ├─① buildGroupChatContext(meta, agentId)
   │     → 独立的 system prompt（角色、成员、提示）
   │
-  ├─② buildConversationHistory(snapshot, agentId)
-  │     → 最近 30 条消息，自己标注 (you)
+  ├─② buildConversationHistory(snapshot, agentId, contextConfig)
+  │     → 最近 N 条消息（N = contextConfig.maxMessages，默认 30），自己标注 (you)
   │     → 思考内容已清洗
   │
   ├─③ buildGroupSessionKey(groupId, agentId)
@@ -247,6 +247,51 @@ triggerAgentReasoning (per agent)
   │
   └─⑥ appendGroupMessage → 写入 transcript
         → broadcastGroupMessage → 前端显示
+```
+
+## 群聊级上下文配置
+
+对话历史的消息条数、字符上限等参数由群聊级 `contextConfig` 统一控制，**同时适用于通用 Agent 和 CLI Agent**。
+
+### 配置参数
+
+Owner 可在群聊设置中调整：
+
+```typescript
+export type ContextConfig = {
+  maxMessages?: number; // 最大消息数，默认 30
+  maxCharacters?: number; // 最大字符数，默认 50,000
+  includeSystemMessages?: boolean; // 是否包含系统消息（成员加入/退出等），默认 false
+  roleReminderInterval?: number; // 角色提醒间隔（仅 CLI Agent 生效），默认 5
+};
+```
+
+### 配置校验
+
+| 参数                   | 最小值 | 最大值  | 默认值 |
+| ---------------------- | ------ | ------- | ------ |
+| `maxMessages`          | 5      | 100     | 30     |
+| `maxCharacters`        | 10,000 | 200,000 | 50,000 |
+| `roleReminderInterval` | 1      | 20      | 5      |
+
+### 适用范围
+
+| 参数                    | 通用 Agent | CLI Agent |
+| ----------------------- | ---------- | --------- |
+| `maxMessages`           | ✅         | ✅        |
+| `maxCharacters`         | ✅         | ✅        |
+| `includeSystemMessages` | ✅         | ✅        |
+| `roleReminderInterval`  | —          | ✅        |
+
+**通用 Agent** 读取 `contextConfig.maxMessages` 决定 `buildConversationHistory()` 取多少条消息；**CLI Agent** 读取同一配置决定构建注释包裹上下文时的消息截取条数。
+
+### 实现要点
+
+```typescript
+// agent-trigger.ts — 通用 Agent 触发时读取配置
+const maxMessages = meta.contextConfig?.maxMessages ?? 30;
+const maxCharacters = meta.contextConfig?.maxCharacters ?? 50_000;
+const history = buildConversationHistory(snapshot, agentId, { maxMessages, maxCharacters });
 ```
 
 ## 涉及的核心模块

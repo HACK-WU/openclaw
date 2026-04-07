@@ -367,6 +367,8 @@ function shouldSendRoleReminder(ptyState: BridgePtyState, interval: number): boo
 
 ## 5. 群聊级上下文配置
 
+> **注**：以下配置为**群聊级别**，同时适用于通用 Agent 和 CLI Agent。通用 Agent 的对话历史构建（`buildConversationHistory`）也读取 `contextConfig.maxMessages` 和 `contextConfig.maxCharacters`。详见 [群聊上下文管理](../group-chat-context-management.md#群聊级上下文配置)。
+
 ### 5.1 配置参数
 
 Owner 可在群聊设置中调整上下文数量上限：
@@ -409,8 +411,10 @@ export type GroupConfig = {
 │ ─── 上下文配置 ───                    │
 │                                      │
 │ 最大消息数：   [30    ] 条           │
-│              CLI Agent 被触发时最多   │
+│              Agent 被触发时最多       │
 │              获取的历史消息数量        │
+│              （适用于通用 Agent 和     │
+│               CLI Agent）             │
 │                                      │
 │ 最大字符数：   [50000 ] 字符         │
 │              防止上下文过长           │

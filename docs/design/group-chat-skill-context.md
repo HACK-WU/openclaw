@@ -583,7 +583,7 @@ Agent 被触发推理（由 handleGroupSend dispatch 发起）
       │
       ▼
 3. buildConversationHistory()              ← 现有 agent-trigger.ts 中的简化版
-   → 最近 30 条消息的 [sender]: content 格式
+   → 最近 N 条消息的 [sender]: content 格式（N = contextConfig.maxMessages，默认 30）
       │
       ▼
 4. buildAgentSystemPrompt({
