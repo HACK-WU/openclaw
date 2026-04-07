@@ -297,7 +297,7 @@ export const zhCN: Record<string, string> = {
   // Context Configuration
   "chat.group.contextConfiguration": "上下文配置",
   "chat.group.maxMessages": "最大消息数",
-  "chat.group.maxMessagesDesc": "发送给 CLI 智能体的历史消息最大数量 (5-100)。",
+  "chat.group.maxMessagesDesc": "发送给智能体的历史消息最大数量 (5-100)。",
   "chat.group.maxCharacters": "最大字符数",
   "chat.group.maxCharactersDesc": "上下文中的最大总字符数 (10,000-200,000)。",
   "chat.group.includeSystemMessages": "包含系统消息",

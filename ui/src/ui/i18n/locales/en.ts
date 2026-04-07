@@ -330,7 +330,7 @@ export const en: Record<string, string> = {
   // Context Configuration
   "chat.group.contextConfiguration": "Context Configuration",
   "chat.group.maxMessages": "Max Messages",
-  "chat.group.maxMessagesDesc": "Maximum number of history messages sent to CLI Agents (5-100).",
+  "chat.group.maxMessagesDesc": "Maximum number of history messages sent to agents (5-100).",
   "chat.group.maxCharacters": "Max Characters",
   "chat.group.maxCharactersDesc": "Maximum total characters in context (10,000-200,000).",
   "chat.group.includeSystemMessages": "Include System Messages",

@@ -24,7 +24,11 @@ import { loadProjectMeta } from "../projects/project-store.js";
 import { stripReasoningTagsFromText } from "../shared/text/reasoning-tags.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
 import { triggerBridgeAgent } from "./bridge-trigger.js";
-import { DEFAULT_CONTEXT_MAX_MESSAGES, type ContextConfig } from "./bridge-types.js";
+import {
+  DEFAULT_CONTEXT_MAX_CHARACTERS,
+  DEFAULT_CONTEXT_MAX_MESSAGES,
+  type ContextConfig,
+} from "./bridge-types.js";
 import { buildGroupChatContext } from "./context-builder.js";
 import { buildGroupSessionKey } from "./group-session-key.js";
 import { broadcastGroupMessage, broadcastGroupStream } from "./parallel-stream.js";
@@ -152,6 +156,7 @@ function buildConversationHistory(
     return "";
   }
   const maxMessages = contextConfig?.maxMessages ?? DEFAULT_CONTEXT_MAX_MESSAGES;
+  const maxCharacters = contextConfig?.maxCharacters ?? DEFAULT_CONTEXT_MAX_CHARACTERS;
   const includeSystemMessages = contextConfig?.includeSystemMessages ?? false;
 
   // Filter out system messages if not included
@@ -159,7 +164,23 @@ function buildConversationHistory(
     ? snapshot
     : snapshot.filter((msg) => msg.role !== "system");
 
-  const lines = filtered.slice(-maxMessages).map((msg) => {
+  // Apply maxMessages limit first, then apply maxCharacters limit
+  const sliced = filtered.slice(-maxMessages);
+
+  // Apply character limit: walk backward from most recent, accumulate chars
+  let totalChars = 0;
+  let startIdx = 0;
+  for (let i = sliced.length - 1; i >= 0; i--) {
+    const msgLen = sliced[i].content.length;
+    if (totalChars + msgLen > maxCharacters) {
+      startIdx = i + 1;
+      break;
+    }
+    totalChars += msgLen;
+  }
+  const truncated = sliced.slice(startIdx);
+
+  const lines = truncated.map((msg) => {
     let senderLabel: string;
     if (msg.sender.type === "owner") {
       senderLabel = "Owner";

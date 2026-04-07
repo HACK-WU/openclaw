@@ -283,7 +283,7 @@ export type ContextConfig = {
 | `includeSystemMessages` | ✅         | ✅        |
 | `roleReminderInterval`  | —          | ✅        |
 
-**通用 Agent** 读取 `contextConfig.maxMessages` 决定 `buildConversationHistory()` 取多少条消息；**CLI Agent** 读取同一配置决定构建注释包裹上下文时的消息截取条数。
+**通用 Agent** 读取 `contextConfig.maxMessages` 和 `contextConfig.maxCharacters` 决定 `buildConversationHistory()` 取多少条消息以及字符上限截断；**CLI Agent** 读取同一配置决定构建注释包裹上下文时的消息截取条数和字符上限。两者的区别在于 CLI Agent 的后续对话使用增量上下文策略（仅发送新增消息），而通用 Agent 每次构建完整的对话历史。
 
 ### 实现要点
 
