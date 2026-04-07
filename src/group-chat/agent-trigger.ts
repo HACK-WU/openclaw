@@ -24,6 +24,7 @@ import { loadProjectMeta } from "../projects/project-store.js";
 import { stripReasoningTagsFromText } from "../shared/text/reasoning-tags.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
 import { triggerBridgeAgent } from "./bridge-trigger.js";
+import { DEFAULT_CONTEXT_MAX_MESSAGES, type ContextConfig } from "./bridge-types.js";
 import { buildGroupChatContext } from "./context-builder.js";
 import { buildGroupSessionKey } from "./group-session-key.js";
 import { broadcastGroupMessage, broadcastGroupStream } from "./parallel-stream.js";
@@ -137,12 +138,28 @@ export type TriggerAgentResult = {
 /**
  * Build a conversation history string from the transcript snapshot
  * for injection into BodyForAgent so the agent has context.
+ *
+ * @param snapshot - Transcript messages
+ * @param currentAgentId - The agent being triggered (for "(you)" labeling)
+ * @param contextConfig - Optional context configuration (maxMessages, etc.)
  */
-function buildConversationHistory(snapshot: GroupChatMessage[], currentAgentId: string): string {
+function buildConversationHistory(
+  snapshot: GroupChatMessage[],
+  currentAgentId: string,
+  contextConfig?: ContextConfig,
+): string {
   if (snapshot.length === 0) {
     return "";
   }
-  const lines = snapshot.slice(-30).map((msg) => {
+  const maxMessages = contextConfig?.maxMessages ?? DEFAULT_CONTEXT_MAX_MESSAGES;
+  const includeSystemMessages = contextConfig?.includeSystemMessages ?? false;
+
+  // Filter out system messages if not included
+  const filtered = includeSystemMessages
+    ? snapshot
+    : snapshot.filter((msg) => msg.role !== "system");
+
+  const lines = filtered.slice(-maxMessages).map((msg) => {
     let senderLabel: string;
     if (msg.sender.type === "owner") {
       senderLabel = "Owner";
@@ -207,7 +224,11 @@ export async function triggerAgentReasoning(
   const groupChatSystemPrompt = buildGroupChatContext({ meta, agentId });
 
   // Build conversation history for the agent
-  const conversationHistory = buildConversationHistory(transcriptSnapshot, agentId);
+  const conversationHistory = buildConversationHistory(
+    transcriptSnapshot,
+    agentId,
+    meta.contextConfig,
+  );
   const triggerText = triggerMessage.content;
   const bodyForAgent = conversationHistory
     ? `${conversationHistory}\n\n[Latest message]: ${triggerText}`
