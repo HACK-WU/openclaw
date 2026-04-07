@@ -405,4 +405,26 @@ export const zhTW: Record<string, string> = {
   "chat.group.project.docs.count": "{count} 個文檔",
   // 群聊資訊面板 - 項目顯示
   "chat.group.project.associated": "關聯項目",
+
+  // Memory Management
+  "chat.group.memoryManagement": "記憶管理",
+  "chat.group.memory.sharedMemory": "共享記憶",
+  "chat.group.memory.agentMemory": "Agent 專屬記憶",
+  "chat.group.memory.totalSize": "總大小",
+  "chat.group.memory.maxSize": "上限",
+  "chat.group.memory.missing": "未建立",
+  "chat.group.memory.warningApproaching": "記憶檔案總大小接近上限，建議精簡",
+  "chat.group.memory.warningOverLimit": "記憶檔案已超過上限，請立即精簡",
+  "chat.group.memory.merge": "合併記憶",
+  "chat.group.memory.compact": "精簡記憶",
+  "chat.group.memory.mergeDesc": "將各 Agent 的專屬記憶匯總到共享記憶檔案",
+  "chat.group.memory.compactDesc": "清理過時、冗餘或過於冗長的記憶條目",
+  "chat.group.memory.noMemory": "暫無記憶檔案。Agent 首次互動後將自動建立。",
+  "chat.group.memory.contentInterval": "內容注入間隔",
+  "chat.group.memory.contentIntervalDesc": "Agent 每回覆多少次後注入一次記憶檔案內容。",
+  "chat.group.memory.promptInterval": "提示詞注入間隔",
+  "chat.group.memory.promptIntervalDesc": "Agent 每回覆多少次後注入一次記憶管理提示詞。",
+  "chat.group.memory.maxSizeLabel": "記憶大小上限 (KB)",
+  "chat.group.memory.maxSizeDesc": "所有記憶檔案總大小的上限值。",
+  "chat.group.memory.times": "次",
 };

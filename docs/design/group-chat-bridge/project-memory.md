@@ -396,7 +396,6 @@ interface MemoryMergeState {
 #    - 不要记录与项目无关的内容
 #    - 去重：如果信息已存在于 MEMORY.md 中，跳过
 #    - 保持内容简短概括，用一两句话总结关键点
-#    - 如果文件大小接近 50KB，请精简旧的、不再重要的条目
 #    - 注意：这是所有 Agent 共享的文件，信息对所有人可见
 
 # 4. 更新 SESSION.md（共享临时记忆）：
@@ -583,21 +582,23 @@ interface MemoryMergeState {
 
 ### 5.3 注入策略
 
-| 文件           | PTY 启动时                     | 后续交互                                       |
-| -------------- | ------------------------------ | ---------------------------------------------- |
-| `MEMORY.md`    | 注入文件内容                   | **只注入路径**，不注入内容                     |
-| `SESSION.md`   | 注入文件内容                   | **每次都注入内容**（内容短、变化频繁）         |
-| `{agentId}.md` | 注入文件内容（如存在）         | **每次都注入内容**（Agent 需要看到自己的记忆） |
-| 记忆管理提示词 | **首次注入** + 每 5 次交互注入 | 降频注入（节省 token）                         |
+| 文件           | PTY 启动时          | 后续交互                                                                   |
+| -------------- | ------------------- | -------------------------------------------------------------------------- |
+| `MEMORY.md`    | 注入文件内容 + 路径 | **降频注入**：首次 + Agent 每回复 5 次后的下一次注入内容；其余交互只给路径 |
+| `SESSION.md`   | 注入文件内容 + 路径 | **降频注入**：同上                                                         |
+| `{agentId}.md` | 注入文件内容 + 路径 | **降频注入**：同上                                                         |
+| 记忆管理提示词 | **首次注入**        | **降频注入**：同上，与文件内容同频                                         |
 
 > **注**："PTY 启动时"等同于 `cli-agent-context.md` 中定义的"首次交互"——即 PTY 进程创建后的第一次交互。PTY 重启（包括崩溃恢复）视为新的"PTY 启动"。
+>
+> **计数说明**：降频计数基于 Agent 的**回复次数**（而非系统消息数）。PTY 启动后的首次交互算第 0 次回复，之后 Agent 每回复 5 次后的下一次交互触发注入（即第 1、6、11、16... 次交互时注入内容）。
 
 **设计理由**：
 
-- `MEMORY.md` 后续只给路径：内容长、不常变，Agent 需要时可自行读取
-- `SESSION.md` 每次注入内容：内容短、变化频繁，Agent 需要了解当前会话全局进展
-- `{agentId}.md` 每次注入内容：Agent 需要看到自己之前记了什么，决定是否需要补充
-- 记忆管理提示词**降频注入**：Agent 在首次交互时已学会写入规则，后续无需每次重复。每 5 次交互提醒一次即可保持行为一致性，同时节省 token 开销。如果检测到 Agent 出现不遵守规则的行为（如写入了 MEMORY.md），可在下次交互中强制注入提示词
+- **统一降频**：所有记忆文件内容和提示词统一降频，最大限度节省 token。Agent 在首次交互时已了解记忆系统，后续可通过路径自行读取
+- **路径每次提供**：Agent 始终知道记忆文件在哪里，需要时可自行读取最新内容
+- **同频协同**：文件内容与提示词同频注入，内容注入时同步刷新写入规则提醒，保持行为一致性
+- **异常兜底**：如果检测到 Agent 出现不遵守规则的行为（如写入了 MEMORY.md），可在下次交互中强制注入提示词
 
 ### 5.4 完整注入格式
 
@@ -633,7 +634,7 @@ interface MemoryMergeState {
 # ================================================================================
 ```
 
-#### 5.4.2 后续交互
+#### 5.4.2 后续交互（非注入轮次）
 
 ```
 # ================================================================================
@@ -650,6 +651,31 @@ interface MemoryMergeState {
 # 路径：{memoryDir}/{agentId}.md
 
 # ================================================================================
+```
+
+#### 5.4.3 后续交互（注入轮次，Agent 每回复 5 次后触发）
+
+```
+# ================================================================================
+# 项目记忆路径
+# ================================================================================
+
+# MEMORY.md — 共享永久记忆（只读）
+# 路径：{memoryDir}/MEMORY.md
+
+# SESSION.md — 共享临时记忆（只读）
+# 路径：{memoryDir}/SESSION.md
+
+# {agentId}.md — 你的专属记忆（读写）
+# 路径：{memoryDir}/{agentId}.md
+
+# ================================================================================
+# 共享永久记忆（最新快照）
+# ================================================================================
+
+# [MEMORY.md 文件内容]
+
+# ================================================================================
 # 共享临时记忆（最新快照）
 # ================================================================================
 
@@ -662,7 +688,7 @@ interface MemoryMergeState {
 # [{agentId}.md 文件内容，如为空则跳过]
 
 # ================================================================================
-# 记忆管理指令（每 5 次交互注入，非每次注入时此段省略）
+# 记忆管理指令
 # ================================================================================
 
 # 你在群聊中有一个专属记忆文件...
@@ -680,8 +706,8 @@ interface MemoryMergeState {
 2. 核心文件路径说明                                        ← 每次交互
 3. 角色提醒（如需要）                                      ← 达到间隔时
 4. 项目说明文档（README.md / ARCHITECTURE.md 等）          ← 群聊配置的 docs
-5. 项目记忆（MEMORY.md + SESSION.md + {agentId}.md）       ← 本次新增
-6. 记忆管理指令                                            ← 降频（首次 + 每5次）
+5. 记忆文件路径（MEMORY.md + SESSION.md + {agentId}.md）   ← 每次交互
+6. 记忆文件内容 + 记忆管理指令                              ← 降频（首次 + Agent每回复5次后）
 7. 群聊历史消息                                            ← 完整/增量
 8. 用户请求
 ```
@@ -794,11 +820,13 @@ interface MemoryMergeState {
 
 记忆管理面板中的 `⚙️` 入口（或群聊设置页）提供以下可配置项：
 
-| 配置项       | 键名             | 默认值 | 说明                       |
-| ------------ | ---------------- | ------ | -------------------------- |
-| 记忆大小上限 | `memory.maxSize` | 50 KB  | 所有记忆文件总大小的上限值 |
+| 配置项           | 键名                     | 默认值 | 说明                                                       |
+| ---------------- | ------------------------ | ------ | ---------------------------------------------------------- |
+| 记忆大小上限     | `memory.maxSize`         | 50 KB  | 所有记忆文件总大小的上限值                                 |
+| 记忆内容注入间隔 | `memory.contentInterval` | 6 次   | Agent 每回复多少次后注入一次记忆文件内容（首次始终注入）   |
+| 提示词注入间隔   | `memory.promptInterval`  | 5 次   | Agent 每回复多少次后注入一次记忆管理提示词（首次始终注入） |
 
-> 这些配置项存储在群聊配置中，由前端面板提供设置 UI。后端在计算预警阈值和 `MemoryStatus` 时读取该配置。
+> 这些配置项存储在群聊配置中，由前端面板提供设置 UI。后端在构建上下文时读取这些配置。
 
 ---
 
@@ -1187,8 +1215,18 @@ function markMemoryDirty(groupId: string): void {
 const projectDir = meta?.config?.project?.directory;
 const groupName = meta?.groupName ?? meta?.groupId;
 
-// 交互计数器（用于记忆管理提示词降频注入）
-const MEMORY_PROMPT_INTERVAL = 5; // 每 5 次交互注入一次记忆管理提示词
+// 从群聊配置读取注入间隔（见 §6.6），未配置时使用默认值
+const memoryConfig = meta?.config?.memory ?? {};
+const contentInterval = memoryConfig.contentInterval ?? 6; // 记忆内容：默认每 6 次
+const promptInterval = memoryConfig.promptInterval ?? 5; // 提示词：默认每 5 次
+
+// 判断本次是否需要注入记忆内容
+const shouldInjectContent =
+  isFirstInteraction || (agentReplyCount > 0 && agentReplyCount % contentInterval === 0);
+
+// 判断本次是否需要注入提示词
+const shouldInjectPrompt =
+  isFirstInteraction || (agentReplyCount > 0 && agentReplyCount % promptInterval === 0);
 
 if (projectDir) {
   // 项目记忆模式
@@ -1199,44 +1237,43 @@ if (projectDir) {
   );
   await ensureProjectMemoryFiles(projectDir, groupName, agentId);
 
-  if (isFirstInteraction) {
-    // PTY 启动时：注入 MEMORY.md 内容
+  // 记忆文件路径：每次交互都提供
+  sections.push(
+    "# ─── 项目记忆路径 ───",
+    `# MEMORY.md — 共享永久记忆（只读），路径：${sharedMemoryFile}`,
+    `# SESSION.md — 共享临时记忆（只读），路径：${sharedSessionFile}`,
+    `# ${agentId}.md — 你的专属记忆（读写），路径：${agentMemoryFile}`,
+  );
+
+  if (shouldInjectContent) {
+    // 注入轮次：注入所有记忆文件内容
     const memoryContent = await fs.readFile(sharedMemoryFile, "utf-8");
     sections.push(
-      "# ─── 共享永久记忆 ───",
-      `# 路径：${sharedMemoryFile}（只读，不要修改）`,
-      "",
+      "# ─── 共享永久记忆（最新快照） ───",
       ...memoryContent.split("\n").map((line) => `# ${line}`),
     );
-  } else {
-    // 后续：只注入 MEMORY.md 路径
-    sections.push(`# MEMORY.md — 共享永久记忆（只读）`, `# 路径：${sharedMemoryFile}`);
-  }
 
-  // SESSION.md：每次注入内容
-  const sessionContent = await fs.readFile(sharedSessionFile, "utf-8");
-  if (!isEmptyTemplate(sessionContent)) {
-    sections.push(
-      "# ─── 共享临时记忆（只读） ───",
-      ...sessionContent.split("\n").map((line) => `# ${line}`),
-    );
-  }
-
-  // Agent 专属记忆：每次注入内容
-  if (await fs.exists(agentMemoryFile)) {
-    const agentContent = await fs.readFile(agentMemoryFile, "utf-8");
-    if (!isEmptyTemplate(agentContent)) {
+    const sessionContent = await fs.readFile(sharedSessionFile, "utf-8");
+    if (!isEmptyTemplate(sessionContent)) {
       sections.push(
-        "# ─── 你的专属记忆（读写） ───",
-        ...agentContent.split("\n").map((line) => `# ${line}`),
+        "# ─── 共享临时记忆（最新快照） ───",
+        ...sessionContent.split("\n").map((line) => `# ${line}`),
       );
+    }
+
+    if (await fs.exists(agentMemoryFile)) {
+      const agentContent = await fs.readFile(agentMemoryFile, "utf-8");
+      if (!isEmptyTemplate(agentContent)) {
+        sections.push(
+          "# ─── 你的专属记忆（最新快照） ───",
+          ...agentContent.split("\n").map((line) => `# ${line}`),
+        );
+      }
     }
   }
 
-  // 记忆管理指令：降频注入（首次 + 每 N 次交互）
-  const shouldInjectMemoryPrompt =
-    isFirstInteraction || interactionCount % MEMORY_PROMPT_INTERVAL === 0;
-  if (shouldInjectMemoryPrompt) {
+  if (shouldInjectPrompt) {
+    // 提示词注入轮次（与内容注入独立）
     sections.push(
       ...buildMemoryManagementPrompt(sharedMemoryFile, sharedSessionFile, agentMemoryFile, agentId),
     );
@@ -1246,20 +1283,22 @@ if (projectDir) {
   const { agentMemoryFile } = resolveTempMemoryPaths(stateDir, groupId, agentId);
   await ensureTempMemoryFiles(stateDir, groupId, agentId);
 
-  if (await fs.exists(agentMemoryFile)) {
-    const agentContent = await fs.readFile(agentMemoryFile, "utf-8");
-    if (!isEmptyTemplate(agentContent)) {
-      sections.push(
-        "# ─── 你的专属记忆（读写） ───",
-        ...agentContent.split("\n").map((line) => `# ${line}`),
-      );
+  // 路径每次提供
+  sections.push(`# ${agentId}.md — 你的专属记忆（读写），路径：${agentMemoryFile}`);
+
+  if (shouldInjectContent) {
+    if (await fs.exists(agentMemoryFile)) {
+      const agentContent = await fs.readFile(agentMemoryFile, "utf-8");
+      if (!isEmptyTemplate(agentContent)) {
+        sections.push(
+          "# ─── 你的专属记忆（最新快照） ───",
+          ...agentContent.split("\n").map((line) => `# ${line}`),
+        );
+      }
     }
   }
 
-  // 临时记忆模式的简化提示词（见 §5.2）：同样降频注入
-  const shouldInjectMemoryPrompt =
-    isFirstInteraction || interactionCount % MEMORY_PROMPT_INTERVAL === 0;
-  if (shouldInjectMemoryPrompt) {
+  if (shouldInjectPrompt) {
     sections.push(...buildTempMemoryManagementPrompt(agentMemoryFile, agentId));
   }
 }
@@ -1426,6 +1465,7 @@ type MemoryStatus = {
 - **记忆版本控制**：`MEMORY.md` 的变更历史可通过 Git 追踪
 - **冷却期可配置**：允许 Owner 在群聊设置中自定义合并冷却期（当前默认 5 分钟，见 §6.6 可配置项）
 - **记忆大小上限可配置**：已在 §6.6 纳入设计（`memory.maxSize`）
+- **注入频率可配置**：已在 §6.6 纳入设计（`memory.contentInterval` + `memory.promptInterval`）
 - **记忆导出**：支持将记忆文件导出为其他格式（如 JSON）
 - **跨项目记忆**：Agent 在不同项目中积累的通用知识可共享
 

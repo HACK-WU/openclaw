@@ -51,6 +51,37 @@ vi.mock("./bridge-context.js", () => ({
   buildCoreFilesPathSection,
 }));
 
+vi.mock("./bridge-memory.js", () => ({
+  sanitizeGroupDirName: vi.fn((name: string) => name),
+  resolveProjectMemoryPaths: vi.fn(() => ({
+    dir: "/tmp/test/.openclaw/test",
+    projectLevelMemoryFile: "/tmp/test/.openclaw/MEMORY.md",
+    sharedMemoryFile: "/tmp/test/.openclaw/test/MEMORY.md",
+    sharedSessionFile: "/tmp/test/.openclaw/test/SESSION.md",
+    agentMemoryFile: "/tmp/test/.openclaw/test/cli.md",
+  })),
+  resolveTempMemoryPaths: vi.fn(() => ({
+    dir: "/tmp/test/group-memory/g1",
+    agentMemoryFile: "/tmp/test/group-memory/g1/cli.md",
+  })),
+  ensureProjectMemoryFiles: vi.fn().mockResolvedValue(undefined),
+  ensureTempMemoryFiles: vi.fn().mockResolvedValue(undefined),
+  shouldInjectMemoryContent: vi.fn(() => false),
+  shouldInjectMemoryPrompt: vi.fn(() => false),
+  buildMemoryPathSection: vi.fn(() => []),
+  buildMemoryContentSection: vi.fn().mockResolvedValue([]),
+  buildMemoryManagementPrompt: vi.fn(() => []),
+  buildTempMemoryPathSection: vi.fn(() => []),
+  buildTempMemoryContentSection: vi.fn().mockResolvedValue([]),
+  buildTempMemoryManagementPrompt: vi.fn(() => []),
+  DEFAULT_MEMORY_CONTENT_INTERVAL: 6,
+  DEFAULT_MEMORY_PROMPT_INTERVAL: 5,
+}));
+
+vi.mock("../config/paths.js", () => ({
+  resolveStateDir: vi.fn(() => "/tmp/test-state"),
+}));
+
 vi.mock("./anti-loop.js", () => ({
   updateChainState: vi.fn((state) => state),
 }));
@@ -79,6 +110,7 @@ function makeMeta(): GroupSessionEntry {
     createdAt: 1,
     updatedAt: 1,
     cliTimeout: 30_000,
+    project: { directory: "/tmp/test-project" },
   };
 }
 

@@ -303,6 +303,28 @@ export const zhCN: Record<string, string> = {
   "chat.group.includeSystemMessages": "包含系统消息",
   "chat.group.includeSystemMessagesDesc": "在上下文中包含成员加入/离开事件。",
 
+  // Memory Management
+  "chat.group.memoryManagement": "记忆管理",
+  "chat.group.memory.sharedMemory": "共享记忆",
+  "chat.group.memory.agentMemory": "Agent 专属记忆",
+  "chat.group.memory.totalSize": "总大小",
+  "chat.group.memory.maxSize": "上限",
+  "chat.group.memory.missing": "未创建",
+  "chat.group.memory.warningApproaching": "记忆文件总大小接近上限，建议精简",
+  "chat.group.memory.warningOverLimit": "记忆文件已超过上限，请立即精简",
+  "chat.group.memory.merge": "合并记忆",
+  "chat.group.memory.compact": "精简记忆",
+  "chat.group.memory.mergeDesc": "将各 Agent 的专属记忆汇总到共享记忆文件",
+  "chat.group.memory.compactDesc": "清理过时、冗余或过于冗长的记忆条目",
+  "chat.group.memory.noMemory": "暂无记忆文件。Agent 首次交互后将自动创建。",
+  "chat.group.memory.contentInterval": "内容注入间隔",
+  "chat.group.memory.contentIntervalDesc": "Agent 每回复多少次后注入一次记忆文件内容。",
+  "chat.group.memory.promptInterval": "提示词注入间隔",
+  "chat.group.memory.promptIntervalDesc": "Agent 每回复多少次后注入一次记忆管理提示词。",
+  "chat.group.memory.maxSizeLabel": "记忆大小上限 (KB)",
+  "chat.group.memory.maxSizeDesc": "所有记忆文件总大小的上限值。",
+  "chat.group.memory.times": "次",
+
   // CLI Agent Core Files
   "cliAgent.coreFiles.title": "核心文件",
   "cliAgent.coreFiles.files": "文件",

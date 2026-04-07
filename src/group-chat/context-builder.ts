@@ -7,6 +7,7 @@
  * Includes: group info, member list, announcement, role prompt, constraints.
  */
 
+import { resolveProjectMemoryPaths, sanitizeGroupDirName } from "./bridge-memory.js";
 import { buildPlanModeAssistantPrompt, buildPlanModeExecutorPrompt } from "./plan-mode-context.js";
 import { resolveRolePrompt } from "./role-prompt.js";
 import type { GroupSessionEntry } from "./types.js";
@@ -142,7 +143,38 @@ Use \`@agentId\` on its **own line** to route your message to another agent.
 - **Escape \`@\` with \`\\@\`** when you need to display it literally (emails, casual references)`);
   }
 
-  // 7. Plan Mode context injection
+  // 7. Project memory context (file paths for awareness)
+  const hasBridgeMembers = meta.members.some((m) => m.bridge);
+  if (hasBridgeMembers) {
+    const groupDirName = sanitizeGroupDirName(meta.groupName ?? meta.groupId, meta.groupId);
+    const projectDir = meta.project?.directory;
+    if (projectDir) {
+      const memPaths = resolveProjectMemoryPaths(projectDir, groupDirName, agentId);
+      sections.push(`### Project Memory
+
+This group has a project-level memory system. Memory files are stored at:
+- **Shared permanent memory**: \`${memPaths.sharedMemoryFile}\` — long-term project knowledge (architecture decisions, coding conventions, lessons learned)
+- **Shared session memory**: \`${memPaths.sharedSessionFile}\` — current session progress and notes
+- **Agent memory files**: \`${memPaths.dir}/{agentId}.md\` — each CLI agent's private memory
+
+${
+  member.role === "assistant"
+    ? `As the **assistant (coordinator)**, you are the **memory manager**:
+- You have **read/write** access to MEMORY.md and SESSION.md
+- Other agents only have read access to shared files
+- When performing memory merge/compact operations, read all agent memory files and consolidate key information into shared files
+- Keep shared memory concise and well-organized`
+    : `You have **read-only** access to shared memory files (MEMORY.md, SESSION.md).
+Only the assistant agent can write to shared files.`
+}`);
+    } else {
+      sections.push(`### Memory System (Temp Mode)
+
+This group uses temporary memory mode (no project directory). Each CLI agent has a private memory file in the state directory. No shared memory files are available.`);
+    }
+  }
+
+  // 8. Plan Mode context injection
   if (meta.planMode) {
     if (member.role === "assistant") {
       sections.push(buildPlanModeAssistantPrompt(meta));

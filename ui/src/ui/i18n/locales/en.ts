@@ -336,6 +336,30 @@ export const en: Record<string, string> = {
   "chat.group.includeSystemMessages": "Include System Messages",
   "chat.group.includeSystemMessagesDesc": "Include member join/leave events in context.",
 
+  // Memory Management
+  "chat.group.memoryManagement": "Memory Management",
+  "chat.group.memory.sharedMemory": "Shared Memory",
+  "chat.group.memory.agentMemory": "Agent Memory",
+  "chat.group.memory.totalSize": "Total Size",
+  "chat.group.memory.maxSize": "Limit",
+  "chat.group.memory.missing": "not created",
+  "chat.group.memory.warningApproaching":
+    "Memory files approaching size limit, consider compacting",
+  "chat.group.memory.warningOverLimit":
+    "Memory files exceeded size limit, please compact immediately",
+  "chat.group.memory.merge": "Merge Memory",
+  "chat.group.memory.compact": "Compact Memory",
+  "chat.group.memory.mergeDesc": "Consolidate agent memories into shared memory files",
+  "chat.group.memory.compactDesc": "Clean up outdated, redundant, or overly verbose entries",
+  "chat.group.memory.noMemory": "No memory files yet. Will be created on first agent interaction.",
+  "chat.group.memory.contentInterval": "Content Interval",
+  "chat.group.memory.contentIntervalDesc": "Inject memory content every N agent replies.",
+  "chat.group.memory.promptInterval": "Prompt Interval",
+  "chat.group.memory.promptIntervalDesc": "Inject memory management prompt every N agent replies.",
+  "chat.group.memory.maxSizeLabel": "Max Size (KB)",
+  "chat.group.memory.maxSizeDesc": "Total size limit for all memory files.",
+  "chat.group.memory.times": "times",
+
   // CLI Agent Core Files
   "cliAgent.coreFiles.title": "Core Files",
   "cliAgent.coreFiles.files": "Files",

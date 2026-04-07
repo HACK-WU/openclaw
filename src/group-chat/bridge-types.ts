@@ -141,6 +141,21 @@ export type ContextConfig = {
   includeSystemMessages?: boolean;
   /** Role reminder interval (send role reminder every N interactions). Default 5. */
   roleReminderInterval?: number;
+  /** Project memory configuration for CLI agents. */
+  memory?: MemoryContextConfig;
+};
+
+/**
+ * Configuration for project-level memory injection.
+ * Stored in GroupSessionEntry.contextConfig.memory.
+ */
+export type MemoryContextConfig = {
+  /** Total memory file size limit in KB. Default 50. */
+  maxSize?: number;
+  /** Inject memory file content every N agent replies. Default 6. */
+  contentInterval?: number;
+  /** Inject memory management prompt every N agent replies. Default 5. */
+  promptInterval?: number;
 };
 
 // ─── Audit Log Entry ───

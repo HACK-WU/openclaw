@@ -348,6 +348,33 @@ export type GroupChatViewProps = {
   planModeState?: PlanModeState | null;
   onRefreshPlanState?: () => void;
   onViewPlanFile?: (file: string) => void;
+  // Memory management
+  memoryStatus?: {
+    files: Array<{ name: string; exists: boolean; size: number }>;
+    totalSize: number;
+    maxSize: number;
+    maxSizeKB: number;
+    warning: "ok" | "approaching-limit" | "over-limit";
+  } | null;
+  memoryPreviewDialog?: {
+    fileName: string;
+    content: string;
+    editing: boolean;
+    draft: string;
+  } | null;
+  onLoadMemoryStatus?: () => void;
+  onOpenMemoryPreview?: (fileName: string) => void;
+  onCloseMemoryPreview?: () => void;
+  onMemoryPreviewToggleEdit?: () => void;
+  onMemoryPreviewDraftChange?: (draft: string) => void;
+  onMemoryPreviewSave?: () => void;
+  onMergeMemory?: () => void;
+  onCompactMemory?: () => void;
+  onUpdateMemoryConfig?: (config: {
+    maxSize?: number;
+    contentInterval?: number;
+    promptInterval?: number;
+  }) => void;
 };
 
 // ─── Main Render ───
@@ -1820,6 +1847,9 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
           </div>
         </div>
 
+        <!-- Memory Management -->
+        ${renderMemoryManagementSection(meta, props)}
+
         <!-- Danger Zone -->
         <div class="group-info-panel__section group-info-panel__section--danger">
           <label>${t("chat.group.dangerZone")}</label>
@@ -1837,6 +1867,306 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
               ${icons.trash} ${t("chat.group.disband")}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Memory Management Section ───
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function renderMemoryManagementSection(meta: GroupSessionMeta, props: GroupChatViewProps) {
+  const status = props.memoryStatus;
+  const hasBridgeMembers = meta.members.some((m) => m.bridge);
+
+  // Only show memory management if there are bridge (CLI) members
+  if (!hasBridgeMembers) {
+    return nothing;
+  }
+
+  return html`
+    <div class="group-info-panel__section">
+      <label>${t("chat.group.memoryManagement")}</label>
+      <div class="group-info-panel__settings">
+        ${
+          !status || status.files.length === 0
+            ? html`
+            <div class="group-info-panel__setting-item">
+              <span class="group-info-panel__setting-desc">${t("chat.group.memory.noMemory")}</span>
+              ${
+                props.onLoadMemoryStatus
+                  ? html`<button class="btn btn--secondary btn--sm" style="margin-top: 4px;" @click=${() => props.onLoadMemoryStatus?.()}>
+                    ${icons.refresh} ${t("action.refresh")}
+                  </button>`
+                  : nothing
+              }
+            </div>
+          `
+            : html`
+            <!-- Shared Memory Files -->
+            ${
+              status.files.some((f) => f.name === "MEMORY.md" || f.name === "SESSION.md")
+                ? html`
+                <div class="group-info-panel__setting-item">
+                  <span class="group-info-panel__setting-name" style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">${t("chat.group.memory.sharedMemory")}</span>
+                  <div class="memory-file-list">
+                    ${status.files
+                      .filter((f) => f.name === "MEMORY.md" || f.name === "SESSION.md")
+                      .map(
+                        (f) => html`
+                        <div class="memory-file-item">
+                          <span class="memory-file-item__name">${f.name}</span>
+                          <span class="memory-file-item__size ${!f.exists ? "memory-file-item__size--missing" : ""}">
+                            ${f.exists ? formatFileSize(f.size) : t("chat.group.memory.missing")}
+                          </span>
+                          ${
+                            f.exists && props.onOpenMemoryPreview
+                              ? html`<button class="btn btn--sm btn--icon memory-file-item__action" title="${t("action.preview")}" @click=${() => props.onOpenMemoryPreview?.(f.name)}>${icons.fileText}</button>`
+                              : nothing
+                          }
+                        </div>
+                      `,
+                      )}
+                  </div>
+                </div>
+              `
+                : nothing
+            }
+
+            <!-- Agent Memory Files -->
+            ${
+              status.files.some((f) => f.name !== "MEMORY.md" && f.name !== "SESSION.md")
+                ? html`
+                <div class="group-info-panel__setting-item">
+                  <span class="group-info-panel__setting-name" style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">${t("chat.group.memory.agentMemory")}</span>
+                  <div class="memory-file-list">
+                    ${status.files
+                      .filter((f) => f.name !== "MEMORY.md" && f.name !== "SESSION.md")
+                      .map(
+                        (f) => html`
+                        <div class="memory-file-item">
+                          <span class="memory-file-item__name">${f.name}</span>
+                          <span class="memory-file-item__size ${!f.exists ? "memory-file-item__size--missing" : ""}">
+                            ${f.exists ? formatFileSize(f.size) : t("chat.group.memory.missing")}
+                          </span>
+                          ${
+                            f.exists && props.onOpenMemoryPreview
+                              ? html`<button class="btn btn--sm btn--icon memory-file-item__action" title="${t("action.preview")}" @click=${() => props.onOpenMemoryPreview?.(f.name)}>${icons.fileText}</button>`
+                              : nothing
+                          }
+                        </div>
+                      `,
+                      )}
+                  </div>
+                </div>
+              `
+                : nothing
+            }
+
+            <!-- Size Progress Bar -->
+            <div class="group-info-panel__setting-item">
+              <div class="memory-size-bar">
+                <div class="memory-size-bar__header">
+                  <span>${t("chat.group.memory.totalSize")}${": "}${formatFileSize(status.totalSize)} / ${status.maxSizeKB} KB</span>
+                  <span>${Math.min(100, Math.round((status.totalSize / status.maxSize) * 100))}%</span>
+                </div>
+                <div class="memory-size-bar__track">
+                  <div class="memory-size-bar__fill memory-size-bar__fill--${status.warning}"
+                    style="width: ${Math.min(100, (status.totalSize / status.maxSize) * 100)}%"></div>
+                </div>
+              </div>
+              ${
+                status.warning === "approaching-limit"
+                  ? html`<span class="memory-warning memory-warning--approaching">${t("chat.group.memory.warningApproaching")}</span>`
+                  : nothing
+              }
+              ${
+                status.warning === "over-limit"
+                  ? html`<span class="memory-warning memory-warning--over">${t("chat.group.memory.warningOverLimit")}</span>`
+                  : nothing
+              }
+            </div>
+
+            <!-- Merge / Compact Buttons (only for project memory mode with shared files) -->
+            ${
+              meta.project?.directory
+                ? html`
+                <div class="group-info-panel__setting-item" style="display: flex; flex-direction: row; gap: 8px;">
+                  ${
+                    props.onMergeMemory
+                      ? html`<button class="btn btn--secondary btn--sm" @click=${() => props.onMergeMemory?.()}>${t("chat.group.memory.merge")}</button>`
+                      : nothing
+                  }
+                  ${
+                    props.onCompactMemory
+                      ? html`<button class="btn btn--secondary btn--sm" @click=${() => props.onCompactMemory?.()}>${t("chat.group.memory.compact")}</button>`
+                      : nothing
+                  }
+                </div>
+              `
+                : nothing
+            }
+
+            <!-- Memory Config -->
+            <div class="group-info-panel__setting-item">
+              <div class="group-info-panel__setting-header">
+                <span class="group-info-panel__setting-name">${t("chat.group.memory.maxSizeLabel")}</span>
+                <input
+                  type="number"
+                  class="field group-info-panel__setting-input"
+                  .value=${String(meta.contextConfig?.memory?.maxSize ?? 50)}
+                  min="10"
+                  max="500"
+                  step="10"
+                  @change=${(e: Event) => {
+                    const value = parseInt((e.target as HTMLInputElement).value, 10);
+                    if (!isNaN(value) && value >= 10 && value <= 500) {
+                      props.onUpdateMemoryConfig?.({ maxSize: value });
+                    }
+                  }}
+                />
+              </div>
+              <span class="group-info-panel__setting-desc">${t("chat.group.memory.maxSizeDesc")}</span>
+            </div>
+            <div class="group-info-panel__setting-item">
+              <div class="group-info-panel__setting-header">
+                <span class="group-info-panel__setting-name">${t("chat.group.memory.contentInterval")}</span>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <input
+                    type="number"
+                    class="field group-info-panel__setting-input"
+                    style="width: 60px;"
+                    .value=${String(meta.contextConfig?.memory?.contentInterval ?? 6)}
+                    min="1"
+                    max="50"
+                    @change=${(e: Event) => {
+                      const value = parseInt((e.target as HTMLInputElement).value, 10);
+                      if (!isNaN(value) && value >= 1 && value <= 50) {
+                        props.onUpdateMemoryConfig?.({ contentInterval: value });
+                      }
+                    }}
+                  />
+                  <span style="font-size: 12px; color: var(--text-secondary);">${t("chat.group.memory.times")}</span>
+                </div>
+              </div>
+              <span class="group-info-panel__setting-desc">${t("chat.group.memory.contentIntervalDesc")}</span>
+            </div>
+            <div class="group-info-panel__setting-item">
+              <div class="group-info-panel__setting-header">
+                <span class="group-info-panel__setting-name">${t("chat.group.memory.promptInterval")}</span>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <input
+                    type="number"
+                    class="field group-info-panel__setting-input"
+                    style="width: 60px;"
+                    .value=${String(meta.contextConfig?.memory?.promptInterval ?? 5)}
+                    min="1"
+                    max="50"
+                    @change=${(e: Event) => {
+                      const value = parseInt((e.target as HTMLInputElement).value, 10);
+                      if (!isNaN(value) && value >= 1 && value <= 50) {
+                        props.onUpdateMemoryConfig?.({ promptInterval: value });
+                      }
+                    }}
+                  />
+                  <span style="font-size: 12px; color: var(--text-secondary);">${t("chat.group.memory.times")}</span>
+                </div>
+              </div>
+              <span class="group-info-panel__setting-desc">${t("chat.group.memory.promptIntervalDesc")}</span>
+            </div>
+          `
+        }
+      </div>
+    </div>
+    ${renderMemoryPreviewDialog(props)}
+  `;
+}
+
+function renderMemoryPreviewDialog(props: GroupChatViewProps) {
+  const dialog = props.memoryPreviewDialog;
+  if (!dialog) {
+    return nothing;
+  }
+
+  const previewHtml = dialog.content.trim() ? toSanitizedMarkdownHtml(dialog.content) : "";
+
+  return html`
+    <div class="modal-overlay" role="dialog" aria-modal="true"
+      @click=${(e: Event) => {
+        if ((e.target as HTMLElement).classList.contains("modal-overlay")) {
+          props.onCloseMemoryPreview?.();
+        }
+      }}
+    >
+      <div class="modal-card memory-preview-dialog">
+        <div class="modal-header memory-preview-dialog__header">
+          <h3 class="modal-title">${dialog.fileName}</h3>
+          <div class="memory-preview-dialog__tabs">
+            <button
+              class="btn ${!dialog.editing ? "btn--primary" : ""}"
+              @click=${() => {
+                if (dialog.editing) {
+                  props.onMemoryPreviewToggleEdit?.();
+                }
+              }}
+            >
+              ${icons.fileText} ${t("action.preview")}
+            </button>
+            <button
+              class="btn ${dialog.editing ? "btn--primary" : ""}"
+              @click=${() => {
+                if (!dialog.editing) {
+                  props.onMemoryPreviewToggleEdit?.();
+                }
+              }}
+            >
+              ${icons.edit} ${t("action.edit")}
+            </button>
+          </div>
+        </div>
+        <div class="memory-preview-dialog__body">
+          ${
+            dialog.editing
+              ? html`
+              <textarea
+                class="memory-preview-dialog__textarea"
+                .value=${dialog.draft}
+                @input=${(e: Event) => {
+                  props.onMemoryPreviewDraftChange?.((e.target as HTMLTextAreaElement).value);
+                }}
+              ></textarea>
+            `
+              : html`
+              <div class="memory-preview-dialog__content chat-text">
+                ${
+                  previewHtml
+                    ? unsafeHTML(previewHtml)
+                    : html`
+                        <span class="muted">Empty</span>
+                      `
+                }
+              </div>
+            `
+          }
+        </div>
+        <div class="memory-preview-dialog__actions">
+          <button class="btn btn--secondary" @click=${() => props.onCloseMemoryPreview?.()}>
+            ${t("action.close")}
+          </button>
+          ${
+            dialog.editing
+              ? html`<button class="btn btn--primary" @click=${() => props.onMemoryPreviewSave?.()}>
+                ${t("action.save")}
+              </button>`
+              : nothing
+          }
         </div>
       </div>
     </div>

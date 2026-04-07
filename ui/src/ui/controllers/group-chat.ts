@@ -69,6 +69,12 @@ export type GroupSessionMeta = {
     maxMessages?: number;
     maxCharacters?: number;
     includeSystemMessages?: boolean;
+    /** Project memory configuration for CLI agents. */
+    memory?: {
+      maxSize?: number;
+      contentInterval?: number;
+      promptInterval?: number;
+    };
   };
   /** Active terminal statuses for Bridge Agents (for page refresh restoration) */
   bridgeTerminalStatuses?: Record<string, string>;

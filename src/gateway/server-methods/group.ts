@@ -10,6 +10,7 @@ import path from "node:path";
 import { findCliAgentEntry } from "../../commands/cli-agents.config.js";
 import { updateSessionStore } from "../../config/sessions/store.js";
 import { triggerAgentReasoning } from "../../group-chat/agent-trigger.js";
+import { cleanupGroupMemory, sanitizeGroupDirName } from "../../group-chat/bridge-memory.js";
 import {
   cleanupGroupBridgeAgents,
   getGroupActivePtys,
@@ -139,6 +140,27 @@ const handleGroupCreate: GatewayRequestHandler = async ({ params, respond, conte
     sessionKey: buildGroupSessionKey(entry.groupId),
   });
 
+  // Initialize project memory files for all Bridge Agent members at creation time.
+  // This ensures memory directories and template files exist before agents interact.
+  const bridgeMembers = members.filter((m) => m.bridge || resolveBridgeForMember(m));
+  if (bridgeMembers.length > 0) {
+    const { ensureProjectMemoryFiles, ensureTempMemoryFiles, sanitizeGroupDirName } =
+      await import("../../group-chat/bridge-memory.js");
+    const groupDirName = sanitizeGroupDirName(entry.groupName ?? entry.groupId, entry.groupId);
+
+    if (project?.directory) {
+      for (const m of bridgeMembers) {
+        await ensureProjectMemoryFiles(project.directory, groupDirName, m.agentId);
+      }
+    } else {
+      const { resolveStateDir } = await import("../../config/paths.js");
+      const stateDir = resolveStateDir();
+      for (const m of bridgeMembers) {
+        await ensureTempMemoryFiles(stateDir, entry.groupId, m.agentId);
+      }
+    }
+  }
+
   broadcastGroupSystem(context.broadcast, entry.groupId, "created", { entry });
 };
 
@@ -215,6 +237,21 @@ const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, conte
   // Read group meta BEFORE deleting the group directory — we need the member list
   // to locate the correct session store files for cleanup.
   const groupMeta = loadGroupMeta(groupId);
+
+  // Clean up project memory files before deleting group directory
+  if (groupMeta) {
+    const groupDirName = sanitizeGroupDirName(
+      groupMeta.groupName ?? groupMeta.groupId,
+      groupMeta.groupId,
+    );
+    const { resolveStateDir } = await import("../../config/paths.js");
+    await cleanupGroupMemory({
+      projectDir: groupMeta.project?.directory,
+      stateDir: resolveStateDir(),
+      groupId,
+      groupName: groupDirName,
+    });
+  }
 
   // Actually delete the group directory (including transcript.jsonl)
   await deleteGroup(groupId);

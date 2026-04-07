@@ -21,6 +21,23 @@ import type { TriggerAgentParams, TriggerAgentResult } from "./agent-trigger.js"
 import { updateChainState } from "./anti-loop.js";
 import { buildCoreFilesContentSection, buildCoreFilesPathSection } from "./bridge-context.js";
 import {
+  buildMemoryContentSection,
+  buildMemoryManagementPrompt,
+  buildMemoryPathSection,
+  buildTempMemoryContentSection,
+  buildTempMemoryManagementPrompt,
+  buildTempMemoryPathSection,
+  ensureProjectMemoryFiles,
+  ensureTempMemoryFiles,
+  resolveProjectMemoryPaths,
+  resolveTempMemoryPaths,
+  sanitizeGroupDirName,
+  shouldInjectMemoryContent,
+  shouldInjectMemoryPrompt,
+  DEFAULT_MEMORY_CONTENT_INTERVAL,
+  DEFAULT_MEMORY_PROMPT_INTERVAL,
+} from "./bridge-memory.js";
+import {
   clearFrontendExtractedText,
   createBridgePty,
   getPtyState,
@@ -427,6 +444,79 @@ async function buildCliContextMessage(params: {
   } else {
     // 后续交互：仅注入路径说明
     sections.push(buildCoreFilesPathSection(agentId));
+  }
+
+  // ─── 项目记忆注入 ───
+  const projectDir = meta.project?.directory;
+  const groupName = sanitizeGroupDirName(meta.groupName ?? meta.groupId, meta.groupId);
+  const memoryConfig = contextConfig?.memory;
+  const contentInterval = memoryConfig?.contentInterval ?? DEFAULT_MEMORY_CONTENT_INTERVAL;
+  const promptInterval = memoryConfig?.promptInterval ?? DEFAULT_MEMORY_PROMPT_INTERVAL;
+
+  const ptyStateForMemory = getPtyState(groupId, agentId);
+  const memoryInteractionCount = ptyStateForMemory?.interactionCount ?? 0;
+
+  const injectContent = shouldInjectMemoryContent(
+    isFirstInteraction,
+    memoryInteractionCount,
+    contentInterval,
+  );
+  const injectPrompt = shouldInjectMemoryPrompt(
+    isFirstInteraction,
+    memoryInteractionCount,
+    promptInterval,
+  );
+
+  if (projectDir) {
+    const memPaths = resolveProjectMemoryPaths(projectDir, groupName, agentId);
+    await ensureProjectMemoryFiles(projectDir, groupName, agentId);
+
+    // Memory file paths — every interaction
+    sections.push(
+      ...buildMemoryPathSection({
+        sharedMemoryFile: memPaths.sharedMemoryFile,
+        sharedSessionFile: memPaths.sharedSessionFile,
+        agentMemoryFile: memPaths.agentMemoryFile,
+        agentId,
+      }),
+    );
+
+    if (injectContent) {
+      sections.push(
+        ...(await buildMemoryContentSection({
+          sharedMemoryFile: memPaths.sharedMemoryFile,
+          sharedSessionFile: memPaths.sharedSessionFile,
+          agentMemoryFile: memPaths.agentMemoryFile,
+        })),
+      );
+    }
+
+    if (injectPrompt) {
+      sections.push(
+        ...buildMemoryManagementPrompt(
+          memPaths.sharedMemoryFile,
+          memPaths.sharedSessionFile,
+          memPaths.agentMemoryFile,
+          agentId,
+        ),
+      );
+    }
+  } else {
+    // Temp memory mode
+    const { resolveStateDir } = await import("../config/paths.js");
+    const stateDir = resolveStateDir();
+    const tempPaths = resolveTempMemoryPaths(stateDir, groupId, agentId);
+    await ensureTempMemoryFiles(stateDir, groupId, agentId);
+
+    sections.push(...buildTempMemoryPathSection(tempPaths.agentMemoryFile, agentId));
+
+    if (injectContent) {
+      sections.push(...(await buildTempMemoryContentSection(tempPaths.agentMemoryFile)));
+    }
+
+    if (injectPrompt) {
+      sections.push(...buildTempMemoryManagementPrompt(tempPaths.agentMemoryFile, agentId));
+    }
   }
 
   if (isFirstInteraction) {
