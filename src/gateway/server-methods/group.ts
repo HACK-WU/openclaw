@@ -1658,6 +1658,33 @@ const handleGroupMemoryWrite: GatewayRequestHandler = async ({ params, respond }
   }
 };
 
+// ─── Check Memory Before Dissolve ───
+
+/**
+ * Check whether a group has non-empty shared memory (MEMORY.md) before dissolution.
+ * Used by the frontend to decide whether to show the memory-check disband dialog.
+ */
+const handleGroupCheckMemoryBeforeDissolve: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  const meta = loadGroupMeta(groupId);
+  if (!meta) {
+    respond(false, undefined, { message: "Group not found", code: 404 });
+    return;
+  }
+
+  const { checkMemoryBeforeDissolve, sanitizeGroupDirName } =
+    await import("../../group-chat/bridge-memory.js");
+  const groupDirName = sanitizeGroupDirName(meta.groupName ?? meta.groupId, meta.groupId);
+
+  const result = await checkMemoryBeforeDissolve(meta.project?.directory, groupDirName);
+  respond(true, result);
+};
+
 // ─── Export handler map ───
 
 export const groupHandlers: GatewayRequestHandlers = {
@@ -1695,4 +1722,5 @@ export const groupHandlers: GatewayRequestHandlers = {
   "group.memoryStatus": handleGroupMemoryStatus,
   "group.memoryRead": handleGroupMemoryRead,
   "group.memoryWrite": handleGroupMemoryWrite,
+  "group.checkMemoryBeforeDissolve": handleGroupCheckMemoryBeforeDissolve,
 };

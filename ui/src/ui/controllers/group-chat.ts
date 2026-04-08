@@ -293,6 +293,12 @@ export type GroupDisbandDialogState = {
   groupName: string;
   isDisbanding: boolean;
   error: string | null;
+  /** Dialog phase: normal_confirm (no memory), memory_warning, organizing, force_confirm */
+  phase: "normal_confirm" | "memory_warning" | "organizing" | "force_confirm";
+  /** Whether the group has non-empty shared memory (MEMORY.md) */
+  hasMemory: boolean;
+  /** Memory file size in bytes */
+  memorySize: number;
 };
 
 export type GroupClearMessagesDialogState = {
@@ -2000,19 +2006,52 @@ export async function disbandGroup(host: GroupHost, groupId: string): Promise<vo
 }
 
 /**
- * 打开解散群聊确认对话框
+ * 打开解散群聊确认对话框（异步：先检查记忆）
  */
-export function openDisbandGroupDialog(
-  host: GroupChatState,
+export async function openDisbandGroupDialog(
+  host: GroupHost,
   groupId: string,
   groupName: string,
-): void {
+): Promise<void> {
+  // Show checking state immediately
   host.groupDisbandDialog = {
     groupId,
     groupName,
     isDisbanding: false,
     error: null,
+    phase: "normal_confirm",
+    hasMemory: false,
+    memorySize: 0,
   };
+
+  // Check if group has non-empty shared memory
+  if (host.client && host.connected) {
+    try {
+      const result = await host.client.request<{ hasMemory: boolean; memorySize: number }>(
+        "group.checkMemoryBeforeDissolve",
+        { groupId },
+      );
+      if (result?.hasMemory && host.groupDisbandDialog?.groupId === groupId) {
+        host.groupDisbandDialog = {
+          ...host.groupDisbandDialog,
+          phase: "memory_warning",
+          hasMemory: true,
+          memorySize: result.memorySize,
+        };
+        return;
+      }
+    } catch {
+      // If check fails, fall through to normal confirm
+    }
+  }
+
+  // No memory or check failed — show normal confirm
+  if (host.groupDisbandDialog?.groupId === groupId) {
+    host.groupDisbandDialog = {
+      ...host.groupDisbandDialog,
+      phase: "normal_confirm",
+    };
+  }
 }
 
 /**
@@ -2023,7 +2062,7 @@ export function closeDisbandGroupDialog(host: GroupChatState): void {
 }
 
 /**
- * 确认解散群聊
+ * 确认解散群聊（普通确认 / 整理完成后解散）
  */
 export async function confirmDisbandGroup(host: GroupHost): Promise<void> {
   const dialog = host.groupDisbandDialog;
@@ -2048,6 +2087,95 @@ export async function confirmDisbandGroup(host: GroupHost): Promise<void> {
       error: String(err),
     };
   }
+}
+
+/**
+ * 发送记忆整理指令并进入整理等待状态
+ */
+export async function sendMemoryOrganizeCommand(host: GroupHost): Promise<void> {
+  const dialog = host.groupDisbandDialog;
+  if (!dialog || !host.client || !host.connected) {
+    return;
+  }
+
+  // Find the assistant agent
+  const meta = host.activeGroupMeta;
+  if (!meta) {
+    return;
+  }
+  const assistant = meta.members.find(
+    (m) => m.role === "assistant" || m.role === "bridge-assistant",
+  );
+  if (!assistant) {
+    host.groupDisbandDialog = {
+      ...dialog,
+      error: "No assistant agent found in this group",
+    };
+    return;
+  }
+
+  // Switch to organizing phase
+  host.groupDisbandDialog = { ...dialog, phase: "organizing", error: null };
+
+  // Send invisible system command to assistant
+  const organizePrompt = `# ================================================================================
+# 群聊即将解散 — 记忆整理任务
+# ================================================================================
+
+# 当前群聊即将解散。请将本群共享记忆中有价值的内容提取到项目级共享记忆中。
+
+# 1. 读取当前群聊共享记忆：
+#    - MEMORY.md
+
+# 2. 读取项目级共享记忆：
+#    - 项目根目录/.openclaw/MEMORY.md
+
+# 3. 将当前群聊 MEMORY.md 中有价值的、与项目相关的长期知识提取到项目级
+#    MEMORY.md 中。每条记忆末尾标注来源群聊名称（如 "（来源：${dialog.groupName}）"）。
+
+# 4. 去重：如果内容已存在于项目级 MEMORY.md 中，跳过。
+
+# 5. 完成后，清空当前群聊的 MEMORY.md（写入空模板）。
+
+# 6. 完成后回复"记忆整理完成，可以解散群聊。"`;
+
+  try {
+    await host.client.request("group.send", {
+      groupId: dialog.groupId,
+      message: organizePrompt,
+      mentions: [assistant.agentId],
+      sender: { type: "owner" },
+      skipTranscript: true,
+    });
+  } catch (err) {
+    host.groupDisbandDialog = {
+      ...dialog,
+      phase: "memory_warning",
+      error: `Failed to send organize command: ${String(err)}`,
+    };
+  }
+}
+
+/**
+ * 切换到强制解散确认阶段
+ */
+export function openForceConfirm(host: GroupChatState): void {
+  const dialog = host.groupDisbandDialog;
+  if (!dialog) {
+    return;
+  }
+  host.groupDisbandDialog = { ...dialog, phase: "force_confirm", error: null };
+}
+
+/**
+ * 从强制确认返回记忆警告阶段
+ */
+export function backToMemoryWarning(host: GroupChatState): void {
+  const dialog = host.groupDisbandDialog;
+  if (!dialog) {
+    return;
+  }
+  host.groupDisbandDialog = { ...dialog, phase: "memory_warning", error: null };
 }
 
 // ─── Clear Messages ───

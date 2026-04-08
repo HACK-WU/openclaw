@@ -308,6 +308,11 @@ export type GroupChatViewProps = {
   onOpenDisbandDialog: () => void;
   onCloseDisbandDialog: () => void;
   onConfirmDisbandGroup: () => void;
+  onOrganizeMemoryAndDisband: () => void;
+  onOrganizeComplete: () => void;
+  onForceDisband: () => void;
+  onConfirmForceDisband: () => void;
+  onBackToMemoryWarning: () => void;
   // Clear messages
   onOpenClearMessagesDialog: () => void;
   onCloseClearMessagesDialog: () => void;
@@ -2173,72 +2178,153 @@ function renderMemoryPreviewDialog(props: GroupChatViewProps) {
 
 // ─── Disband Group Dialog ───
 
+function formatMemorySize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
 function renderDisbandGroupDialog(props: GroupChatViewProps) {
   const dialog = props.groupDisbandDialog;
   if (!dialog) {
     return nothing;
   }
 
-  return html`
-    <div class="modal-overlay" role="dialog" aria-modal="true" aria-live="polite">
-      <div class="modal-card modal-card--danger">
-        <div class="modal-header">
-          <div class="modal-icon modal-icon--danger">
-            ${icons.trash}
-          </div>
-          <div class="modal-title-group">
-            <div class="modal-title">${t("chat.group.disband")}</div>
-            <div class="modal-subtitle">${dialog.groupName}</div>
-          </div>
-        </div>
+  const isBusy = dialog.isDisbanding;
+  const { phase } = dialog;
 
-        <div class="modal-body">
-          <div class="warning-box">
-            <div class="warning-box__icon">${icons.alertTriangle}</div>
-            <div class="warning-box__content">
-              <div class="warning-box__title">${t("chat.sidebar.deleteWarningTitle")}</div>
-              <div class="warning-box__text">${t("chat.group.disbandConfirmDetail")}</div>
+  // ─── Normal confirm (no memory) ───
+  if (phase === "normal_confirm") {
+    return html`
+      <div class="modal-overlay" role="dialog" aria-modal="true" aria-live="polite">
+        <div class="modal-card modal-card--danger">
+          <div class="modal-header">
+            <div class="modal-icon modal-icon--danger">${icons.trash}</div>
+            <div class="modal-title-group">
+              <div class="modal-title">${t("chat.group.disband")}</div>
+              <div class="modal-subtitle">${dialog.groupName}</div>
             </div>
           </div>
-
-          ${
-            dialog.error
-              ? html`
-                <div class="modal-error">
-                  <span class="modal-error__icon">${icons.alertCircle}</span>
-                  <span>${dialog.error}</span>
-                </div>
-              `
-              : nothing
-          }
-        </div>
-
-        <div class="modal-actions">
-          <button
-            class="btn btn--secondary"
-            ?disabled=${dialog.isDisbanding}
-            @click=${() => props.onCloseDisbandDialog()}
-          >
-            ${t("common.cancel")}
-          </button>
-          <button
-            class="btn btn--danger"
-            ?disabled=${dialog.isDisbanding}
-            @click=${() => props.onConfirmDisbandGroup()}
-          >
-            ${
-              dialog.isDisbanding
-                ? html`
-                  <span class="btn__spinner">${icons.loader}</span>
-                  <span>${t("chat.group.disbanding")}</span>
-                `
-                : html`<span>${t("chat.group.disband")}</span>`
-            }
-          </button>
+          <div class="modal-body">
+            <div class="warning-box">
+              <div class="warning-box__icon">${icons.alertTriangle}</div>
+              <div class="warning-box__content">
+                <div class="warning-box__title">${t("chat.sidebar.deleteWarningTitle")}</div>
+                <div class="warning-box__text">${t("chat.group.disbandConfirmDetail")}</div>
+              </div>
+            </div>
+            ${dialog.error ? html`<div class="modal-error"><span class="modal-error__icon">${icons.alertCircle}</span><span>${dialog.error}</span></div>` : nothing}
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn--secondary" ?disabled=${isBusy} @click=${() => props.onCloseDisbandDialog()}>${t("common.cancel")}</button>
+            <button class="btn btn--danger" ?disabled=${isBusy} @click=${() => props.onConfirmDisbandGroup()}>
+              ${isBusy ? html`<span class="btn__spinner">${icons.loader}</span><span>${t("chat.group.disbanding")}</span>` : html`<span>${t("chat.group.disband")}</span>`}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  `;
+    `;
+  }
+
+  // ─── Memory warning (has non-empty MEMORY.md) ───
+  if (phase === "memory_warning") {
+    return html`
+      <div class="modal-overlay" role="dialog" aria-modal="true" aria-live="polite">
+        <div class="modal-card modal-card--danger">
+          <div class="modal-header">
+            <div class="modal-icon modal-icon--danger">${icons.alertTriangle}</div>
+            <div class="modal-title-group">
+              <div class="modal-title">${t("chat.group.disband")}</div>
+              <div class="modal-subtitle">${dialog.groupName}</div>
+            </div>
+          </div>
+          <div class="modal-body">
+            <div class="warning-box">
+              <div class="warning-box__icon">${icons.alertTriangle}</div>
+              <div class="warning-box__content">
+                <div class="warning-box__title">${t("chat.group.disbandMemoryWarning")}</div>
+                <div class="warning-box__text">${t("chat.group.disbandMemoryWarningDetail")}</div>
+              </div>
+            </div>
+            ${dialog.memorySize > 0 ? html`<div class="modal-info" style="margin-top: 8px; font-size: 13px; color: var(--text-secondary);">${t("chat.group.disbandMemorySize").replace("{size}", formatMemorySize(dialog.memorySize))}</div>` : nothing}
+            ${dialog.error ? html`<div class="modal-error"><span class="modal-error__icon">${icons.alertCircle}</span><span>${dialog.error}</span></div>` : nothing}
+          </div>
+          <div class="modal-actions" style="flex-wrap: wrap; gap: 8px;">
+            <button class="btn btn--secondary" @click=${() => props.onCloseDisbandDialog()}>${t("common.cancel")}</button>
+            <button class="btn btn--danger" style="opacity: 0.7;" @click=${() => props.onForceDisband()}>${t("chat.group.disbandForce")}</button>
+            <button class="btn btn--primary" @click=${() => props.onOrganizeMemoryAndDisband()}>${t("chat.group.disbandOrganize")}</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ─── Organizing (waiting for assistant to finish) ───
+  if (phase === "organizing") {
+    return html`
+      <div class="modal-overlay" role="dialog" aria-modal="true" aria-live="polite">
+        <div class="modal-card modal-card--danger">
+          <div class="modal-header">
+            <div class="modal-icon modal-icon--danger">${icons.loader}</div>
+            <div class="modal-title-group">
+              <div class="modal-title">${t("chat.group.disbandOrganizing")}</div>
+              <div class="modal-subtitle">${dialog.groupName}</div>
+            </div>
+          </div>
+          <div class="modal-body">
+            <div class="warning-box">
+              <div class="warning-box__icon">${icons.alertTriangle}</div>
+              <div class="warning-box__content">
+                <div class="warning-box__text">${t("chat.group.disbandOrganizingDetail")}</div>
+              </div>
+            </div>
+            ${dialog.error ? html`<div class="modal-error"><span class="modal-error__icon">${icons.alertCircle}</span><span>${dialog.error}</span></div>` : nothing}
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn--secondary" @click=${() => props.onCloseDisbandDialog()}>${t("common.cancel")}</button>
+            <button class="btn btn--primary" ?disabled=${isBusy} @click=${() => props.onOrganizeComplete()}>
+              ${isBusy ? html`<span class="btn__spinner">${icons.loader}</span><span>${t("chat.group.disbanding")}</span>` : html`<span>${t("chat.group.disbandOrganizeComplete")}</span>`}
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ─── Force confirm (second confirmation) ───
+  if (phase === "force_confirm") {
+    return html`
+      <div class="modal-overlay" role="dialog" aria-modal="true" aria-live="polite">
+        <div class="modal-card modal-card--danger">
+          <div class="modal-header">
+            <div class="modal-icon modal-icon--danger">${icons.trash}</div>
+            <div class="modal-title-group">
+              <div class="modal-title">${t("chat.group.disbandForceConfirm")}</div>
+              <div class="modal-subtitle">${dialog.groupName}</div>
+            </div>
+          </div>
+          <div class="modal-body">
+            <div class="warning-box">
+              <div class="warning-box__icon">${icons.alertTriangle}</div>
+              <div class="warning-box__content">
+                <div class="warning-box__text">${t("chat.group.disbandForceConfirmDetail")}</div>
+              </div>
+            </div>
+            ${dialog.error ? html`<div class="modal-error"><span class="modal-error__icon">${icons.alertCircle}</span><span>${dialog.error}</span></div>` : nothing}
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn--secondary" ?disabled=${isBusy} @click=${() => props.onBackToMemoryWarning()}>${t("common.cancel")}</button>
+            <button class="btn btn--danger" ?disabled=${isBusy} @click=${() => props.onConfirmForceDisband()}>
+              ${isBusy ? html`<span class="btn__spinner">${icons.loader}</span><span>${t("chat.group.disbanding")}</span>` : html`<span>${t("chat.group.disbandForce")}</span>`}
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  return nothing;
 }
 
 // ─── Clear Messages Dialog ───

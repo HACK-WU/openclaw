@@ -86,6 +86,7 @@ import {
 } from "./controllers/exec-approvals.ts";
 import {
   abortGroupChat,
+  backToMemoryWarning,
   clearBridgeTerminalStream,
   closeClearMessagesDialog,
   closeDisbandGroupDialog,
@@ -100,8 +101,10 @@ import {
   loadGroupList,
   openClearMessagesDialog,
   openDisbandGroupDialog,
+  openForceConfirm,
   removeGroupMember,
   sendGroupMessage,
+  sendMemoryOrganizeCommand,
   sendTerminalResize,
   updateGroupMembers,
 } from "./controllers/group-chat.ts";
@@ -2242,7 +2245,7 @@ export function renderApp(state: AppViewState) {
                 },
                 onOpenDisbandDialog: () => {
                   if (state.activeGroupId && state.activeGroupMeta) {
-                    openDisbandGroupDialog(
+                    void openDisbandGroupDialog(
                       state as unknown as Parameters<typeof openDisbandGroupDialog>[0],
                       state.activeGroupId,
                       state.activeGroupMeta.name,
@@ -2257,6 +2260,29 @@ export function renderApp(state: AppViewState) {
                 onConfirmDisbandGroup: () => {
                   void confirmDisbandGroup(
                     state as unknown as Parameters<typeof confirmDisbandGroup>[0],
+                  );
+                },
+                onOrganizeMemoryAndDisband: () => {
+                  void sendMemoryOrganizeCommand(
+                    state as unknown as Parameters<typeof sendMemoryOrganizeCommand>[0],
+                  );
+                },
+                onOrganizeComplete: () => {
+                  void confirmDisbandGroup(
+                    state as unknown as Parameters<typeof confirmDisbandGroup>[0],
+                  );
+                },
+                onForceDisband: () => {
+                  openForceConfirm(state as unknown as Parameters<typeof openForceConfirm>[0]);
+                },
+                onConfirmForceDisband: () => {
+                  void confirmDisbandGroup(
+                    state as unknown as Parameters<typeof confirmDisbandGroup>[0],
+                  );
+                },
+                onBackToMemoryWarning: () => {
+                  backToMemoryWarning(
+                    state as unknown as Parameters<typeof backToMemoryWarning>[0],
                   );
                 },
                 onOpenClearMessagesDialog: () => {
@@ -2343,10 +2369,44 @@ export function renderApp(state: AppViewState) {
                   }
                 },
                 onMergeMemory: () => {
-                  // TODO: Send invisible system message to assistant agent for merge
+                  if (state.activeGroupId && state.activeGroupMeta) {
+                    const assistant = state.activeGroupMeta.members.find(
+                      (m) => m.role === "assistant" || m.role === "bridge-assistant",
+                    );
+                    if (assistant) {
+                      const prompt = `@${assistant.agentId} 请将各 Agent 的专属记忆汇总合并到共享记忆文件 MEMORY.md 中。具体步骤：
+1. 读取每个 Agent 的专属记忆文件
+2. 提取有价值的、与项目相关的知识
+3. 去重后合并到共享 MEMORY.md
+4. 完成后回复合并结果摘要`;
+                      void sendGroupMessage(
+                        state as unknown as Parameters<typeof sendGroupMessage>[0],
+                        state.activeGroupId,
+                        prompt,
+                        [assistant.agentId],
+                      );
+                    }
+                  }
                 },
                 onCompactMemory: () => {
-                  // TODO: Send invisible system message to assistant agent for compact
+                  if (state.activeGroupId && state.activeGroupMeta) {
+                    const assistant = state.activeGroupMeta.members.find(
+                      (m) => m.role === "assistant" || m.role === "bridge-assistant",
+                    );
+                    if (assistant) {
+                      const prompt = `@${assistant.agentId} 请精简整理当前群聊的记忆文件。具体步骤：
+1. 读取共享记忆 MEMORY.md 和各 Agent 专属记忆
+2. 清理过时的、冗余的或过于冗长的记忆条目
+3. 合并相似条目，保留关键信息
+4. 完成后回复精简结果摘要`;
+                      void sendGroupMessage(
+                        state as unknown as Parameters<typeof sendGroupMessage>[0],
+                        state.activeGroupId,
+                        prompt,
+                        [assistant.agentId],
+                      );
+                    }
+                  }
                 },
                 onUpdateMemoryConfig: (config) => {
                   if (state.activeGroupId) {

@@ -283,6 +283,21 @@ export const en: Record<string, string> = {
     "Are you sure you want to disband this group? This action cannot be undone.",
   "chat.group.disbandConfirmDetail": "All messages and settings will be permanently deleted.",
   "chat.group.disbanding": "Disbanding...",
+  "chat.group.disbandChecking": "Checking memory files...",
+  "chat.group.disbandMemoryWarning":
+    "This group contains a shared memory file (MEMORY.md) that needs to be organized before disbanding.",
+  "chat.group.disbandMemoryWarningDetail":
+    "Please extract valuable memories to project-level shared memory first, then clear the group memory before disbanding.",
+  "chat.group.disbandMemorySize": "Memory file size: {size}",
+  "chat.group.disbandOrganize": "Organize & Disband",
+  "chat.group.disbandOrganizing": "Organizing memories...",
+  "chat.group.disbandOrganizingDetail":
+    "A memory organization command has been sent to the assistant agent. Please wait for it to finish, then click the button below.",
+  "chat.group.disbandOrganizeComplete": "Done organizing, disband now",
+  "chat.group.disbandForce": "Force Disband",
+  "chat.group.disbandForceConfirm": "Are you sure you want to force disband?",
+  "chat.group.disbandForceConfirmDetail":
+    "Shared memory data will be permanently lost. This action cannot be undone.",
   "chat.group.clearMessages": "Clear Messages",
   "chat.group.clearMessagesConfirm": "Are you sure you want to clear all messages?",
   "chat.group.clearMessagesConfirmDetail":
