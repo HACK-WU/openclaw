@@ -1389,10 +1389,12 @@ export function renderApp(state: AppViewState) {
                 },
                 // CLI Agent create callbacks
                 onShowCliCreateDialog: async () => {
+                  // Get default workspace path (same as general Agent)
+                  const cliDefaultPath = await getDefaultWorkspacePath(state);
                   state.agentCliCreateForm = {
                     name: "claude-code",
                     agentId: "",
-                    workspace: "",
+                    workspace: cliDefaultPath,
                     emoji: "🤖",
                     cliType: "claude-code",
                     command: "claude",
