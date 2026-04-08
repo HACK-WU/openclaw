@@ -72,14 +72,23 @@ describe("message-dispatch", () => {
   });
 
   describe("mention mode", () => {
-    it("routes to mentioned agents only", () => {
+    it("routes to mentioned agents only (unicast keeps unicast mode)", () => {
       const result = resolveDispatchTargets(
         makeMeta(),
         makeMsg({ mentions: ["member-1", "member-2"] }),
       );
-      expect(result.mode).toBe("mention");
+      // In unicast mode, mentions keep mode="unicast" for serial triggering
+      expect(result.mode).toBe("unicast");
       expect(result.targets).toHaveLength(2);
-      expect(result.targets.map((t) => t.agentId).toSorted()).toEqual(["member-1", "member-2"]);
+      expect(result.targets.map((t) => t.agentId)).toEqual(["member-1", "member-2"]);
+    });
+
+    it("preserves @mention order in targets", () => {
+      const result = resolveDispatchTargets(
+        makeMeta(),
+        makeMsg({ mentions: ["member-2", "member-1"] }),
+      );
+      expect(result.targets.map((t) => t.agentId)).toEqual(["member-2", "member-1"]);
     });
 
     it("excludes sender from mentions", () => {
@@ -103,11 +112,18 @@ describe("message-dispatch", () => {
       expect(result.targets[0].agentId).toBe("assistant-1");
     });
 
-    it("takes priority over message mode", () => {
+    it("broadcast mode with mentions uses mention mode (parallel)", () => {
       const meta = makeMeta({ messageMode: "broadcast" });
       const result = resolveDispatchTargets(meta, makeMsg({ mentions: ["member-1"] }));
       expect(result.mode).toBe("mention");
       expect(result.targets).toHaveLength(1);
+    });
+
+    it("broadcast mode with mentions preserves @mention order", () => {
+      const meta = makeMeta({ messageMode: "broadcast" });
+      const result = resolveDispatchTargets(meta, makeMsg({ mentions: ["member-2", "member-1"] }));
+      expect(result.mode).toBe("mention");
+      expect(result.targets.map((t) => t.agentId)).toEqual(["member-2", "member-1"]);
     });
   });
 });

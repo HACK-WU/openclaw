@@ -48,15 +48,21 @@ export function resolveDispatchTargets(
   const senderAgentId = message.sender.type === "agent" ? message.sender.agentId : undefined;
 
   if (expandedMentions.length > 0) {
-    const targets = members
-      .filter(
-        (m) =>
-          expandedMentions.includes(m.agentId) &&
-          m.agentId !== senderAgentId &&
-          !isBridgeAssistant(m.agentId),
-      )
+    // Build a lookup map for quick member resolution
+    const memberMap = new Map(members.map((m) => [m.agentId, m]));
+
+    // Preserve @mention order so that unicast mode triggers agents sequentially
+    // in the order the user listed them. Filter out sender and bridge-assistants.
+    const targets = expandedMentions
+      .filter((id) => id !== senderAgentId && !isBridgeAssistant(id))
+      .map((id) => memberMap.get(id))
+      .filter((m): m is NonNullable<typeof m> => m !== undefined)
       .map((m) => ({ agentId: m.agentId, role: m.role }));
-    return { targets, mode: "mention" };
+
+    // In unicast mode, keep mode as "unicast" so the gateway triggers agents
+    // serially (one-by-one) rather than in parallel.
+    const mode = messageMode === "unicast" ? "unicast" : "mention";
+    return { targets, mode };
   }
 
   if (messageMode === "unicast") {
