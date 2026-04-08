@@ -794,7 +794,22 @@ function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
   const hasPendingAgents = chain.pendingAgents.size > 0;
   const activeStreamCount = getGroupActiveStreamCount(groupId);
   const hasActiveStreams = activeStreamCount > 0;
-  const isConversationBusy = hasPendingAgents || hasActiveStreams;
+
+  // Check if any Bridge Agent terminal is actively working (PTY output).
+  // bridgeTerminalStatuses is only tracked for activeGroupId, so this check
+  // is unavailable for non-active groups — acceptable since users are almost
+  // always watching the active group when bridge agents are working.
+  let hasBusyBridgeTerminals = false;
+  if (host.bridgeTerminalStatuses) {
+    for (const status of host.bridgeTerminalStatuses.values()) {
+      if (status === "working") {
+        hasBusyBridgeTerminals = true;
+        break;
+      }
+    }
+  }
+
+  const isConversationBusy = hasPendingAgents || hasActiveStreams || hasBusyBridgeTerminals;
 
   cancelSummaryTimer(groupId);
 
@@ -812,6 +827,15 @@ function scheduleSummaryCheck(host: GroupHost, groupId: string): void {
   const STUCK_TIMEOUT_MS = 30_000; // Force after 30s without any progress
 
   if (isConversationBusy) {
+    // Bridge terminals with active PTY output count as progress — reset
+    // lastProgressAt so the anti-deadlock timer doesn't fire while a CLI
+    // agent is still producing output (its reply only lands in transcript
+    // after completion, so without this the 30s timeout would trigger a
+    // summary before the bridge agent finishes).
+    if (hasBusyBridgeTerminals) {
+      chain.lastProgressAt = now;
+    }
+
     const timeSinceProgress = now - (chain.lastProgressAt ?? now);
     if (timeSinceProgress > STUCK_TIMEOUT_MS) {
       console.warn(
@@ -1093,7 +1117,7 @@ async function sendSummaryMessage(host: GroupHost, groupId: string): Promise<voi
     const originalStartedAt = chain.startedAt;
     const now = Date.now();
     groupChainStates.set(groupId, {
-      count: chain.count, // Preserve count — summary is part of the same chain
+      count: 0, // Reset count — summary starts a new forwarding round
       startedAt: originalStartedAt, // Keep original start time for duration limit
       initiators: wasForceTriggered ? chain.initiators : [],
       pendingAgents: new Set(validInitiators),
@@ -2796,6 +2820,17 @@ export function handleGroupTerminalEvent(
     const statuses = new Map(host.bridgeTerminalStatuses);
     statuses.set(payload.agentId, "working");
     host.bridgeTerminalStatuses = statuses;
+  }
+
+  // Update chain progress timestamp when bridge terminal is actively working.
+  // This prevents the anti-deadlock mechanism in scheduleSummaryCheck from
+  // force-triggering summary while a CLI agent is still producing output.
+  const effectiveStatus = host.bridgeTerminalStatuses?.get(payload.agentId);
+  if (effectiveStatus === "working") {
+    const chain = groupChainStates.get(payload.groupId);
+    if (chain) {
+      chain.lastProgressAt = Date.now();
+    }
   }
 }
 

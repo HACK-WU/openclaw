@@ -31,6 +31,7 @@ import {
   incrementPendingAgents,
   initChainState,
   removeChainMonitor,
+  resetTriggeredAgents,
   setChainMonitor,
   startChainMonitor,
 } from "../../group-chat/chain-state-store.js";
@@ -837,6 +838,13 @@ const handleGroupSend: GatewayRequestHandler = async ({ params, respond, context
     // already verified by atomicAgentForwardCheck above.
     const bypassAtomicCheck = skipTranscript && resolvedSender.type === "owner";
 
+    // When bypassing atomic check (summary messages), reset triggeredAgents so that
+    // the next round of agent-forwarded @mentions can re-trigger previously-seen agents.
+    // Without this, initiator replies that @mention a CLI agent would be silently blocked
+    // by atomicCheckAndIncrement's "agent_already_triggered_in_this_chain" check.
+    if (bypassAtomicCheck) {
+      resetTriggeredAgents(groupId);
+    }
     if (dispatch.mode !== "unicast") {
       // Parallel trigger for broadcast + mention using atomic check-and-increment
       const transcriptSnapshot = getTranscriptSnapshot(groupId);

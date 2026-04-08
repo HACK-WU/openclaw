@@ -188,6 +188,20 @@ export function initChainState(groupId: string, originMessageId: string): Conver
 }
 
 /**
+ * Reset triggeredAgents list for a group while preserving the rest of the chain state.
+ * Called after a summary message bypasses atomicCheckAndIncrement so that
+ * the next round of agent-forwarded @mentions can trigger previously-seen agents again.
+ */
+export function resetTriggeredAgents(groupId: string): void {
+  const state = store.get(groupId);
+  if (state) {
+    state.triggeredAgents = [];
+    store.set(groupId, state);
+    log.info(`[CHAIN] Reset triggeredAgents for group ${groupId}`);
+  }
+}
+
+/**
  * Clear chain state for a group (optional cleanup).
  */
 export function clearChainState(groupId: string): void {
