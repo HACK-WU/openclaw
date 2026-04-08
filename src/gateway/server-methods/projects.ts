@@ -14,18 +14,23 @@ import {
 import { getLogger } from "../../logging.js";
 import {
   createProject,
+  createProjectDoc,
   createProjectRule,
   createProjectSkill,
   deleteProject,
+  deleteProjectDoc,
   deleteProjectRule,
   deleteProjectSkill,
   findProjectByName,
+  loadProjectDoc,
+  loadProjectDocs,
   loadProjectIndex,
   loadProjectMeta,
   loadProjectRule,
   loadProjectRules,
   loadProjectSkill,
   loadProjectSkills,
+  updateProjectDoc,
   updateProjectMeta,
   updateProjectRule,
   updateProjectSkill,
@@ -603,6 +608,130 @@ const handleProjectsSkillsDelete: GatewayRequestHandler = async ({ params, respo
   }
 };
 
+// ─── Project Docs CRUD ───
+
+const handleProjectsDocsList: GatewayRequestHandler = ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  if (!projectId) {
+    respond(false, undefined, { message: "projectId is required", code: 400 });
+    return;
+  }
+
+  const meta = loadProjectMeta(projectId);
+  if (!meta) {
+    respond(false, undefined, { message: "Project not found", code: 404 });
+    return;
+  }
+
+  const docs = loadProjectDocs(projectId);
+  respond(true, docs);
+};
+
+const handleProjectsDocsGet: GatewayRequestHandler = ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const docId = params.docId as string;
+  if (!projectId || !docId) {
+    respond(false, undefined, { message: "projectId and docId are required", code: 400 });
+    return;
+  }
+
+  const doc = loadProjectDoc(projectId, docId);
+  if (!doc) {
+    respond(false, undefined, { message: "Doc not found", code: 404 });
+    return;
+  }
+
+  respond(true, doc);
+};
+
+const handleProjectsDocsCreate: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const name = (params.name as string)?.trim();
+  const content = (params.content as string)?.trim();
+
+  if (!projectId) {
+    respond(false, undefined, { message: "projectId is required", code: 400 });
+    return;
+  }
+  if (!name) {
+    respond(false, undefined, { message: "Doc name is required", code: 400 });
+    return;
+  }
+  if (!content) {
+    respond(false, undefined, { message: "Doc content is required", code: 400 });
+    return;
+  }
+
+  const meta = loadProjectMeta(projectId);
+  if (!meta) {
+    respond(false, undefined, { message: "Project not found", code: 404 });
+    return;
+  }
+
+  try {
+    const doc = await createProjectDoc(projectId, { name, content });
+    log.info(`Doc created: ${doc.id} in project ${projectId}`);
+    respond(true, doc);
+  } catch (err) {
+    log.error(`Failed to create doc: ${String(err)}`);
+    respond(false, undefined, { message: "Failed to create doc", code: 500 });
+  }
+};
+
+const handleProjectsDocsUpdate: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const docId = params.docId as string;
+  const name = params.name as string | undefined;
+  const content = params.content as string | undefined;
+
+  if (!projectId || !docId) {
+    respond(false, undefined, { message: "projectId and docId are required", code: 400 });
+    return;
+  }
+
+  try {
+    const updated = await updateProjectDoc(projectId, docId, {
+      name: name?.trim(),
+      content: content?.trim(),
+    });
+    log.info(`Doc updated: ${docId} in project ${projectId}`);
+    respond(true, updated);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("not found")) {
+      respond(false, undefined, { message: "Doc not found", code: 404 });
+    } else {
+      log.error(`Failed to update doc: ${String(err)}`);
+      respond(false, undefined, { message: "Failed to update doc", code: 500 });
+    }
+  }
+};
+
+const handleProjectsDocsDelete: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const docId = params.docId as string;
+
+  if (!projectId || !docId) {
+    respond(false, undefined, { message: "projectId and docId are required", code: 400 });
+    return;
+  }
+
+  const doc = loadProjectDoc(projectId, docId);
+  if (!doc) {
+    respond(false, undefined, { message: "Doc not found", code: 404 });
+    return;
+  }
+
+  try {
+    await deleteProjectDoc(projectId, docId);
+    log.info(`Doc deleted: ${docId} in project ${projectId}`);
+    respond(true, { ok: true });
+  } catch (err) {
+    log.error(`Failed to delete doc: ${String(err)}`);
+    respond(false, undefined, { message: "Failed to delete doc", code: 500 });
+  }
+};
+
 // ─── Export Handlers ───
 
 export const projectsHandlers: GatewayRequestHandlers = {
@@ -623,6 +752,12 @@ export const projectsHandlers: GatewayRequestHandlers = {
   "projects.skills.create": handleProjectsSkillsCreate,
   "projects.skills.update": handleProjectsSkillsUpdate,
   "projects.skills.delete": handleProjectsSkillsDelete,
+  // Docs
+  "projects.docs.list": handleProjectsDocsList,
+  "projects.docs.get": handleProjectsDocsGet,
+  "projects.docs.create": handleProjectsDocsCreate,
+  "projects.docs.update": handleProjectsDocsUpdate,
+  "projects.docs.delete": handleProjectsDocsDelete,
   // Phase 2: Group integration
   "projects.getLinkedGroups": handleProjectsGetLinkedGroups,
   "projects.linkGroup": handleProjectsLinkGroup,

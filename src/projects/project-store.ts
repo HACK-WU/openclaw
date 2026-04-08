@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
-import type { Project, ProjectIndexEntry, ProjectRule, ProjectSkill } from "./types.js";
+import type { Project, ProjectDoc, ProjectIndexEntry, ProjectRule, ProjectSkill } from "./types.js";
 
 // ─── Path resolution ───
 
@@ -470,6 +470,121 @@ export async function updateProjectSkill(
  */
 export async function deleteProjectSkill(projectId: string, skillId: string): Promise<void> {
   const filePath = resolveProjectSkillPath(projectId, skillId);
+  try {
+    await fs.promises.unlink(filePath);
+  } catch {
+    // 文件不存在则忽略
+  }
+}
+
+// ─── Project Docs CRUD ───
+
+export function resolveProjectDocsDir(projectId: string): string {
+  return path.join(resolveProjectDir(projectId), "docs");
+}
+
+export function resolveProjectDocPath(projectId: string, docId: string): string {
+  return path.join(resolveProjectDocsDir(projectId), `${docId}.json`);
+}
+
+/**
+ * 加载项目的所有文档
+ */
+export function loadProjectDocs(projectId: string): ProjectDoc[] {
+  const docsDir = resolveProjectDocsDir(projectId);
+  try {
+    const entries = fs.readdirSync(docsDir);
+    const docs: ProjectDoc[] = [];
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) {
+        continue;
+      }
+      try {
+        const raw = fs.readFileSync(path.join(docsDir, entry), "utf-8");
+        const doc: ProjectDoc = JSON.parse(raw);
+        docs.push(doc);
+      } catch {
+        // 跳过无法解析的文件
+      }
+    }
+    // 按创建时间排序
+    docs.sort((a, b) => a.createdAt - b.createdAt);
+    return docs;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 加载单条文档
+ */
+export function loadProjectDoc(projectId: string, docId: string): ProjectDoc | null {
+  const filePath = resolveProjectDocPath(projectId, docId);
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    return JSON.parse(raw) as ProjectDoc;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 创建项目文档
+ */
+export async function createProjectDoc(
+  projectId: string,
+  params: { name: string; content: string },
+): Promise<ProjectDoc> {
+  const docId = randomUUID();
+  const now = Date.now();
+
+  const doc: ProjectDoc = {
+    id: docId,
+    projectId,
+    name: params.name,
+    content: params.content,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const docsDir = resolveProjectDocsDir(projectId);
+  ensureDir(docsDir);
+  await atomicWriteJson(resolveProjectDocPath(projectId, docId), doc);
+
+  return doc;
+}
+
+/**
+ * 更新项目文档
+ */
+export async function updateProjectDoc(
+  projectId: string,
+  docId: string,
+  params: { name?: string; content?: string },
+): Promise<ProjectDoc> {
+  return withProjectLock(`doc:${docId}`, async () => {
+    const current = loadProjectDoc(projectId, docId);
+    if (!current) {
+      throw new Error(`Doc ${docId} not found in project ${projectId}`);
+    }
+
+    const updated: ProjectDoc = {
+      ...current,
+      ...(params.name !== undefined ? { name: params.name } : {}),
+      ...(params.content !== undefined ? { content: params.content } : {}),
+      updatedAt: Date.now(),
+    };
+
+    await atomicWriteJson(resolveProjectDocPath(projectId, docId), updated);
+    return updated;
+  });
+}
+
+/**
+ * 删除项目文档
+ */
+export async function deleteProjectDoc(projectId: string, docId: string): Promise<void> {
+  const filePath = resolveProjectDocPath(projectId, docId);
   try {
     await fs.promises.unlink(filePath);
   } catch {

@@ -528,6 +528,7 @@ export const en: Record<string, string> = {
   "project.manage.tab.overview": "Overview",
   "project.manage.tab.rules": "Rules",
   "project.manage.tab.skills": "Skills",
+  "project.manage.tab.docs": "Docs",
   // Skills management
   "project.skills.title": "Project Skills",
   "project.skills.create": "Create Skill",
@@ -556,6 +557,34 @@ export const en: Record<string, string> = {
     "After deletion, Agents in linked groups will no longer receive this skill in context.",
   "project.skills.delete.cancel": "Cancel",
   "project.skills.delete.confirmButton": "Confirm Delete",
+  // Docs management
+  "project.docs.title": "Project Docs",
+  "project.docs.create": "Create Doc",
+  "project.docs.edit": "Edit",
+  "project.docs.delete": "Delete",
+  "project.docs.empty.title": "No Project Docs",
+  "project.docs.empty.description":
+    "Create docs to provide reference materials for Agent, docs will be injected into linked group contexts",
+  "project.docs.empty.button": "Create First Doc",
+  "project.docs.dialog.create.title": "Create Doc",
+  "project.docs.dialog.edit.title": "Edit Doc",
+  "project.docs.dialog.name.label": "Doc Name",
+  "project.docs.dialog.name.hint": "Name the doc for easy identification and management",
+  "project.docs.dialog.name.placeholder": "Enter doc name...",
+  "project.docs.dialog.content.label": "Doc Content",
+  "project.docs.dialog.content.hint":
+    "Supports Markdown format, will be injected into linked group Agent contexts",
+  "project.docs.dialog.content.placeholder": "## Doc Name\n\nDoc content...",
+  "project.docs.dialog.cancel": "Cancel",
+  "project.docs.dialog.create": "Create Doc",
+  "project.docs.dialog.save": "Save Changes",
+  "project.docs.delete.title": "Delete Doc",
+  "project.docs.delete.confirm":
+    'Are you sure you want to delete doc "{title}"? This action cannot be undone.',
+  "project.docs.delete.hint":
+    "After deletion, Agents in linked groups will no longer receive this doc in context.",
+  "project.docs.delete.cancel": "Cancel",
+  "project.docs.delete.confirmButton": "Confirm Delete",
   "project.groups.title": "Linked Groups",
   "project.groups.empty.title": "No linked groups",
   "project.groups.empty.description":

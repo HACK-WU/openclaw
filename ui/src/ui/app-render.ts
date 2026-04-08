@@ -113,16 +113,20 @@ import { loadNodes } from "./controllers/nodes.ts";
 import { loadPresence } from "./controllers/presence.ts";
 import {
   createProject,
+  createProjectDoc,
   createProjectRule,
   createProjectSkill,
   deleteProject,
+  deleteProjectDoc,
   deleteProjectRule,
   deleteProjectSkill,
   loadLinkedGroups,
+  loadProjectDocs,
   loadProjectInfo,
   loadProjectRules,
   loadProjectSkills,
   updateProject,
+  updateProjectDoc,
   updateProjectRule,
   updateProjectSkill,
   validateProjectPaths,
@@ -639,6 +643,7 @@ export function renderApp(state: AppViewState) {
                   void loadProjectInfo(state as unknown as ProjectsHost, projectId);
                   void loadProjectRules(state as unknown as ProjectsHost, projectId);
                   void loadProjectSkills(state as unknown as ProjectsHost, projectId);
+                  void loadProjectDocs(state as unknown as ProjectsHost, projectId);
                   void loadLinkedGroups(state as unknown as ProjectsHost, projectId);
                 },
                 onCloseManageDialog: () => {
@@ -646,6 +651,7 @@ export function renderApp(state: AppViewState) {
                   state.activeProject = null;
                   state.projectRules = [];
                   state.projectSkills = [];
+                  state.projectDocs = [];
                   state.projectLinkedGroups = [];
                 },
                 onSetManageTab: (tab) => {
@@ -787,6 +793,67 @@ export function renderApp(state: AppViewState) {
                   if (state.projectSkillEditDialog) {
                     state.projectSkillEditDialog = {
                       ...state.projectSkillEditDialog,
+                      previewMode,
+                    };
+                  }
+                },
+                // 文档管理
+                projectDocs: state.projectDocs,
+                projectDocsLoading: state.projectDocsLoading,
+                projectDocCreateDialog: state.projectDocCreateDialog,
+                projectDocEditDialog: state.projectDocEditDialog,
+                projectDocDeleteDialog: state.projectDocDeleteDialog,
+                onLoadProjectDocs: (projectId) =>
+                  void loadProjectDocs(state as unknown as ProjectsHost, projectId),
+                onOpenDocCreateDialog: () => {
+                  state.projectDocCreateDialog = {
+                    name: "",
+                    content: "",
+                    previewMode: false,
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseDocCreateDialog: () => (state.projectDocCreateDialog = null),
+                onCreateDoc: (projectId, params) =>
+                  void createProjectDoc(state as unknown as ProjectsHost, projectId, params),
+                onOpenDocEditDialog: (doc) => {
+                  state.projectDocEditDialog = {
+                    docId: doc.id,
+                    name: doc.name,
+                    content: doc.content,
+                    previewMode: false,
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseDocEditDialog: () => (state.projectDocEditDialog = null),
+                onUpdateDoc: (projectId, docId, params) =>
+                  void updateProjectDoc(state as unknown as ProjectsHost, projectId, docId, params),
+                onOpenDocDeleteDialog: (docId, docName) => {
+                  state.projectDocDeleteDialog = {
+                    docId,
+                    docName,
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseDocDeleteDialog: () => (state.projectDocDeleteDialog = null),
+                onDeleteDoc: (projectId, docId) =>
+                  void deleteProjectDoc(state as unknown as ProjectsHost, projectId, docId),
+                // 预览模式切换（文档）
+                onToggleDocCreatePreview: (previewMode) => {
+                  if (state.projectDocCreateDialog) {
+                    state.projectDocCreateDialog = {
+                      ...state.projectDocCreateDialog,
+                      previewMode,
+                    };
+                  }
+                },
+                onToggleDocEditPreview: (previewMode) => {
+                  if (state.projectDocEditDialog) {
+                    state.projectDocEditDialog = {
+                      ...state.projectDocEditDialog,
                       previewMode,
                     };
                   }

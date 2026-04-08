@@ -132,6 +132,41 @@ export type ProjectSkillDeleteDialogState = {
   error: string | null;
 };
 
+// ─── Doc Types ───
+
+export type ProjectDoc = {
+  id: string;
+  projectId: string;
+  name: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ProjectDocCreateDialogState = {
+  name: string;
+  content: string;
+  previewMode: boolean;
+  isBusy: boolean;
+  error: string | null;
+};
+
+export type ProjectDocEditDialogState = {
+  docId: string;
+  name: string;
+  content: string;
+  previewMode: boolean;
+  isBusy: boolean;
+  error: string | null;
+};
+
+export type ProjectDocDeleteDialogState = {
+  docId: string;
+  docName: string;
+  isBusy: boolean;
+  error: string | null;
+};
+
 // 关联群聊条目（从后端 GroupIndexEntry 映射）
 export type LinkedGroupEntry = {
   groupId: string;
@@ -144,8 +179,8 @@ export type LinkedGroupEntry = {
 export type ProjectManageDialogState = {
   projectId: string;
   projectName: string;
-  // 当前选中的 tab: "overview" | "rules" | "skills"
-  activeTab: "overview" | "rules" | "skills";
+  // 当前选中的 tab: "overview" | "rules" | "skills" | "docs"
+  activeTab: "overview" | "rules" | "skills" | "docs";
 };
 
 // ─── State ───
@@ -171,6 +206,12 @@ export type ProjectsState = {
   projectSkillCreateDialog: ProjectSkillCreateDialogState | null;
   projectSkillEditDialog: ProjectSkillEditDialogState | null;
   projectSkillDeleteDialog: ProjectSkillDeleteDialogState | null;
+  // 文档管理状态
+  projectDocs: ProjectDoc[];
+  projectDocsLoading: boolean;
+  projectDocCreateDialog: ProjectDocCreateDialogState | null;
+  projectDocEditDialog: ProjectDocEditDialogState | null;
+  projectDocDeleteDialog: ProjectDocDeleteDialogState | null;
   // 关联群聊
   projectLinkedGroups: LinkedGroupEntry[];
   projectLinkedGroupsLoading: boolean;
@@ -197,6 +238,11 @@ export const DEFAULT_PROJECTS_STATE: ProjectsState = {
   projectSkillCreateDialog: null,
   projectSkillEditDialog: null,
   projectSkillDeleteDialog: null,
+  projectDocs: [],
+  projectDocsLoading: false,
+  projectDocCreateDialog: null,
+  projectDocEditDialog: null,
+  projectDocDeleteDialog: null,
 };
 
 export type ProjectsHost = {
@@ -500,6 +546,96 @@ export async function deleteProjectSkill(
   }
 }
 
+// ─── Doc RPC Functions ───
+
+export async function loadProjectDocs(host: ProjectsHost, projectId: string): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  host.projectDocsLoading = true;
+  try {
+    const result = await host.client.request<ProjectDoc[]>("projects.docs.list", { projectId });
+    host.projectDocs = result ?? [];
+  } catch (err) {
+    host.projectError = String(err);
+  } finally {
+    host.projectDocsLoading = false;
+  }
+}
+
+export async function createProjectDoc(
+  host: ProjectsHost,
+  projectId: string,
+  params: { name: string; content: string },
+): Promise<boolean> {
+  if (!host.client || !host.connected) {
+    return false;
+  }
+  const dialog = host.projectDocCreateDialog;
+  if (!dialog) {
+    return false;
+  }
+  host.projectDocCreateDialog = { ...dialog, isBusy: true, error: null };
+  try {
+    await host.client.request("projects.docs.create", { projectId, ...params });
+    host.projectDocCreateDialog = null;
+    await loadProjectDocs(host, projectId);
+    return true;
+  } catch (err) {
+    host.projectDocCreateDialog = { ...dialog, isBusy: false, error: String(err) };
+    return false;
+  }
+}
+
+export async function updateProjectDoc(
+  host: ProjectsHost,
+  projectId: string,
+  docId: string,
+  params: { name?: string; content?: string },
+): Promise<boolean> {
+  if (!host.client || !host.connected) {
+    return false;
+  }
+  const dialog = host.projectDocEditDialog;
+  if (!dialog) {
+    return false;
+  }
+  host.projectDocEditDialog = { ...dialog, isBusy: true, error: null };
+  try {
+    await host.client.request("projects.docs.update", { projectId, docId, ...params });
+    host.projectDocEditDialog = null;
+    await loadProjectDocs(host, projectId);
+    return true;
+  } catch (err) {
+    host.projectDocEditDialog = { ...dialog, isBusy: false, error: String(err) };
+    return false;
+  }
+}
+
+export async function deleteProjectDoc(
+  host: ProjectsHost,
+  projectId: string,
+  docId: string,
+): Promise<boolean> {
+  if (!host.client || !host.connected) {
+    return false;
+  }
+  const dialog = host.projectDocDeleteDialog;
+  if (!dialog) {
+    return false;
+  }
+  host.projectDocDeleteDialog = { ...dialog, isBusy: true, error: null };
+  try {
+    await host.client.request("projects.docs.delete", { projectId, docId });
+    host.projectDocDeleteDialog = null;
+    await loadProjectDocs(host, projectId);
+    return true;
+  } catch (err) {
+    host.projectDocDeleteDialog = { ...dialog, isBusy: false, error: String(err) };
+    return false;
+  }
+}
+
 // ─── Linked Groups ───
 
 export async function loadLinkedGroups(host: ProjectsHost, projectId: string): Promise<void> {
@@ -527,10 +663,11 @@ export async function openProjectManageDialog(
   projectId: string,
   projectName: string,
 ): Promise<void> {
-  // 加载项目详情、规则和技能
+  // 加载项目详情、规则、技能和文档
   await loadProjectInfo(host, projectId);
   await loadProjectRules(host, projectId);
   await loadProjectSkills(host, projectId);
+  await loadProjectDocs(host, projectId);
 
   host.projectManageDialog = {
     projectId,
@@ -544,12 +681,13 @@ export function closeProjectManageDialog(host: ProjectsHost): void {
   host.activeProject = null;
   host.projectRules = [];
   host.projectSkills = [];
+  host.projectDocs = [];
   host.projectLinkedGroups = [];
 }
 
 export function setProjectManageTab(
   host: ProjectsHost,
-  tab: "overview" | "rules" | "skills",
+  tab: "overview" | "rules" | "skills" | "docs",
 ): void {
   if (host.projectManageDialog) {
     host.projectManageDialog = {

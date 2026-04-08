@@ -64,3 +64,20 @@ export type ProjectSkill = {
   /** 更新时间戳 (epoch ms) */
   updatedAt: number;
 };
+
+// ─── Project Doc ───
+
+export type ProjectDoc = {
+  /** 文档唯一标识 (UUID) */
+  id: string;
+  /** 所属项目 ID */
+  projectId: string;
+  /** 文档名称 */
+  name: string;
+  /** 文档内容（Markdown 格式） */
+  content: string;
+  /** 创建时间戳 (epoch ms) */
+  createdAt: number;
+  /** 更新时间戳 (epoch ms) */
+  updatedAt: number;
+};

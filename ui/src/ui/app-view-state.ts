@@ -22,6 +22,14 @@ import type {
   ProjectRuleCreateDialogState,
   ProjectRuleDeleteDialogState,
   ProjectRuleEditDialogState,
+  ProjectSkill,
+  ProjectSkillCreateDialogState,
+  ProjectSkillDeleteDialogState,
+  ProjectSkillEditDialogState,
+  ProjectDoc,
+  ProjectDocCreateDialogState,
+  ProjectDocDeleteDialogState,
+  ProjectDocEditDialogState,
 } from "./controllers/projects.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
@@ -370,6 +378,18 @@ export type AppViewState = {
     projectRuleCreateDialog: ProjectRuleCreateDialogState | null;
     projectRuleEditDialog: ProjectRuleEditDialogState | null;
     projectRuleDeleteDialog: ProjectRuleDeleteDialogState | null;
+    // Project skills state
+    projectSkills: ProjectSkill[];
+    projectSkillsLoading: boolean;
+    projectSkillCreateDialog: ProjectSkillCreateDialogState | null;
+    projectSkillEditDialog: ProjectSkillEditDialogState | null;
+    projectSkillDeleteDialog: ProjectSkillDeleteDialogState | null;
+    // Project docs state
+    projectDocs: ProjectDoc[];
+    projectDocsLoading: boolean;
+    projectDocCreateDialog: ProjectDocCreateDialogState | null;
+    projectDocEditDialog: ProjectDocEditDialogState | null;
+    projectDocDeleteDialog: ProjectDocDeleteDialogState | null;
     // Project linked groups state
     projectLinkedGroups: LinkedGroupEntry[];
     projectLinkedGroupsLoading: boolean;

@@ -12,6 +12,10 @@ import type {
   Project,
   ProjectCreateDialogState,
   ProjectDeleteDialogState,
+  ProjectDoc,
+  ProjectDocCreateDialogState,
+  ProjectDocDeleteDialogState,
+  ProjectDocEditDialogState,
   ProjectEditDialogState,
   ProjectIndexEntry,
   ProjectManageDialogState,
@@ -53,6 +57,12 @@ export type ProjectsViewProps = {
   projectSkillCreateDialog: ProjectSkillCreateDialogState | null;
   projectSkillEditDialog: ProjectSkillEditDialogState | null;
   projectSkillDeleteDialog: ProjectSkillDeleteDialogState | null;
+  // 文档管理状态
+  projectDocs: ProjectDoc[];
+  projectDocsLoading: boolean;
+  projectDocCreateDialog: ProjectDocCreateDialogState | null;
+  projectDocEditDialog: ProjectDocEditDialogState | null;
+  projectDocDeleteDialog: ProjectDocDeleteDialogState | null;
   // 关联群聊
   projectLinkedGroups: LinkedGroupEntry[];
   projectLinkedGroupsLoading: boolean;
@@ -77,7 +87,7 @@ export type ProjectsViewProps = {
   // 管理弹框回调
   onOpenManageDialog: (projectId: string, projectName: string) => void;
   onCloseManageDialog: () => void;
-  onSetManageTab: (tab: "overview" | "rules" | "skills") => void;
+  onSetManageTab: (tab: "overview" | "rules" | "skills" | "docs") => void;
   // 规则回调
   onLoadProjectRules: (projectId: string) => void;
   onOpenRuleCreateDialog: () => void;
@@ -114,6 +124,24 @@ export type ProjectsViewProps = {
   // 预览模式切换（技能）
   onToggleSkillCreatePreview: (previewMode: boolean) => void;
   onToggleSkillEditPreview: (previewMode: boolean) => void;
+  // 文档回调
+  onLoadProjectDocs: (projectId: string) => void;
+  onOpenDocCreateDialog: () => void;
+  onCloseDocCreateDialog: () => void;
+  onCreateDoc: (projectId: string, params: { name: string; content: string }) => void;
+  onOpenDocEditDialog: (doc: ProjectDoc) => void;
+  onCloseDocEditDialog: () => void;
+  onUpdateDoc: (
+    projectId: string,
+    docId: string,
+    params: { name?: string; content?: string },
+  ) => void;
+  onOpenDocDeleteDialog: (docId: string, docName: string) => void;
+  onCloseDocDeleteDialog: () => void;
+  onDeleteDoc: (projectId: string, docId: string) => void;
+  // 预览模式切换（文档）
+  onToggleDocCreatePreview: (previewMode: boolean) => void;
+  onToggleDocEditPreview: (previewMode: boolean) => void;
 };
 
 // ─── Main Render ───
@@ -153,6 +181,9 @@ export function renderProjectsView(props: ProjectsViewProps): TemplateResult {
       ${renderSkillCreateDialog(props)}
       ${renderSkillEditDialog(props)}
       ${renderSkillDeleteDialog(props)}
+      ${renderDocCreateDialog(props)}
+      ${renderDocEditDialog(props)}
+      ${renderDocDeleteDialog(props)}
     </div>
   `;
 }
@@ -481,6 +512,12 @@ function renderManageDialog(props: ProjectsViewProps): TemplateResult | typeof n
           >
             ${t("project.manage.tab.skills")}
           </button>
+          <button
+            class="projects-manage-dialog__tab ${dialog.activeTab === "docs" ? "projects-manage-dialog__tab--active" : ""}"
+            @click=${() => props.onSetManageTab("docs")}
+          >
+            ${t("project.manage.tab.docs")}
+          </button>
         </div>
 
         <div class="modal-body">
@@ -489,7 +526,9 @@ function renderManageDialog(props: ProjectsViewProps): TemplateResult | typeof n
               ? renderManageOverviewTab(props, project)
               : dialog.activeTab === "rules"
                 ? renderManageRulesTab(props)
-                : renderManageSkillsTab(props)
+                : dialog.activeTab === "skills"
+                  ? renderManageSkillsTab(props)
+                  : renderManageDocsTab(props)
           }
         </div>
 
@@ -1434,6 +1473,375 @@ function renderSkillDeleteDialog(props: ProjectsViewProps): TemplateResult | typ
           >
             ${dialog.isBusy ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing}
             ${t("project.skills.delete.confirmButton")}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Docs Section (Manage Dialog) ───
+
+function renderManageDocsTab(props: ProjectsViewProps): TemplateResult {
+  return html`
+    <div class="projects-manage-dialog__rules">
+      <div class="projects-manage-dialog__rules-header">
+        <h4 class="projects-manage-dialog__section-title">
+          ${t("project.docs.title")}
+          ${
+            props.projectDocs.length > 0
+              ? html`<span class="projects-rules__count">(${props.projectDocs.length})</span>`
+              : nothing
+          }
+        </h4>
+        <button
+          class="btn btn--sm btn--primary"
+          @click=${() => props.onOpenDocCreateDialog()}
+        >
+          ${icons.plus}
+          <span>${t("project.docs.create")}</span>
+        </button>
+      </div>
+
+      ${
+        props.projectDocsLoading
+          ? html`<div class="projects-manage-dialog__loading">${t("action.loading")}</div>`
+          : props.projectDocs.length === 0
+            ? html`
+              <div class="projects-rules__empty">
+                <div class="projects-rules__empty-icon">${icons.fileText}</div>
+                <div class="projects-rules__empty-title">${t("project.docs.empty.title")}</div>
+                <div class="projects-rules__empty-desc">${t("project.docs.empty.description")}</div>
+                <button
+                  class="btn btn--primary btn--sm"
+                  @click=${() => props.onOpenDocCreateDialog()}
+                >
+                  ${t("project.docs.empty.button")}
+                </button>
+              </div>
+            `
+            : html`
+              <div class="projects-rules__list">
+                ${props.projectDocs.map((doc) => renderDocItem(doc, props))}
+              </div>
+            `
+      }
+    </div>
+  `;
+}
+
+function renderDocItem(doc: ProjectDoc, props: ProjectsViewProps): TemplateResult {
+  const summary = doc.content.length > 80 ? doc.content.substring(0, 80) + "..." : doc.content;
+
+  return html`
+    <div class="projects-rules__item">
+      <div class="projects-rules__item-info">
+        <div class="projects-rules__item-title">${icons.fileText} ${doc.name}</div>
+        <div class="projects-rules__item-summary">${summary}</div>
+      </div>
+      <div class="projects-rules__item-actions">
+        <button
+          class="btn btn--sm"
+          @click=${() => props.onOpenDocEditDialog(doc)}
+          title=${t("project.docs.edit")}
+        >
+          ${t("project.docs.edit")}
+        </button>
+        <button
+          class="btn btn--sm btn--danger-text"
+          @click=${() => props.onOpenDocDeleteDialog(doc.id, doc.name)}
+          title=${t("project.docs.delete")}
+        >
+          ${t("project.docs.delete")}
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Doc Create Dialog ───
+
+function renderDocCreateDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
+  const dialog = props.projectDocCreateDialog;
+  if (!dialog || !props.activeProject) {
+    return nothing;
+  }
+
+  const previewHtml = dialog.content.trim() ? simpleMarkdownToHtml(dialog.content) : "";
+
+  return html`
+    <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
+      @click=${(e: Event) => {
+        if ((e.target as HTMLElement).classList.contains("modal-overlay--light")) {
+          props.onCloseDocCreateDialog();
+        }
+      }}
+    >
+      <div class="modal-card projects-dialog projects-dialog--wide">
+        <div class="modal-header">
+          <h3 class="modal-title">${t("project.docs.dialog.create.title")}</h3>
+          <button class="modal-close" @click=${() => props.onCloseDocCreateDialog()}>
+            ${icons.x}
+          </button>
+        </div>
+        <div class="modal-body">
+          <!-- 文档名称 -->
+          <div class="form-group">
+            <label class="form-label">${t("project.docs.dialog.name.label")} *</label>
+            <input
+              class="form-input"
+              type="text"
+              .value=${dialog.name}
+              placeholder=${t("project.docs.dialog.name.placeholder")}
+              @input=${(e: Event) => {
+                const target = e.target as HTMLInputElement;
+                props.projectDocCreateDialog!.name = target.value;
+              }}
+              ?disabled=${dialog.isBusy}
+            />
+            <div class="form-hint">${t("project.docs.dialog.name.hint")}</div>
+          </div>
+
+          <!-- 编辑/预览 Tab -->
+          <div class="form-group">
+            <label class="form-label">${t("project.docs.dialog.content.label")} *</label>
+            <div class="projects-rules__tabs">
+              <button
+                class="projects-rules__tab ${!dialog.previewMode ? "projects-rules__tab--active" : ""}"
+                @click=${() => props.onToggleDocCreatePreview(false)}
+              >
+                ${t("project.rules.dialog.tab.edit")}
+              </button>
+              <button
+                class="projects-rules__tab ${dialog.previewMode ? "projects-rules__tab--active" : ""}"
+                @click=${() => props.onToggleDocCreatePreview(true)}
+              >
+                ${t("project.rules.dialog.tab.preview")}
+              </button>
+            </div>
+
+            ${
+              dialog.previewMode
+                ? html`
+                <div class="projects-rules__preview markdown-body">
+                  ${unsafeHTML(previewHtml || t("project.rules.dialog.content.placeholder"))}
+                </div>
+              `
+                : html`
+                <textarea
+                  class="form-input form-textarea projects-rules__editor"
+                  .value=${dialog.content}
+                  placeholder=${t("project.docs.dialog.content.placeholder")}
+                  @input=${(e: Event) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    props.projectDocCreateDialog!.content = target.value;
+                  }}
+                  ?disabled=${dialog.isBusy}
+                  rows="10"
+                ></textarea>
+              `
+            }
+            <div class="form-hint">${t("project.docs.dialog.content.hint")}</div>
+          </div>
+
+          ${dialog.error ? html`<div class="modal-error">${dialog.error}</div>` : nothing}
+        </div>
+        <div class="modal-actions">
+          <button
+            class="btn btn--secondary"
+            @click=${() => props.onCloseDocCreateDialog()}
+            ?disabled=${dialog.isBusy}
+          >
+            ${t("project.rules.dialog.cancel")}
+          </button>
+          <button
+            class="btn btn--primary"
+            ?disabled=${dialog.isBusy || !dialog.name.trim() || !dialog.content.trim()}
+            @click=${() => {
+              props.onCreateDoc(props.activeProject!.id, {
+                name: dialog.name.trim(),
+                content: dialog.content.trim(),
+              });
+            }}
+          >
+            ${dialog.isBusy ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing}
+            ${t("project.docs.dialog.create")}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Doc Edit Dialog ───
+
+function renderDocEditDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
+  const dialog = props.projectDocEditDialog;
+  if (!dialog || !props.activeProject) {
+    return nothing;
+  }
+
+  const previewHtml = dialog.content.trim() ? simpleMarkdownToHtml(dialog.content) : "";
+
+  return html`
+    <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
+      @click=${(e: Event) => {
+        if ((e.target as HTMLElement).classList.contains("modal-overlay--light")) {
+          props.onCloseDocEditDialog();
+        }
+      }}
+    >
+      <div class="modal-card projects-dialog projects-dialog--wide">
+        <div class="modal-header">
+          <h3 class="modal-title">${t("project.docs.dialog.edit.title")}</h3>
+          <button class="modal-close" @click=${() => props.onCloseDocEditDialog()}>
+            ${icons.x}
+          </button>
+        </div>
+        <div class="modal-body">
+          <!-- 文档名称 -->
+          <div class="form-group">
+            <label class="form-label">${t("project.docs.dialog.name.label")} *</label>
+            <input
+              class="form-input"
+              type="text"
+              .value=${dialog.name}
+              placeholder=${t("project.docs.dialog.name.placeholder")}
+              @input=${(e: Event) => {
+                const target = e.target as HTMLInputElement;
+                props.projectDocEditDialog!.name = target.value;
+              }}
+              ?disabled=${dialog.isBusy}
+            />
+          </div>
+
+          <!-- 编辑/预览 Tab -->
+          <div class="form-group">
+            <label class="form-label">${t("project.docs.dialog.content.label")} *</label>
+            <div class="projects-rules__tabs">
+              <button
+                class="projects-rules__tab ${!dialog.previewMode ? "projects-rules__tab--active" : ""}"
+                @click=${() => props.onToggleDocEditPreview(false)}
+              >
+                ${t("project.rules.dialog.tab.edit")}
+              </button>
+              <button
+                class="projects-rules__tab ${dialog.previewMode ? "projects-rules__tab--active" : ""}"
+                @click=${() => props.onToggleDocEditPreview(true)}
+              >
+                ${t("project.rules.dialog.tab.preview")}
+              </button>
+            </div>
+
+            ${
+              dialog.previewMode
+                ? html`
+                <div class="projects-rules__preview markdown-body">
+                  ${unsafeHTML(previewHtml || "")}
+                </div>
+              `
+                : html`
+                <textarea
+                  class="form-input form-textarea projects-rules__editor"
+                  .value=${dialog.content}
+                  placeholder=${t("project.docs.dialog.content.placeholder")}
+                  @input=${(e: Event) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    props.projectDocEditDialog!.content = target.value;
+                  }}
+                  ?disabled=${dialog.isBusy}
+                  rows="10"
+                ></textarea>
+              `
+            }
+          </div>
+
+          ${dialog.error ? html`<div class="modal-error">${dialog.error}</div>` : nothing}
+        </div>
+        <div class="modal-actions">
+          <button
+            class="btn btn--secondary"
+            @click=${() => props.onCloseDocEditDialog()}
+            ?disabled=${dialog.isBusy}
+          >
+            ${t("project.rules.dialog.cancel")}
+          </button>
+          <button
+            class="btn btn--primary"
+            ?disabled=${dialog.isBusy || !dialog.name.trim() || !dialog.content.trim()}
+            @click=${() => {
+              props.onUpdateDoc(props.activeProject!.id, dialog.docId, {
+                name: dialog.name.trim(),
+                content: dialog.content.trim(),
+              });
+            }}
+          >
+            ${dialog.isBusy ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing}
+            ${t("project.docs.dialog.save")}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Doc Delete Dialog ───
+
+function renderDocDeleteDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
+  const dialog = props.projectDocDeleteDialog;
+  if (!dialog || !props.activeProject) {
+    return nothing;
+  }
+
+  return html`
+    <div class="modal-overlay" role="dialog" aria-modal="true" aria-live="polite">
+      <div class="modal-card modal-card--danger">
+        <div class="modal-header">
+          <div class="modal-icon modal-icon--danger">
+            ${icons.trash}
+          </div>
+          <div class="modal-title-group">
+            <div class="modal-title">${t("project.docs.delete.title")}</div>
+            <div class="modal-subtitle">${dialog.docName}</div>
+          </div>
+        </div>
+
+        <div class="modal-body">
+          <div class="warning-box">
+            <div class="warning-box__icon">${icons.alertTriangle}</div>
+            <div class="warning-box__content">
+              <div class="warning-box__title">${t("project.docs.delete.confirm", { title: dialog.docName })}</div>
+              <div class="warning-box__text">${t("project.docs.delete.hint")}</div>
+            </div>
+          </div>
+
+          ${
+            dialog.error
+              ? html`
+              <div class="modal-error">
+                <span class="modal-error__icon">${icons.alertCircle}</span>
+                <span>${dialog.error}</span>
+              </div>
+            `
+              : nothing
+          }
+        </div>
+
+        <div class="modal-actions">
+          <button
+            class="btn btn--secondary"
+            ?disabled=${dialog.isBusy}
+            @click=${() => props.onCloseDocDeleteDialog()}
+          >
+            ${t("project.docs.delete.cancel")}
+          </button>
+          <button
+            class="btn btn--danger"
+            ?disabled=${dialog.isBusy}
+            @click=${() => props.onDeleteDoc(props.activeProject!.id, dialog.docId)}
+          >
+            ${dialog.isBusy ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing}
+            ${t("project.docs.delete.confirmButton")}
           </button>
         </div>
       </div>

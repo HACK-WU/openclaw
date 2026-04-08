@@ -79,6 +79,10 @@ import type {
   ProjectSkillCreateDialogState,
   ProjectSkillDeleteDialogState,
   ProjectSkillEditDialogState,
+  ProjectDoc,
+  ProjectDocCreateDialogState,
+  ProjectDocDeleteDialogState,
+  ProjectDocEditDialogState,
 } from "./controllers/projects.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
@@ -281,6 +285,12 @@ export class OpenClawApp extends LitElement {
   @state() projectSkillCreateDialog: ProjectSkillCreateDialogState | null = null;
   @state() projectSkillEditDialog: ProjectSkillEditDialogState | null = null;
   @state() projectSkillDeleteDialog: ProjectSkillDeleteDialogState | null = null;
+  // Project docs state
+  @state() projectDocs: ProjectDoc[] = [];
+  @state() projectDocsLoading = false;
+  @state() projectDocCreateDialog: ProjectDocCreateDialogState | null = null;
+  @state() projectDocEditDialog: ProjectDocEditDialogState | null = null;
+  @state() projectDocDeleteDialog: ProjectDocDeleteDialogState | null = null;
   // Project linked groups state
   @state() projectLinkedGroups: import("./controllers/projects.js").LinkedGroupEntry[] = [];
   @state() projectLinkedGroupsLoading = false;
