@@ -1353,6 +1353,17 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
       <div class="group-members-panel__announcement">
         <div class="group-members-panel__announcement-header">
           <span class="group-members-panel__announcement-title">${t("chat.group.announcement")}</span>
+          ${
+            meta.announcement
+              ? html`<button
+                  class="btn btn--sm btn--icon group-members-panel__announcement-edit"
+                  title=${t("action.view")}
+                  @click=${() => props.onOpenAnnouncementEditor()}
+                >
+                  ${icons.fileText}
+                </button>`
+              : nothing
+          }
         </div>
         <div class="group-members-panel__announcement-content">
           ${
