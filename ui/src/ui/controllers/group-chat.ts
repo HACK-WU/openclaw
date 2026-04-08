@@ -233,6 +233,8 @@ export type GroupChatState = {
   // ─── Plan Mode state ───
   /** Current plan mode state (null when plan mode is disabled or not yet loaded) */
   planModeState?: PlanModeState | null;
+  /** Plan file status for the plan mode file list in members panel */
+  planFilesStatus?: Array<{ name: string; exists: boolean; size: number }> | null;
   // ─── Memory management state ───
   /** Memory status for the info panel */
   memoryStatus?: {
@@ -333,6 +335,7 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   groupInfoPanelOpen: false,
   bridgeTerminalStatuses: new Map(),
   planModeState: null,
+  planFilesStatus: null,
   memoryStatus: null,
   memoryPreviewDialog: null,
 };
@@ -1501,6 +1504,11 @@ export async function loadGroupInfo(host: GroupHost, groupId: string): Promise<v
       const hasBridgeMembers = meta.members.some((m) => m.bridge);
       if (hasBridgeMembers) {
         void loadMemoryStatus(host, groupId);
+      }
+
+      // Auto-load plan files status when plan mode is enabled
+      if (meta.planMode) {
+        void loadPlanFilesStatus(host, groupId);
       }
     }
   } catch (err) {
@@ -3128,6 +3136,80 @@ export function clearBridgeTerminalStream(host: GroupChatState, agentId: string)
 
   activeBridgeStreamRuns.delete(agentId);
   flushPendingBridgeSyncIfNeeded(host);
+}
+
+// ─── Plan Files Management ───
+
+export async function loadPlanFilesStatus(host: GroupHost, groupId: string): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  try {
+    const result = await host.client.request<{
+      files: Array<{ name: string; exists: boolean; size: number }>;
+    }>("group.planFileStatus", { groupId });
+    if (host.activeGroupId === groupId) {
+      host.planFilesStatus = result?.files ?? null;
+    }
+  } catch (err) {
+    console.warn("[group-chat] failed to load plan files status:", err);
+  }
+}
+
+export async function openPlanFilePreview(
+  host: GroupHost,
+  groupId: string,
+  fileName: string,
+): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  try {
+    const result = await host.client.request<{ content: string; fileName: string }>(
+      "group.planFileRead",
+      { groupId, fileName },
+    );
+    if (result && host.activeGroupId === groupId) {
+      host.memoryPreviewDialog = {
+        fileName: result.fileName,
+        content: result.content,
+        editing: false,
+        draft: result.content,
+      };
+    }
+  } catch (err) {
+    console.warn("[group-chat] failed to read plan file:", err);
+  }
+}
+
+export async function savePlanFilePreview(host: GroupHost, groupId: string): Promise<void> {
+  const dialog = host.memoryPreviewDialog;
+  if (!dialog || !host.client || !host.connected) {
+    return;
+  }
+  try {
+    await host.client.request("group.planFileWrite", {
+      groupId,
+      fileName: dialog.fileName,
+      content: dialog.draft,
+    });
+    // Update the preview to show saved content
+    host.memoryPreviewDialog = {
+      ...dialog,
+      content: dialog.draft,
+      editing: false,
+    };
+    // Refresh plan files status to update file sizes
+    await loadPlanFilesStatus(host, groupId);
+  } catch (err) {
+    console.warn("[group-chat] failed to save plan file:", err);
+  }
+}
+
+/** Check if a fileName belongs to a plan collaboration file */
+const PLAN_FILE_NAMES = new Set(["jobs.md", "PLAN.md", "PROGRESS.md", "RESULTS.md"]);
+export function isPlanFile(fileName: string): boolean {
+  return PLAN_FILE_NAMES.has(fileName);
 }
 
 // ─── Memory Management ───

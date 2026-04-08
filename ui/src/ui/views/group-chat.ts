@@ -351,8 +351,11 @@ export type GroupChatViewProps = {
   onGroupAttachmentsChange?: (attachments: ChatAttachment[]) => void;
   // Plan Mode state
   planModeState?: PlanModeState | null;
+  planFilesStatus?: Array<{ name: string; exists: boolean; size: number }> | null;
   onRefreshPlanState?: () => void;
   onViewPlanFile?: (file: string) => void;
+  onLoadPlanFilesStatus?: () => void;
+  onOpenPlanFilePreview?: (fileName: string) => void;
   // Memory management
   memoryStatus?: {
     files: Array<{ name: string; exists: boolean; size: number }>;
@@ -1418,6 +1421,9 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
             `;
           })}
       </ul>
+
+      <!-- Plan Mode Section -->
+      ${renderPlanModeSection(meta, props)}
     </div>
   `;
 }
@@ -1774,28 +1780,6 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
           </div>
         </div>
 
-        <!-- Plan Mode -->
-        <div class="group-info-panel__section">
-          <label>计划模式</label>
-          <div class="group-info-panel__settings">
-            <div class="group-info-panel__setting-item">
-              <div class="group-info-panel__setting-header">
-                <span class="group-info-panel__setting-name">启用计划模式</span>
-                <input
-                  type="checkbox"
-                  .checked=${meta.planMode ?? false}
-                  @change=${(e: Event) => {
-                    props.onUpdatePlanMode((e.target as HTMLInputElement).checked);
-                  }}
-                />
-              </div>
-              <span class="group-info-panel__setting-desc">
-                助手 Agent 将自动协调成员完成用户任务（分工 → 计划 → 执行 → 总结）
-              </span>
-            </div>
-          </div>
-        </div>
-
         <!-- Context Configuration -->
         <div class="group-info-panel__section">
           <label>${t("chat.group.contextConfiguration")}</label>
@@ -1886,6 +1870,80 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
           </div>
         </div>
       </div>
+    </div>
+  `;
+}
+
+// ─── Plan Mode Section (Members Panel) ───
+
+function renderPlanModeSection(meta: GroupSessionMeta, props: GroupChatViewProps) {
+  const planFiles = props.planFilesStatus;
+  const isPlanEnabled = meta.planMode ?? false;
+
+  return html`
+    <div class="plan-mode-section">
+      <div class="plan-mode-section__header">
+        <span class="plan-mode-section__title">计划模式</span>
+        <input
+          type="checkbox"
+          .checked=${isPlanEnabled}
+          @change=${(e: Event) => {
+            props.onUpdatePlanMode((e.target as HTMLInputElement).checked);
+          }}
+        />
+      </div>
+      <span class="plan-mode-section__desc">
+        助手自动协调成员完成任务（分工 → 计划 → 执行 → 总结）
+      </span>
+      ${
+        isPlanEnabled
+          ? html`
+        <div class="plan-mode-section__files">
+          ${
+            !planFiles
+              ? html`
+              <div class="plan-mode-section__loading">
+                <button class="btn btn--secondary btn--sm" @click=${() => props.onLoadPlanFilesStatus?.()}>
+                  ${icons.refresh} 加载文件状态
+                </button>
+              </div>
+            `
+              : html`
+              <div class="memory-file-list">
+                ${planFiles.map(
+                  (f) => html`
+                  <div class="memory-file-item">
+                    <span class="memory-file-item__name">${f.name}</span>
+                    <span class="memory-file-item__size ${!f.exists ? "memory-file-item__size--missing" : ""}">
+                      ${f.exists ? formatFileSize(f.size) : "未创建"}
+                    </span>
+                    ${
+                      f.exists && props.onOpenPlanFilePreview
+                        ? html`<button class="btn btn--sm btn--icon memory-file-item__action" title="${t("action.preview")}" @click=${() => props.onOpenPlanFilePreview?.(f.name)}>${icons.fileText}</button>`
+                        : nothing
+                    }
+                  </div>
+                `,
+                )}
+              </div>
+              <button class="btn btn--secondary btn--sm plan-mode-section__refresh" @click=${(
+                e: Event,
+              ) => {
+                const btn = e.currentTarget as HTMLElement;
+                btn.classList.add("spinning");
+                btn.addEventListener("animationend", () => btn.classList.remove("spinning"), {
+                  once: true,
+                });
+                props.onLoadPlanFilesStatus?.();
+              }}>
+                ${icons.refresh} ${t("action.refresh")}
+              </button>
+            `
+          }
+        </div>
+      `
+          : nothing
+      }
     </div>
   `;
 }

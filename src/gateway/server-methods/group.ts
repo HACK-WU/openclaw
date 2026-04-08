@@ -1530,6 +1530,125 @@ const handleGroupGetPlanState: GatewayRequestHandler = async ({ params, respond 
   });
 };
 
+/**
+ * Get plan file status (existence + size) for the plan mode file list.
+ * Returns an array of { name, exists, size } for each collaboration file.
+ */
+const PLAN_FILE_WHITELIST = new Set(Object.values(PLAN_FILES));
+
+const handleGroupPlanFileStatus: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  const meta = loadGroupMeta(groupId);
+  if (!meta) {
+    respond(false, undefined, { message: "Group not found", code: 404 });
+    return;
+  }
+
+  const fs = await import("node:fs/promises");
+  const planDir = resolvePlanFilesDir(meta);
+
+  const fileStatus = async (
+    name: string,
+  ): Promise<{ name: string; exists: boolean; size: number }> => {
+    try {
+      const stats = await fs.stat(path.join(planDir, name));
+      return { name, exists: true, size: stats.size };
+    } catch {
+      return { name, exists: false, size: 0 };
+    }
+  };
+
+  const files = await Promise.all([
+    fileStatus(PLAN_FILES.jobs),
+    fileStatus(PLAN_FILES.plan),
+    fileStatus(PLAN_FILES.progress),
+    fileStatus(PLAN_FILES.results),
+  ]);
+
+  respond(true, { files });
+};
+
+/**
+ * Read a plan collaboration file.
+ * Only allows reading files in the PLAN_FILES whitelist.
+ */
+const handleGroupPlanFileRead: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  const fileName = params.fileName as string;
+  if (!groupId || !fileName) {
+    respond(false, undefined, { message: "groupId and fileName are required", code: 400 });
+    return;
+  }
+
+  if (!PLAN_FILE_WHITELIST.has(fileName)) {
+    respond(false, undefined, { message: "Invalid plan file name", code: 400 });
+    return;
+  }
+
+  const meta = loadGroupMeta(groupId);
+  if (!meta) {
+    respond(false, undefined, { message: "Group not found", code: 404 });
+    return;
+  }
+
+  const fs = await import("node:fs/promises");
+  const planDir = resolvePlanFilesDir(meta);
+  const filePath = path.join(planDir, fileName);
+
+  try {
+    const content = await fs.readFile(filePath, "utf-8");
+    respond(true, { content, fileName });
+  } catch {
+    respond(false, undefined, { message: "File not found or unreadable", code: 404 });
+  }
+};
+
+/**
+ * Write a plan collaboration file.
+ * Only allows writing files in the PLAN_FILES whitelist.
+ */
+const handleGroupPlanFileWrite: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  const fileName = params.fileName as string;
+  const content = params.content as string;
+  if (!groupId || !fileName || typeof content !== "string") {
+    respond(false, undefined, {
+      message: "groupId, fileName, and content are required",
+      code: 400,
+    });
+    return;
+  }
+
+  if (!PLAN_FILE_WHITELIST.has(fileName)) {
+    respond(false, undefined, { message: "Invalid plan file name", code: 400 });
+    return;
+  }
+
+  const meta = loadGroupMeta(groupId);
+  if (!meta) {
+    respond(false, undefined, { message: "Group not found", code: 404 });
+    return;
+  }
+
+  const fs = await import("node:fs/promises");
+  const planDir = resolvePlanFilesDir(meta);
+  const filePath = path.join(planDir, fileName);
+
+  try {
+    // Ensure directory exists
+    await fs.mkdir(planDir, { recursive: true });
+    await fs.writeFile(filePath, content, "utf-8");
+    respond(true, { ok: true });
+  } catch (err) {
+    respond(false, undefined, { message: `Failed to write file: ${String(err)}`, code: 500 });
+  }
+};
+
 // ─── Memory Management Handlers ───
 
 /**
@@ -1726,6 +1845,9 @@ export const groupHandlers: GatewayRequestHandlers = {
   // Plan Mode
   "group.setPlanMode": handleGroupSetPlanMode,
   "group.getPlanState": handleGroupGetPlanState,
+  "group.planFileStatus": handleGroupPlanFileStatus,
+  "group.planFileRead": handleGroupPlanFileRead,
+  "group.planFileWrite": handleGroupPlanFileWrite,
   // Memory management
   "group.memoryStatus": handleGroupMemoryStatus,
   "group.memoryRead": handleGroupMemoryRead,

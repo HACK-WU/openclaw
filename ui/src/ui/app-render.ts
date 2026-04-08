@@ -2283,6 +2283,48 @@ export function renderApp(state: AppViewState) {
                         state.activeGroupId!,
                         enabled,
                       );
+                      // Auto-load plan files status when enabling plan mode
+                      if (enabled) {
+                        const { loadPlanFilesStatus } = await import("./controllers/group-chat.ts");
+                        await loadPlanFilesStatus(
+                          state as unknown as Parameters<typeof loadPlanFilesStatus>[0],
+                          state.activeGroupId!,
+                        );
+                      } else {
+                        state.planFilesStatus = null;
+                      }
+                    })();
+                  }
+                },
+                planFilesStatus: state.planFilesStatus ?? null,
+                onLoadPlanFilesStatus: () => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { loadPlanFilesStatus } = await import("./controllers/group-chat.ts");
+                      await loadPlanFilesStatus(
+                        state as unknown as Parameters<typeof loadPlanFilesStatus>[0],
+                        state.activeGroupId!,
+                      );
+                    })();
+                  }
+                },
+                onOpenPlanFilePreview: (fileName: string) => {
+                  if (state.activeGroupId) {
+                    // Show dialog immediately with loading state
+                    state.memoryPreviewDialog = {
+                      fileName,
+                      content: "",
+                      editing: false,
+                      draft: "",
+                    };
+                    // Then load content asynchronously
+                    void (async () => {
+                      const { openPlanFilePreview } = await import("./controllers/group-chat.ts");
+                      await openPlanFilePreview(
+                        state as unknown as Parameters<typeof openPlanFilePreview>[0],
+                        state.activeGroupId!,
+                        fileName,
+                      );
                     })();
                   }
                 },
@@ -2432,11 +2474,21 @@ export function renderApp(state: AppViewState) {
                 onMemoryPreviewSave: () => {
                   if (state.activeGroupId) {
                     void (async () => {
-                      const { saveMemoryPreview } = await import("./controllers/group-chat.ts");
-                      await saveMemoryPreview(
-                        state as unknown as Parameters<typeof saveMemoryPreview>[0],
-                        state.activeGroupId!,
-                      );
+                      const { isPlanFile } = await import("./controllers/group-chat.ts");
+                      const fileName = state.memoryPreviewDialog?.fileName;
+                      if (fileName && isPlanFile(fileName)) {
+                        const { savePlanFilePreview } = await import("./controllers/group-chat.ts");
+                        await savePlanFilePreview(
+                          state as unknown as Parameters<typeof savePlanFilePreview>[0],
+                          state.activeGroupId!,
+                        );
+                      } else {
+                        const { saveMemoryPreview } = await import("./controllers/group-chat.ts");
+                        await saveMemoryPreview(
+                          state as unknown as Parameters<typeof saveMemoryPreview>[0],
+                          state.activeGroupId!,
+                        );
+                      }
                     })();
                   }
                 },
