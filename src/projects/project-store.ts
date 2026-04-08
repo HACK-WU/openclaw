@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
-import type { Project, ProjectIndexEntry, ProjectRule } from "./types.js";
+import type { Project, ProjectIndexEntry, ProjectRule, ProjectSkill } from "./types.js";
 
 // ─── Path resolution ───
 
@@ -355,6 +355,121 @@ export async function updateProjectRule(
  */
 export async function deleteProjectRule(projectId: string, ruleId: string): Promise<void> {
   const filePath = resolveProjectRulePath(projectId, ruleId);
+  try {
+    await fs.promises.unlink(filePath);
+  } catch {
+    // 文件不存在则忽略
+  }
+}
+
+// ─── Project Skills CRUD ───
+
+export function resolveProjectSkillsDir(projectId: string): string {
+  return path.join(resolveProjectDir(projectId), "skills");
+}
+
+export function resolveProjectSkillPath(projectId: string, skillId: string): string {
+  return path.join(resolveProjectSkillsDir(projectId), `${skillId}.json`);
+}
+
+/**
+ * 加载项目的所有技能
+ */
+export function loadProjectSkills(projectId: string): ProjectSkill[] {
+  const skillsDir = resolveProjectSkillsDir(projectId);
+  try {
+    const entries = fs.readdirSync(skillsDir);
+    const skills: ProjectSkill[] = [];
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) {
+        continue;
+      }
+      try {
+        const raw = fs.readFileSync(path.join(skillsDir, entry), "utf-8");
+        const skill: ProjectSkill = JSON.parse(raw);
+        skills.push(skill);
+      } catch {
+        // 跳过无法解析的文件
+      }
+    }
+    // 按创建时间排序
+    skills.sort((a, b) => a.createdAt - b.createdAt);
+    return skills;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 加载单条技能
+ */
+export function loadProjectSkill(projectId: string, skillId: string): ProjectSkill | null {
+  const filePath = resolveProjectSkillPath(projectId, skillId);
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    return JSON.parse(raw) as ProjectSkill;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 创建项目技能
+ */
+export async function createProjectSkill(
+  projectId: string,
+  params: { name: string; content: string },
+): Promise<ProjectSkill> {
+  const skillId = randomUUID();
+  const now = Date.now();
+
+  const skill: ProjectSkill = {
+    id: skillId,
+    projectId,
+    name: params.name,
+    content: params.content,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const skillsDir = resolveProjectSkillsDir(projectId);
+  ensureDir(skillsDir);
+  await atomicWriteJson(resolveProjectSkillPath(projectId, skillId), skill);
+
+  return skill;
+}
+
+/**
+ * 更新项目技能
+ */
+export async function updateProjectSkill(
+  projectId: string,
+  skillId: string,
+  params: { name?: string; content?: string },
+): Promise<ProjectSkill> {
+  return withProjectLock(`skill:${skillId}`, async () => {
+    const current = loadProjectSkill(projectId, skillId);
+    if (!current) {
+      throw new Error(`Skill ${skillId} not found in project ${projectId}`);
+    }
+
+    const updated: ProjectSkill = {
+      ...current,
+      ...(params.name !== undefined ? { name: params.name } : {}),
+      ...(params.content !== undefined ? { content: params.content } : {}),
+      updatedAt: Date.now(),
+    };
+
+    await atomicWriteJson(resolveProjectSkillPath(projectId, skillId), updated);
+    return updated;
+  });
+}
+
+/**
+ * 删除项目技能
+ */
+export async function deleteProjectSkill(projectId: string, skillId: string): Promise<void> {
+  const filePath = resolveProjectSkillPath(projectId, skillId);
   try {
     await fs.promises.unlink(filePath);
   } catch {

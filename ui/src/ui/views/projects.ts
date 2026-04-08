@@ -19,6 +19,10 @@ import type {
   ProjectRuleCreateDialogState,
   ProjectRuleDeleteDialogState,
   ProjectRuleEditDialogState,
+  ProjectSkill,
+  ProjectSkillCreateDialogState,
+  ProjectSkillDeleteDialogState,
+  ProjectSkillEditDialogState,
   ValidationResult,
 } from "../controllers/projects.ts";
 import { t } from "../i18n/index.ts";
@@ -43,6 +47,12 @@ export type ProjectsViewProps = {
   projectRuleCreateDialog: ProjectRuleCreateDialogState | null;
   projectRuleEditDialog: ProjectRuleEditDialogState | null;
   projectRuleDeleteDialog: ProjectRuleDeleteDialogState | null;
+  // 技能管理状态
+  projectSkills: ProjectSkill[];
+  projectSkillsLoading: boolean;
+  projectSkillCreateDialog: ProjectSkillCreateDialogState | null;
+  projectSkillEditDialog: ProjectSkillEditDialogState | null;
+  projectSkillDeleteDialog: ProjectSkillDeleteDialogState | null;
   // 关联群聊
   projectLinkedGroups: LinkedGroupEntry[];
   projectLinkedGroupsLoading: boolean;
@@ -67,7 +77,7 @@ export type ProjectsViewProps = {
   // 管理弹框回调
   onOpenManageDialog: (projectId: string, projectName: string) => void;
   onCloseManageDialog: () => void;
-  onSetManageTab: (tab: "overview" | "rules") => void;
+  onSetManageTab: (tab: "overview" | "rules" | "skills") => void;
   // 规则回调
   onLoadProjectRules: (projectId: string) => void;
   onOpenRuleCreateDialog: () => void;
@@ -86,6 +96,24 @@ export type ProjectsViewProps = {
   // 预览模式切换
   onToggleRuleCreatePreview: (previewMode: boolean) => void;
   onToggleRuleEditPreview: (previewMode: boolean) => void;
+  // 技能回调
+  onLoadProjectSkills: (projectId: string) => void;
+  onOpenSkillCreateDialog: () => void;
+  onCloseSkillCreateDialog: () => void;
+  onCreateSkill: (projectId: string, params: { name: string; content: string }) => void;
+  onOpenSkillEditDialog: (skill: ProjectSkill) => void;
+  onCloseSkillEditDialog: () => void;
+  onUpdateSkill: (
+    projectId: string,
+    skillId: string,
+    params: { name?: string; content?: string },
+  ) => void;
+  onOpenSkillDeleteDialog: (skillId: string, skillName: string) => void;
+  onCloseSkillDeleteDialog: () => void;
+  onDeleteSkill: (projectId: string, skillId: string) => void;
+  // 预览模式切换（技能）
+  onToggleSkillCreatePreview: (previewMode: boolean) => void;
+  onToggleSkillEditPreview: (previewMode: boolean) => void;
 };
 
 // ─── Main Render ───
@@ -122,6 +150,9 @@ export function renderProjectsView(props: ProjectsViewProps): TemplateResult {
       ${renderRuleCreateDialog(props)}
       ${renderRuleEditDialog(props)}
       ${renderRuleDeleteDialog(props)}
+      ${renderSkillCreateDialog(props)}
+      ${renderSkillEditDialog(props)}
+      ${renderSkillDeleteDialog(props)}
     </div>
   `;
 }
@@ -444,13 +475,21 @@ function renderManageDialog(props: ProjectsViewProps): TemplateResult | typeof n
           >
             ${t("project.manage.tab.rules")}
           </button>
+          <button
+            class="projects-manage-dialog__tab ${dialog.activeTab === "skills" ? "projects-manage-dialog__tab--active" : ""}"
+            @click=${() => props.onSetManageTab("skills")}
+          >
+            ${t("project.manage.tab.skills")}
+          </button>
         </div>
 
         <div class="modal-body">
           ${
             dialog.activeTab === "overview"
               ? renderManageOverviewTab(props, project)
-              : renderManageRulesTab(props)
+              : dialog.activeTab === "rules"
+                ? renderManageRulesTab(props)
+                : renderManageSkillsTab(props)
           }
         </div>
 
@@ -1025,6 +1064,376 @@ function renderRuleDeleteDialog(props: ProjectsViewProps): TemplateResult | type
           >
             ${dialog.isBusy ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing}
             ${t("project.rules.delete.confirmButton")}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Skills Section (Rules Tab in Manage Dialog) ───
+
+function renderManageSkillsTab(props: ProjectsViewProps): TemplateResult {
+  return html`
+    <div class="projects-manage-dialog__rules">
+      <div class="projects-manage-dialog__rules-header">
+        <h4 class="projects-manage-dialog__section-title">
+          ${t("project.skills.title")}
+          ${
+            props.projectSkills.length > 0
+              ? html`<span class="projects-rules__count">(${props.projectSkills.length})</span>`
+              : nothing
+          }
+        </h4>
+        <button
+          class="btn btn--sm btn--primary"
+          @click=${() => props.onOpenSkillCreateDialog()}
+        >
+          ${icons.plus}
+          <span>${t("project.skills.create")}</span>
+        </button>
+      </div>
+
+      ${
+        props.projectSkillsLoading
+          ? html`<div class="projects-manage-dialog__loading">${t("action.loading")}</div>`
+          : props.projectSkills.length === 0
+            ? html`
+              <div class="projects-rules__empty">
+                <div class="projects-rules__empty-icon">${icons.fileText}</div>
+                <div class="projects-rules__empty-title">${t("project.skills.empty.title")}</div>
+                <div class="projects-rules__empty-desc">${t("project.skills.empty.description")}</div>
+                <button
+                  class="btn btn--primary btn--sm"
+                  @click=${() => props.onOpenSkillCreateDialog()}
+                >
+                  ${t("project.skills.empty.button")}
+                </button>
+              </div>
+            `
+            : html`
+              <div class="projects-rules__list">
+                ${props.projectSkills.map((skill) => renderSkillItem(skill, props))}
+              </div>
+            `
+      }
+    </div>
+  `;
+}
+
+function renderSkillItem(skill: ProjectSkill, props: ProjectsViewProps): TemplateResult {
+  const summary =
+    skill.content.length > 80 ? skill.content.substring(0, 80) + "..." : skill.content;
+
+  return html`
+    <div class="projects-rules__item">
+      <div class="projects-rules__item-info">
+        <div class="projects-rules__item-title">${icons.fileText} ${skill.name}</div>
+        <div class="projects-rules__item-summary">${summary}</div>
+      </div>
+      <div class="projects-rules__item-actions">
+        <button
+          class="btn btn--sm"
+          @click=${() => props.onOpenSkillEditDialog(skill)}
+          title=${t("project.skills.edit")}
+        >
+          ${t("project.skills.edit")}
+        </button>
+        <button
+          class="btn btn--sm btn--danger-text"
+          @click=${() => props.onOpenSkillDeleteDialog(skill.id, skill.name)}
+          title=${t("project.skills.delete")}
+        >
+          ${t("project.skills.delete")}
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Skill Create Dialog ───
+
+function renderSkillCreateDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
+  const dialog = props.projectSkillCreateDialog;
+  if (!dialog || !props.activeProject) {
+    return nothing;
+  }
+
+  const previewHtml = dialog.content.trim() ? simpleMarkdownToHtml(dialog.content) : "";
+
+  return html`
+    <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
+      @click=${(e: Event) => {
+        if ((e.target as HTMLElement).classList.contains("modal-overlay--light")) {
+          props.onCloseSkillCreateDialog();
+        }
+      }}
+    >
+      <div class="modal-card projects-dialog projects-dialog--wide">
+        <div class="modal-header">
+          <h3 class="modal-title">${t("project.skills.dialog.create.title")}</h3>
+          <button class="modal-close" @click=${() => props.onCloseSkillCreateDialog()}>
+            ${icons.x}
+          </button>
+        </div>
+        <div class="modal-body">
+          <!-- 技能名称 -->
+          <div class="form-group">
+            <label class="form-label">${t("project.skills.dialog.name.label")} *</label>
+            <input
+              class="form-input"
+              type="text"
+              .value=${dialog.name}
+              placeholder=${t("project.skills.dialog.name.placeholder")}
+              @input=${(e: Event) => {
+                const target = e.target as HTMLInputElement;
+                props.projectSkillCreateDialog!.name = target.value;
+              }}
+              ?disabled=${dialog.isBusy}
+            />
+            <div class="form-hint">${t("project.skills.dialog.name.hint")}</div>
+          </div>
+
+          <!-- 编辑/预览 Tab -->
+          <div class="form-group">
+            <label class="form-label">${t("project.skills.dialog.content.label")} *</label>
+            <div class="projects-rules__tabs">
+              <button
+                class="projects-rules__tab ${!dialog.previewMode ? "projects-rules__tab--active" : ""}"
+                @click=${() => props.onToggleSkillCreatePreview(false)}
+              >
+                ${t("project.rules.dialog.tab.edit")}
+              </button>
+              <button
+                class="projects-rules__tab ${dialog.previewMode ? "projects-rules__tab--active" : ""}"
+                @click=${() => props.onToggleSkillCreatePreview(true)}
+              >
+                ${t("project.rules.dialog.tab.preview")}
+              </button>
+            </div>
+
+            ${
+              dialog.previewMode
+                ? html`
+                <div class="projects-rules__preview markdown-body">
+                  ${unsafeHTML(previewHtml || t("project.rules.dialog.content.placeholder"))}
+                </div>
+              `
+                : html`
+                <textarea
+                  class="form-input form-textarea projects-rules__editor"
+                  .value=${dialog.content}
+                  placeholder=${t("project.skills.dialog.content.placeholder")}
+                  @input=${(e: Event) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    props.projectSkillCreateDialog!.content = target.value;
+                  }}
+                  ?disabled=${dialog.isBusy}
+                  rows="10"
+                ></textarea>
+              `
+            }
+            <div class="form-hint">${t("project.skills.dialog.content.hint")}</div>
+          </div>
+
+          ${dialog.error ? html`<div class="modal-error">${dialog.error}</div>` : nothing}
+        </div>
+        <div class="modal-actions">
+          <button
+            class="btn btn--secondary"
+            @click=${() => props.onCloseSkillCreateDialog()}
+            ?disabled=${dialog.isBusy}
+          >
+            ${t("project.rules.dialog.cancel")}
+          </button>
+          <button
+            class="btn btn--primary"
+            ?disabled=${dialog.isBusy || !dialog.name.trim() || !dialog.content.trim()}
+            @click=${() => {
+              props.onCreateSkill(props.activeProject!.id, {
+                name: dialog.name.trim(),
+                content: dialog.content.trim(),
+              });
+            }}
+          >
+            ${dialog.isBusy ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing}
+            ${t("project.skills.dialog.create")}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Skill Edit Dialog ───
+
+function renderSkillEditDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
+  const dialog = props.projectSkillEditDialog;
+  if (!dialog || !props.activeProject) {
+    return nothing;
+  }
+
+  const previewHtml = dialog.content.trim() ? simpleMarkdownToHtml(dialog.content) : "";
+
+  return html`
+    <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
+      @click=${(e: Event) => {
+        if ((e.target as HTMLElement).classList.contains("modal-overlay--light")) {
+          props.onCloseSkillEditDialog();
+        }
+      }}
+    >
+      <div class="modal-card projects-dialog projects-dialog--wide">
+        <div class="modal-header">
+          <h3 class="modal-title">${t("project.skills.dialog.edit.title")}</h3>
+          <button class="modal-close" @click=${() => props.onCloseSkillEditDialog()}>
+            ${icons.x}
+          </button>
+        </div>
+        <div class="modal-body">
+          <!-- 技能名称 -->
+          <div class="form-group">
+            <label class="form-label">${t("project.skills.dialog.name.label")} *</label>
+            <input
+              class="form-input"
+              type="text"
+              .value=${dialog.name}
+              placeholder=${t("project.skills.dialog.name.placeholder")}
+              @input=${(e: Event) => {
+                const target = e.target as HTMLInputElement;
+                props.projectSkillEditDialog!.name = target.value;
+              }}
+              ?disabled=${dialog.isBusy}
+            />
+          </div>
+
+          <!-- 编辑/预览 Tab -->
+          <div class="form-group">
+            <label class="form-label">${t("project.skills.dialog.content.label")} *</label>
+            <div class="projects-rules__tabs">
+              <button
+                class="projects-rules__tab ${!dialog.previewMode ? "projects-rules__tab--active" : ""}"
+                @click=${() => props.onToggleSkillEditPreview(false)}
+              >
+                ${t("project.rules.dialog.tab.edit")}
+              </button>
+              <button
+                class="projects-rules__tab ${dialog.previewMode ? "projects-rules__tab--active" : ""}"
+                @click=${() => props.onToggleSkillEditPreview(true)}
+              >
+                ${t("project.rules.dialog.tab.preview")}
+              </button>
+            </div>
+
+            ${
+              dialog.previewMode
+                ? html`
+                <div class="projects-rules__preview markdown-body">
+                  ${unsafeHTML(previewHtml || "")}
+                </div>
+              `
+                : html`
+                <textarea
+                  class="form-input form-textarea projects-rules__editor"
+                  .value=${dialog.content}
+                  placeholder=${t("project.skills.dialog.content.placeholder")}
+                  @input=${(e: Event) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    props.projectSkillEditDialog!.content = target.value;
+                  }}
+                  ?disabled=${dialog.isBusy}
+                  rows="10"
+                ></textarea>
+              `
+            }
+          </div>
+
+          ${dialog.error ? html`<div class="modal-error">${dialog.error}</div>` : nothing}
+        </div>
+        <div class="modal-actions">
+          <button
+            class="btn btn--secondary"
+            @click=${() => props.onCloseSkillEditDialog()}
+            ?disabled=${dialog.isBusy}
+          >
+            ${t("project.rules.dialog.cancel")}
+          </button>
+          <button
+            class="btn btn--primary"
+            ?disabled=${dialog.isBusy || !dialog.name.trim() || !dialog.content.trim()}
+            @click=${() => {
+              props.onUpdateSkill(props.activeProject!.id, dialog.skillId, {
+                name: dialog.name.trim(),
+                content: dialog.content.trim(),
+              });
+            }}
+          >
+            ${dialog.isBusy ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing}
+            ${t("project.rules.dialog.save")}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Skill Delete Dialog ───
+
+function renderSkillDeleteDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
+  const dialog = props.projectSkillDeleteDialog;
+  if (!dialog || !props.activeProject) {
+    return nothing;
+  }
+
+  return html`
+    <div class="modal-overlay" role="dialog" aria-modal="true" aria-live="polite">
+      <div class="modal-card modal-card--danger">
+        <div class="modal-header">
+          <div class="modal-icon modal-icon--danger">
+            ${icons.trash}
+          </div>
+          <div class="modal-title-group">
+            <div class="modal-title">${t("project.skills.delete.title")}</div>
+            <div class="modal-subtitle">${dialog.skillName}</div>
+          </div>
+        </div>
+
+        <div class="modal-body">
+          <div class="warning-box">
+            <div class="warning-box__icon">${icons.alertTriangle}</div>
+            <div class="warning-box__content">
+              <div class="warning-box__title">${t("project.skills.delete.confirm", { title: dialog.skillName })}</div>
+              <div class="warning-box__text">${t("project.skills.delete.hint")}</div>
+            </div>
+          </div>
+
+          ${
+            dialog.error
+              ? html`
+              <div class="modal-error">
+                <span class="modal-error__icon">${icons.alertCircle}</span>
+                <span>${dialog.error}</span>
+              </div>
+            `
+              : nothing
+          }
+        </div>
+
+        <div class="modal-actions">
+          <button
+            class="btn btn--secondary"
+            ?disabled=${dialog.isBusy}
+            @click=${() => props.onCloseSkillDeleteDialog()}
+          >
+            ${t("project.skills.delete.cancel")}
+          </button>
+          <button
+            class="btn btn--danger"
+            ?disabled=${dialog.isBusy}
+            @click=${() => props.onDeleteSkill(props.activeProject!.id, dialog.skillId)}
+          >
+            ${dialog.isBusy ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing}
+            ${t("project.skills.delete.confirmButton")}
           </button>
         </div>
       </div>

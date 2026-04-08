@@ -15,15 +15,20 @@ import { getLogger } from "../../logging.js";
 import {
   createProject,
   createProjectRule,
+  createProjectSkill,
   deleteProject,
   deleteProjectRule,
+  deleteProjectSkill,
   findProjectByName,
   loadProjectIndex,
   loadProjectMeta,
   loadProjectRule,
   loadProjectRules,
+  loadProjectSkill,
+  loadProjectSkills,
   updateProjectMeta,
   updateProjectRule,
+  updateProjectSkill,
 } from "../../projects/project-store.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 
@@ -474,6 +479,132 @@ const handleProjectsUnlinkGroup: GatewayRequestHandler = async ({ params, respon
 
 // ─── Export Handlers ───
 
+// ─── Project Skills CRUD ───
+
+const handleProjectsSkillsList: GatewayRequestHandler = ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  if (!projectId) {
+    respond(false, undefined, { message: "projectId is required", code: 400 });
+    return;
+  }
+
+  const meta = loadProjectMeta(projectId);
+  if (!meta) {
+    respond(false, undefined, { message: "Project not found", code: 404 });
+    return;
+  }
+
+  const skills = loadProjectSkills(projectId);
+  respond(true, skills);
+};
+
+const handleProjectsSkillsGet: GatewayRequestHandler = ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const skillId = params.skillId as string;
+  if (!projectId || !skillId) {
+    respond(false, undefined, { message: "projectId and skillId are required", code: 400 });
+    return;
+  }
+
+  const skill = loadProjectSkill(projectId, skillId);
+  if (!skill) {
+    respond(false, undefined, { message: "Skill not found", code: 404 });
+    return;
+  }
+
+  respond(true, skill);
+};
+
+const handleProjectsSkillsCreate: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const name = (params.name as string)?.trim();
+  const content = (params.content as string)?.trim();
+
+  if (!projectId) {
+    respond(false, undefined, { message: "projectId is required", code: 400 });
+    return;
+  }
+  if (!name) {
+    respond(false, undefined, { message: "Skill name is required", code: 400 });
+    return;
+  }
+  if (!content) {
+    respond(false, undefined, { message: "Skill content is required", code: 400 });
+    return;
+  }
+
+  const meta = loadProjectMeta(projectId);
+  if (!meta) {
+    respond(false, undefined, { message: "Project not found", code: 404 });
+    return;
+  }
+
+  try {
+    const skill = await createProjectSkill(projectId, { name, content });
+    log.info(`Skill created: ${skill.id} in project ${projectId}`);
+    respond(true, skill);
+  } catch (err) {
+    log.error(`Failed to create skill: ${String(err)}`);
+    respond(false, undefined, { message: "Failed to create skill", code: 500 });
+  }
+};
+
+const handleProjectsSkillsUpdate: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const skillId = params.skillId as string;
+  const name = params.name as string | undefined;
+  const content = params.content as string | undefined;
+
+  if (!projectId || !skillId) {
+    respond(false, undefined, { message: "projectId and skillId are required", code: 400 });
+    return;
+  }
+
+  try {
+    const updated = await updateProjectSkill(projectId, skillId, {
+      name: name?.trim(),
+      content: content?.trim(),
+    });
+    log.info(`Skill updated: ${skillId} in project ${projectId}`);
+    respond(true, updated);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("not found")) {
+      respond(false, undefined, { message: "Skill not found", code: 404 });
+    } else {
+      log.error(`Failed to update skill: ${String(err)}`);
+      respond(false, undefined, { message: "Failed to update skill", code: 500 });
+    }
+  }
+};
+
+const handleProjectsSkillsDelete: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const skillId = params.skillId as string;
+
+  if (!projectId || !skillId) {
+    respond(false, undefined, { message: "projectId and skillId are required", code: 400 });
+    return;
+  }
+
+  const skill = loadProjectSkill(projectId, skillId);
+  if (!skill) {
+    respond(false, undefined, { message: "Skill not found", code: 404 });
+    return;
+  }
+
+  try {
+    await deleteProjectSkill(projectId, skillId);
+    log.info(`Skill deleted: ${skillId} in project ${projectId}`);
+    respond(true, { ok: true });
+  } catch (err) {
+    log.error(`Failed to delete skill: ${String(err)}`);
+    respond(false, undefined, { message: "Failed to delete skill", code: 500 });
+  }
+};
+
+// ─── Export Handlers ───
+
 export const projectsHandlers: GatewayRequestHandlers = {
   "projects.list": handleProjectsList,
   "projects.info": handleProjectsInfo,
@@ -486,6 +617,12 @@ export const projectsHandlers: GatewayRequestHandlers = {
   "projects.rules.create": handleProjectsRulesCreate,
   "projects.rules.update": handleProjectsRulesUpdate,
   "projects.rules.delete": handleProjectsRulesDelete,
+  // Skills
+  "projects.skills.list": handleProjectsSkillsList,
+  "projects.skills.get": handleProjectsSkillsGet,
+  "projects.skills.create": handleProjectsSkillsCreate,
+  "projects.skills.update": handleProjectsSkillsUpdate,
+  "projects.skills.delete": handleProjectsSkillsDelete,
   // Phase 2: Group integration
   "projects.getLinkedGroups": handleProjectsGetLinkedGroups,
   "projects.linkGroup": handleProjectsLinkGroup,

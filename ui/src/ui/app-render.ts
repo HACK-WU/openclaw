@@ -114,13 +114,17 @@ import { loadPresence } from "./controllers/presence.ts";
 import {
   createProject,
   createProjectRule,
+  createProjectSkill,
   deleteProject,
   deleteProjectRule,
+  deleteProjectSkill,
   loadLinkedGroups,
   loadProjectInfo,
   loadProjectRules,
+  loadProjectSkills,
   updateProject,
   updateProjectRule,
+  updateProjectSkill,
   validateProjectPaths,
   type ProjectsHost,
 } from "./controllers/projects.ts";
@@ -634,12 +638,14 @@ export function renderApp(state: AppViewState) {
                   // 异步加载数据（不阻塞弹框显示）
                   void loadProjectInfo(state as unknown as ProjectsHost, projectId);
                   void loadProjectRules(state as unknown as ProjectsHost, projectId);
+                  void loadProjectSkills(state as unknown as ProjectsHost, projectId);
                   void loadLinkedGroups(state as unknown as ProjectsHost, projectId);
                 },
                 onCloseManageDialog: () => {
                   state.projectManageDialog = null;
                   state.activeProject = null;
                   state.projectRules = [];
+                  state.projectSkills = [];
                   state.projectLinkedGroups = [];
                 },
                 onSetManageTab: (tab) => {
@@ -715,6 +721,72 @@ export function renderApp(state: AppViewState) {
                   if (state.projectRuleEditDialog) {
                     state.projectRuleEditDialog = {
                       ...state.projectRuleEditDialog,
+                      previewMode,
+                    };
+                  }
+                },
+                // 技能管理
+                projectSkills: state.projectSkills,
+                projectSkillsLoading: state.projectSkillsLoading,
+                projectSkillCreateDialog: state.projectSkillCreateDialog,
+                projectSkillEditDialog: state.projectSkillEditDialog,
+                projectSkillDeleteDialog: state.projectSkillDeleteDialog,
+                onLoadProjectSkills: (projectId) =>
+                  void loadProjectSkills(state as unknown as ProjectsHost, projectId),
+                onOpenSkillCreateDialog: () => {
+                  state.projectSkillCreateDialog = {
+                    name: "",
+                    content: "",
+                    previewMode: false,
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseSkillCreateDialog: () => (state.projectSkillCreateDialog = null),
+                onCreateSkill: (projectId, params) =>
+                  void createProjectSkill(state as unknown as ProjectsHost, projectId, params),
+                onOpenSkillEditDialog: (skill) => {
+                  state.projectSkillEditDialog = {
+                    skillId: skill.id,
+                    name: skill.name,
+                    content: skill.content,
+                    previewMode: false,
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseSkillEditDialog: () => (state.projectSkillEditDialog = null),
+                onUpdateSkill: (projectId, skillId, params) =>
+                  void updateProjectSkill(
+                    state as unknown as ProjectsHost,
+                    projectId,
+                    skillId,
+                    params,
+                  ),
+                onOpenSkillDeleteDialog: (skillId, skillName) => {
+                  state.projectSkillDeleteDialog = {
+                    skillId,
+                    skillName,
+                    isBusy: false,
+                    error: null,
+                  };
+                },
+                onCloseSkillDeleteDialog: () => (state.projectSkillDeleteDialog = null),
+                onDeleteSkill: (projectId, skillId) =>
+                  void deleteProjectSkill(state as unknown as ProjectsHost, projectId, skillId),
+                // 预览模式切换（技能）
+                onToggleSkillCreatePreview: (previewMode) => {
+                  if (state.projectSkillCreateDialog) {
+                    state.projectSkillCreateDialog = {
+                      ...state.projectSkillCreateDialog,
+                      previewMode,
+                    };
+                  }
+                },
+                onToggleSkillEditPreview: (previewMode) => {
+                  if (state.projectSkillEditDialog) {
+                    state.projectSkillEditDialog = {
+                      ...state.projectSkillEditDialog,
                       previewMode,
                     };
                   }

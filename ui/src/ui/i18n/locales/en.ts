@@ -527,7 +527,35 @@ export const en: Record<string, string> = {
   "project.manage.title": "Project Management",
   "project.manage.tab.overview": "Overview",
   "project.manage.tab.rules": "Rules",
-  // Groups management Tab
+  "project.manage.tab.skills": "Skills",
+  // Skills management
+  "project.skills.title": "Project Skills",
+  "project.skills.create": "Create Skill",
+  "project.skills.edit": "Edit",
+  "project.skills.delete": "Delete",
+  "project.skills.empty.title": "No Project Skills",
+  "project.skills.empty.description":
+    "Create skills to equip Agent capabilities, skills will be injected into linked group contexts",
+  "project.skills.empty.button": "Create First Skill",
+  "project.skills.dialog.create.title": "Create Skill",
+  "project.skills.dialog.edit.title": "Edit Skill",
+  "project.skills.dialog.name.label": "Skill Name",
+  "project.skills.dialog.name.hint": "Name the skill for easy identification and management",
+  "project.skills.dialog.name.placeholder": "Enter skill name...",
+  "project.skills.dialog.content.label": "Skill Content",
+  "project.skills.dialog.content.hint":
+    "Supports Markdown format, will be injected into linked group Agent contexts",
+  "project.skills.dialog.content.placeholder": "## Skill Name\n\nSkill content...",
+  "project.skills.dialog.cancel": "Cancel",
+  "project.skills.dialog.create": "Create Skill",
+  "project.skills.dialog.save": "Save Changes",
+  "project.skills.delete.title": "Delete Skill",
+  "project.skills.delete.confirm":
+    'Are you sure you want to delete skill "{title}"? This action cannot be undone.',
+  "project.skills.delete.hint":
+    "After deletion, Agents in linked groups will no longer receive this skill in context.",
+  "project.skills.delete.cancel": "Cancel",
+  "project.skills.delete.confirmButton": "Confirm Delete",
   "project.groups.title": "Linked Groups",
   "project.groups.empty.title": "No linked groups",
   "project.groups.empty.description":
