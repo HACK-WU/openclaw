@@ -233,6 +233,22 @@ export type GroupChatState = {
   // ─── Plan Mode state ───
   /** Current plan mode state (null when plan mode is disabled or not yet loaded) */
   planModeState?: PlanModeState | null;
+  // ─── Memory management state ───
+  /** Memory status for the info panel */
+  memoryStatus?: {
+    files: Array<{ name: string; exists: boolean; size: number }>;
+    totalSize: number;
+    maxSize: number;
+    maxSizeKB: number;
+    warning: "ok" | "approaching-limit" | "over-limit";
+  } | null;
+  /** Memory preview/edit dialog state */
+  memoryPreviewDialog?: {
+    fileName: string;
+    content: string;
+    editing: boolean;
+    draft: string;
+  } | null;
 };
 
 export type GroupCreateDialogState = {
@@ -311,6 +327,8 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   groupInfoPanelOpen: false,
   bridgeTerminalStatuses: new Map(),
   planModeState: null,
+  memoryStatus: null,
+  memoryPreviewDialog: null,
 };
 
 // ─── Helpers ───
@@ -533,6 +551,8 @@ function resetGroupRoomState(host: GroupChatState): void {
   host.groupDisbandDialog = null;
   host.groupInfoPanelOpen = false;
   host.bridgeTerminalStatuses = new Map();
+  host.memoryStatus = null;
+  host.memoryPreviewDialog = null;
 }
 
 export function openGroupList(host: GroupChatState): void {
@@ -1445,6 +1465,12 @@ export async function loadGroupInfo(host: GroupHost, groupId: string): Promise<v
           replayBuffers.set(agentId, buffer);
         }
         host.bridgeTerminalReplayBuffers = replayBuffers;
+      }
+
+      // Auto-load memory status for groups with bridge agents
+      const hasBridgeMembers = meta.members.some((m) => m.bridge);
+      if (hasBridgeMembers) {
+        void loadMemoryStatus(host, groupId);
       }
     }
   } catch (err) {
@@ -2939,4 +2965,131 @@ export function clearBridgeTerminalStream(host: GroupChatState, agentId: string)
 
   activeBridgeStreamRuns.delete(agentId);
   flushPendingBridgeSyncIfNeeded(host);
+}
+
+// ─── Memory Management ───
+
+export async function loadMemoryStatus(host: GroupHost, groupId: string): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  try {
+    const status = await host.client.request<{
+      files: Array<{ name: string; exists: boolean; size: number }>;
+      totalSize: number;
+      maxSize: number;
+      maxSizeKB: number;
+      warning: "ok" | "approaching-limit" | "over-limit";
+    }>("group.memoryStatus", { groupId });
+    if (host.activeGroupId === groupId) {
+      host.memoryStatus = status ?? null;
+    }
+  } catch (err) {
+    console.warn("[group-chat] failed to load memory status:", err);
+  }
+}
+
+export async function openMemoryPreview(
+  host: GroupHost,
+  groupId: string,
+  fileName: string,
+): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  try {
+    const result = await host.client.request<{ content: string; fileName: string }>(
+      "group.memoryRead",
+      { groupId, fileName },
+    );
+    if (result && host.activeGroupId === groupId) {
+      host.memoryPreviewDialog = {
+        fileName: result.fileName,
+        content: result.content,
+        editing: false,
+        draft: result.content,
+      };
+    }
+  } catch (err) {
+    console.warn("[group-chat] failed to read memory file:", err);
+  }
+}
+
+export function closeMemoryPreview(host: GroupChatState): void {
+  host.memoryPreviewDialog = null;
+}
+
+export function toggleMemoryPreviewEdit(host: GroupChatState): void {
+  if (!host.memoryPreviewDialog) {
+    return;
+  }
+  host.memoryPreviewDialog = {
+    ...host.memoryPreviewDialog,
+    editing: !host.memoryPreviewDialog.editing,
+  };
+}
+
+export function updateMemoryPreviewDraft(host: GroupChatState, draft: string): void {
+  if (!host.memoryPreviewDialog) {
+    return;
+  }
+  host.memoryPreviewDialog = {
+    ...host.memoryPreviewDialog,
+    draft,
+  };
+}
+
+export async function saveMemoryPreview(host: GroupHost, groupId: string): Promise<void> {
+  const dialog = host.memoryPreviewDialog;
+  if (!dialog || !host.client || !host.connected) {
+    return;
+  }
+  try {
+    await host.client.request("group.memoryWrite", {
+      groupId,
+      fileName: dialog.fileName,
+      content: dialog.draft,
+    });
+    // Update the preview to show saved content
+    host.memoryPreviewDialog = {
+      ...dialog,
+      content: dialog.draft,
+      editing: false,
+    };
+    // Refresh memory status to update file sizes
+    await loadMemoryStatus(host, groupId);
+  } catch (err) {
+    console.warn("[group-chat] failed to save memory file:", err);
+  }
+}
+
+export async function updateMemoryConfig(
+  host: GroupHost,
+  groupId: string,
+  config: { maxSize?: number; contentInterval?: number; promptInterval?: number },
+): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  try {
+    // Get current contextConfig and merge memory settings
+    const meta = host.activeGroupMeta;
+    const currentConfig = meta?.contextConfig ?? {};
+    const newContextConfig = {
+      ...currentConfig,
+      memory: {
+        ...currentConfig.memory,
+        ...config,
+      },
+    };
+    await host.client.request("group.setContextConfig", {
+      groupId,
+      contextConfig: newContextConfig,
+    });
+    await loadGroupInfo(host, groupId);
+    // Refresh memory status with new maxSize
+    await loadMemoryStatus(host, groupId);
+  } catch (err) {
+    console.warn("[group-chat] failed to update memory config:", err);
+  }
 }

@@ -972,6 +972,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
       ${props.groupRemoveMemberDialog ? renderRemoveMemberDialog(props) : nothing}
       ${renderDisbandGroupDialog(props)}
       ${renderClearMessagesDialog(props)}
+      ${renderMemoryPreviewDialog(props)}
       ${renderAnnouncementEditDialog(meta, props)}
     </div>
   `;
@@ -2085,7 +2086,6 @@ function renderMemoryManagementSection(meta: GroupSessionMeta, props: GroupChatV
         }
       </div>
     </div>
-    ${renderMemoryPreviewDialog(props)}
   `;
 }
 
@@ -2098,9 +2098,9 @@ function renderMemoryPreviewDialog(props: GroupChatViewProps) {
   const previewHtml = dialog.content.trim() ? toSanitizedMarkdownHtml(dialog.content) : "";
 
   return html`
-    <div class="modal-overlay" role="dialog" aria-modal="true"
+    <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
       @click=${(e: Event) => {
-        if ((e.target as HTMLElement).classList.contains("modal-overlay")) {
+        if ((e.target as HTMLElement).classList.contains("modal-overlay--light")) {
           props.onCloseMemoryPreview?.();
         }
       }}
@@ -2148,9 +2148,7 @@ function renderMemoryPreviewDialog(props: GroupChatViewProps) {
                 ${
                   previewHtml
                     ? unsafeHTML(previewHtml)
-                    : html`
-                        <span class="muted">Empty</span>
-                      `
+                    : html`<span class="muted">${dialog.content === "" && !dialog.editing ? "Loading…" : "Empty"}</span>`
                 }
               </div>
             `

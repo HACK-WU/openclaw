@@ -2276,6 +2276,88 @@ export function renderApp(state: AppViewState) {
                     state as unknown as Parameters<typeof confirmClearMessages>[0],
                   );
                 },
+                // Memory management
+                memoryStatus: state.memoryStatus ?? null,
+                memoryPreviewDialog: state.memoryPreviewDialog ?? null,
+                onLoadMemoryStatus: () => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { loadMemoryStatus } = await import("./controllers/group-chat.ts");
+                      await loadMemoryStatus(
+                        state as unknown as Parameters<typeof loadMemoryStatus>[0],
+                        state.activeGroupId!,
+                      );
+                    })();
+                  }
+                },
+                onOpenMemoryPreview: (fileName: string) => {
+                  if (state.activeGroupId) {
+                    // Show dialog immediately with loading state
+                    state.memoryPreviewDialog = {
+                      fileName,
+                      content: "",
+                      editing: false,
+                      draft: "",
+                    };
+                    // Then load content asynchronously
+                    void (async () => {
+                      const { openMemoryPreview } = await import("./controllers/group-chat.ts");
+                      await openMemoryPreview(
+                        state as unknown as Parameters<typeof openMemoryPreview>[0],
+                        state.activeGroupId!,
+                        fileName,
+                      );
+                    })();
+                  }
+                },
+                onCloseMemoryPreview: () => {
+                  state.memoryPreviewDialog = null;
+                },
+                onMemoryPreviewToggleEdit: () => {
+                  if (state.memoryPreviewDialog) {
+                    state.memoryPreviewDialog = {
+                      ...state.memoryPreviewDialog,
+                      editing: !state.memoryPreviewDialog.editing,
+                    };
+                  }
+                },
+                onMemoryPreviewDraftChange: (draft: string) => {
+                  if (state.memoryPreviewDialog) {
+                    state.memoryPreviewDialog = {
+                      ...state.memoryPreviewDialog,
+                      draft,
+                    };
+                  }
+                },
+                onMemoryPreviewSave: () => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { saveMemoryPreview } = await import("./controllers/group-chat.ts");
+                      await saveMemoryPreview(
+                        state as unknown as Parameters<typeof saveMemoryPreview>[0],
+                        state.activeGroupId!,
+                      );
+                    })();
+                  }
+                },
+                onMergeMemory: () => {
+                  // TODO: Send invisible system message to assistant agent for merge
+                },
+                onCompactMemory: () => {
+                  // TODO: Send invisible system message to assistant agent for compact
+                },
+                onUpdateMemoryConfig: (config) => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { updateMemoryConfig } = await import("./controllers/group-chat.ts");
+                      await updateMemoryConfig(
+                        state as unknown as Parameters<typeof updateMemoryConfig>[0],
+                        state.activeGroupId!,
+                        config,
+                      );
+                    })();
+                  }
+                },
               })
             : nothing
         }

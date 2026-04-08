@@ -1522,6 +1522,142 @@ const handleGroupGetPlanState: GatewayRequestHandler = async ({ params, respond 
   });
 };
 
+// ─── Memory Management Handlers ───
+
+/**
+ * Get memory file status for a group.
+ * Returns per-agent memory file info (path, size, exists) for the memory management panel.
+ */
+const handleGroupMemoryStatus: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  const meta = loadGroupMeta(groupId);
+  if (!meta) {
+    respond(false, undefined, { message: "Group not found", code: 404 });
+    return;
+  }
+
+  const { getMemoryStatus, sanitizeGroupDirName } =
+    await import("../../group-chat/bridge-memory.js");
+  const { resolveStateDir } = await import("../../config/paths.js");
+  const groupDirName = sanitizeGroupDirName(meta.groupName ?? meta.groupId, meta.groupId);
+  const bridgeAgentIds = meta.members.filter((m) => m.bridge).map((m) => m.agentId);
+  const maxSizeKB = meta.contextConfig?.memory?.maxSize;
+
+  const status = await getMemoryStatus({
+    projectDir: meta.project?.directory,
+    stateDir: resolveStateDir(),
+    groupId,
+    groupName: groupDirName,
+    agentIds: bridgeAgentIds,
+    maxSizeKB,
+  });
+
+  respond(true, status);
+};
+
+/**
+ * Read memory file content for a group.
+ * Returns the raw content of a specific memory file for viewing/editing in the panel.
+ */
+const handleGroupMemoryRead: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  const fileName = params.fileName as string;
+  if (!groupId || !fileName) {
+    respond(false, undefined, { message: "groupId and fileName are required", code: 400 });
+    return;
+  }
+
+  // Validate fileName to prevent path traversal
+  if (fileName.includes("..") || fileName.includes("/") || fileName.includes("\\")) {
+    respond(false, undefined, { message: "Invalid fileName", code: 400 });
+    return;
+  }
+
+  const meta = loadGroupMeta(groupId);
+  if (!meta) {
+    respond(false, undefined, { message: "Group not found", code: 404 });
+    return;
+  }
+
+  const { sanitizeGroupDirName } = await import("../../group-chat/bridge-memory.js");
+  const fs = await import("node:fs/promises");
+
+  const groupDirName = sanitizeGroupDirName(meta.groupName ?? meta.groupId, meta.groupId);
+  let filePath: string;
+
+  if (meta.project?.directory) {
+    const path = await import("node:path");
+    filePath = path.join(meta.project.directory, ".openclaw", groupDirName, fileName);
+  } else {
+    const { resolveStateDir } = await import("../../config/paths.js");
+    const path = await import("node:path");
+    filePath = path.join(resolveStateDir(), "group-memory", groupId, fileName);
+  }
+
+  try {
+    const content = await fs.readFile(filePath, "utf-8");
+    respond(true, { content, fileName });
+  } catch {
+    respond(false, undefined, { message: "File not found or unreadable", code: 404 });
+  }
+};
+
+/**
+ * Write memory file content for a group.
+ * Saves edited memory content back to the file from the management panel.
+ */
+const handleGroupMemoryWrite: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  const fileName = params.fileName as string;
+  const content = params.content as string;
+  if (!groupId || !fileName || typeof content !== "string") {
+    respond(false, undefined, {
+      message: "groupId, fileName, and content are required",
+      code: 400,
+    });
+    return;
+  }
+
+  // Validate fileName to prevent path traversal
+  if (fileName.includes("..") || fileName.includes("/") || fileName.includes("\\")) {
+    respond(false, undefined, { message: "Invalid fileName", code: 400 });
+    return;
+  }
+
+  const meta = loadGroupMeta(groupId);
+  if (!meta) {
+    respond(false, undefined, { message: "Group not found", code: 404 });
+    return;
+  }
+
+  const { sanitizeGroupDirName } = await import("../../group-chat/bridge-memory.js");
+  const fs = await import("node:fs/promises");
+
+  const groupDirName = sanitizeGroupDirName(meta.groupName ?? meta.groupId, meta.groupId);
+  let filePath: string;
+
+  if (meta.project?.directory) {
+    const path = await import("node:path");
+    filePath = path.join(meta.project.directory, ".openclaw", groupDirName, fileName);
+  } else {
+    const { resolveStateDir } = await import("../../config/paths.js");
+    const path = await import("node:path");
+    filePath = path.join(resolveStateDir(), "group-memory", groupId, fileName);
+  }
+
+  try {
+    await fs.writeFile(filePath, content, "utf-8");
+    respond(true, { ok: true });
+  } catch (err) {
+    respond(false, undefined, { message: `Failed to write file: ${String(err)}`, code: 500 });
+  }
+};
+
 // ─── Export handler map ───
 
 export const groupHandlers: GatewayRequestHandlers = {
@@ -1555,4 +1691,8 @@ export const groupHandlers: GatewayRequestHandlers = {
   // Plan Mode
   "group.setPlanMode": handleGroupSetPlanMode,
   "group.getPlanState": handleGroupGetPlanState,
+  // Memory management
+  "group.memoryStatus": handleGroupMemoryStatus,
+  "group.memoryRead": handleGroupMemoryRead,
+  "group.memoryWrite": handleGroupMemoryWrite,
 };

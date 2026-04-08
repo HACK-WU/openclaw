@@ -353,6 +353,8 @@ export type AppViewState = {
       | import("./controllers/group-chat.js").GroupClearMessagesDialogState
       | null;
     groupInfoPanelOpen: boolean;
+    memoryStatus: import("./controllers/group-chat.js").GroupChatState["memoryStatus"];
+    memoryPreviewDialog: import("./controllers/group-chat.js").GroupChatState["memoryPreviewDialog"];
     // Project management state
     projectsList: ProjectIndexEntry[];
     projectsLoading: boolean;

@@ -250,6 +250,11 @@ export class OpenClawApp extends LitElement {
     | import("./controllers/group-chat.js").GroupClearMessagesDialogState
     | null = null;
   @state() groupInfoPanelOpen = false;
+  @state() memoryStatus: import("./controllers/group-chat.js").GroupChatState["memoryStatus"] =
+    null;
+  @state()
+  memoryPreviewDialog: import("./controllers/group-chat.js").GroupChatState["memoryPreviewDialog"] =
+    null;
 
   // Project management state
   @state() projectsList: ProjectIndexEntry[] = [];

@@ -1081,17 +1081,27 @@
 
 /* Memory Preview Dialog */
 
+.modal-overlay:has(.memory-preview-dialog) {
+  padding: 8px;
+}
+
+.modal-card.memory-preview-dialog {
+  width: min(700px, calc(100vw - 64px));
+  max-height: 90vh;
+}
+
 .memory-preview-dialog {
-  width: min(640px, calc(100vw - 32px));
-  max-height: 80vh;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
 }
 
 .memory-preview-dialog__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
 }
 
 .memory-preview-dialog__tabs {
@@ -1108,8 +1118,8 @@
   flex: 1;
   overflow-y: auto;
   padding: 16px;
-  min-height: 200px;
-  max-height: 50vh;
+  min-height: 240px;
+  max-height: 65vh;
 }
 
 .memory-preview-dialog__content {
@@ -1119,8 +1129,8 @@
 
 .memory-preview-dialog__textarea {
   width: 100%;
-  height: 300px;
-  min-height: 200px;
+  height: 400px;
+  min-height: 240px;
   resize: vertical;
   font-family: var(--font-mono, monospace);
   font-size: 12px;
