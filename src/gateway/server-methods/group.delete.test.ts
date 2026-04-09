@@ -36,6 +36,10 @@ vi.mock("../../group-chat/chain-state-store.js", () => ({
   clearChainState: vi.fn(),
 }));
 
+vi.mock("../../group-chat/llm-agent-state.js", () => ({
+  clearLlmAgentStates: vi.fn(),
+}));
+
 vi.mock("../../group-chat/group-session-key.js", () => ({
   buildGroupSessionKey: vi.fn((groupId: string, agentId?: string) =>
     agentId ? `group:${groupId}:${agentId}` : `group:${groupId}`,
@@ -94,6 +98,7 @@ vi.mock("../../group-chat/group-store.js", () => ({
   loadGroupIndex: vi.fn().mockReturnValue([]),
   loadGroupMeta: vi.fn(() => mockGroupMeta),
   updateGroupMeta: vi.fn(),
+  PLAN_FILES: { jobs: "jobs.md", plan: "PLAN.md" },
 }));
 
 // Session store 数据 — 按 storePath 存储不同的 store 内容
@@ -271,6 +276,7 @@ vi.mock("../../acp/control-plane/manager.js", () => ({
 // 我们需要提取出 group.delete handler
 import { cleanupGroupBridgeAgents } from "../../group-chat/bridge-pty.js";
 import { clearChainState } from "../../group-chat/chain-state-store.js";
+import { clearLlmAgentStates } from "../../group-chat/llm-agent-state.js";
 import { broadcastGroupSystem } from "../../group-chat/parallel-stream.js";
 import { groupHandlers } from "./group.js";
 
@@ -636,6 +642,7 @@ describe("group.delete — session key 清理", () => {
       await handler(args as Parameters<typeof handler>[0]);
 
       expect(clearChainState).toHaveBeenCalledWith(groupId);
+      expect(clearLlmAgentStates).toHaveBeenCalledWith(groupId);
     });
 
     it("删除群聊时清理 Bridge Agent PTY 进程", async () => {

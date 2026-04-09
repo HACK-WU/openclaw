@@ -44,6 +44,7 @@ import {
   updateGroupMeta,
 } from "../../group-chat/group-store.js";
 import { PLAN_FILES, resolvePlanFilesDir } from "../../group-chat/group-store.js";
+import { clearLlmAgentStates } from "../../group-chat/llm-agent-state.js";
 import { resolveDispatchTargets } from "../../group-chat/message-dispatch.js";
 import {
   abortGroupRun,
@@ -234,6 +235,9 @@ const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, conte
 
   // Clear in-memory chain state (roundCount, pending count, monitor timer)
   clearChainState(groupId);
+
+  // Clear LLM agent interaction state (interactionCount, role reminder tracking)
+  clearLlmAgentStates(groupId);
 
   // Read group meta BEFORE deleting the group directory — we need the member list
   // to locate the correct session store files for cleanup.
@@ -1384,6 +1388,9 @@ const handleGroupClearMessages: GatewayRequestHandler = async ({ params, respond
 
   // 3. Clear chain state
   clearChainState(groupId);
+
+  // 3b. Clear LLM agent interaction state
+  clearLlmAgentStates(groupId);
 
   // 4. Clear each agent's session transcript file and reset session IDs
   // This ensures agents won't see previous conversation history

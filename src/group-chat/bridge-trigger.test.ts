@@ -7,6 +7,7 @@ const waitForFrontendExtractedText = vi.fn();
 const isPtyRunning = vi.fn();
 const createBridgePty = vi.fn();
 const writeToPty = vi.fn();
+const writeToPtyWithEnter = vi.fn();
 const clearFrontendExtractedText = vi.fn();
 const updateLastTranscriptIndex = vi.fn();
 const appendGroupMessage = vi.fn();
@@ -30,6 +31,7 @@ vi.mock("./bridge-pty.js", () => ({
   updateLastTranscriptIndex,
   waitForFrontendExtractedText,
   writeToPty,
+  writeToPtyWithEnter,
 }));
 
 vi.mock("./transcript.js", () => ({
@@ -167,6 +169,141 @@ function makeParams(content: string): TriggerAgentParams {
   };
 }
 
+describe("buildCliContextMessage — always-injected sections", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _test.resetBridgeAgentQueues();
+
+    buildCoreFilesContentSection.mockResolvedValue("# core content");
+    buildCoreFilesPathSection.mockReturnValue("# core paths");
+    createBridgePty.mockResolvedValue(makePtyState());
+    getPtyState.mockReturnValue(makePtyState());
+    setInputPhase.mockImplementation(() => {});
+    clearFrontendExtractedText.mockImplementation(() => {});
+    updateLastTranscriptIndex.mockImplementation(() => {});
+    appendGroupMessage.mockImplementation(
+      async (groupId: string, msg: Record<string, unknown>) => ({
+        ...msg,
+        groupId,
+        serverSeq: 1,
+      }),
+    );
+    writeToPty.mockReturnValue(true);
+    writeToPtyWithEnter.mockResolvedValue(true);
+    // PTY already running → subsequent (non-first) interaction
+    isPtyRunning.mockReturnValue(true);
+    killBridgePty.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    _test.resetBridgeAgentQueues();
+  });
+
+  it("includes member list with Owner in subsequent interactions", async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveExtract!: (text: string | null) => void;
+      waitForFrontendExtractedText.mockImplementationOnce(
+        () =>
+          new Promise<string | null>((resolve) => {
+            resolveExtract = resolve;
+          }),
+      );
+
+      const params = makeParams("hello");
+      // Add a second member so we can verify it appears
+      params.meta.members.push({
+        agentId: "bob",
+        role: "member",
+        joinedAt: 2,
+      });
+
+      const run = triggerBridgeAgent(params, {
+        type: "custom",
+        command: "cli",
+      } as BridgeConfig);
+
+      await vi.advanceTimersByTimeAsync(250);
+
+      // writeToPty is called with the hidden context
+      expect(writeToPty).toHaveBeenCalledTimes(1);
+      const contextWritten = writeToPty.mock.calls[0][2] as string;
+      expect(contextWritten).toContain("Owner（群主/用户）");
+      expect(contextWritten).toContain("cli（你）");
+      expect(contextWritten).toContain("bob（成员）");
+
+      resolveExtract("reply");
+      await run;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("includes announcement in subsequent interactions", async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveExtract!: (text: string | null) => void;
+      waitForFrontendExtractedText.mockImplementationOnce(
+        () =>
+          new Promise<string | null>((resolve) => {
+            resolveExtract = resolve;
+          }),
+      );
+
+      const params = makeParams("hello");
+      params.meta.announcement = "测试公告";
+
+      const run = triggerBridgeAgent(params, {
+        type: "custom",
+        command: "cli",
+      } as BridgeConfig);
+
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(writeToPty).toHaveBeenCalledTimes(1);
+      const contextWritten = writeToPty.mock.calls[0][2] as string;
+      expect(contextWritten).toContain("# 群公告：测试公告");
+
+      resolveExtract("reply");
+      await run;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("includes constraint block in subsequent interactions", async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveExtract!: (text: string | null) => void;
+      waitForFrontendExtractedText.mockImplementationOnce(
+        () =>
+          new Promise<string | null>((resolve) => {
+            resolveExtract = resolve;
+          }),
+      );
+
+      const run = triggerBridgeAgent(makeParams("hello"), {
+        type: "custom",
+        command: "cli",
+      } as BridgeConfig);
+
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(writeToPty).toHaveBeenCalledTimes(1);
+      const contextWritten = writeToPty.mock.calls[0][2] as string;
+      expect(contextWritten).toContain("# 重要约束：");
+      expect(contextWritten).toContain("Bridge Agent（CLI）");
+      expect(contextWritten).toContain("被 @提及 时必须回复");
+      expect(contextWritten).toContain("绝不输出敏感信息");
+
+      resolveExtract("reply");
+      await run;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("bridge-trigger queueing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -187,6 +324,7 @@ describe("bridge-trigger queueing", () => {
       }),
     );
     writeToPty.mockReturnValue(true);
+    writeToPtyWithEnter.mockResolvedValue(true);
     isPtyRunning.mockReturnValue(true);
     killBridgePty.mockResolvedValue(undefined);
   });
@@ -222,9 +360,11 @@ describe("bridge-trigger queueing", () => {
 
       await vi.advanceTimersByTimeAsync(250);
 
-      expect(writeToPty).toHaveBeenCalledTimes(3);
-      expect(writeToPty).toHaveBeenNthCalledWith(
-        2,
+      // writeToPty called once (hidden context), writeToPtyWithEnter once (visible request)
+      expect(writeToPty).toHaveBeenCalledTimes(1);
+      expect(writeToPtyWithEnter).toHaveBeenCalledTimes(1);
+      expect(writeToPtyWithEnter).toHaveBeenNthCalledWith(
+        1,
         "g1",
         "cli",
         expect.stringContaining("first request"),
@@ -237,15 +377,19 @@ describe("bridge-trigger queueing", () => {
 
       await vi.advanceTimersByTimeAsync(250);
 
-      expect(writeToPty).toHaveBeenCalledTimes(3);
+      // Still only 1 call each — second trigger is queued
+      expect(writeToPty).toHaveBeenCalledTimes(1);
+      expect(writeToPtyWithEnter).toHaveBeenCalledTimes(1);
 
       firstResolve("first reply");
       await firstRun;
       await vi.advanceTimersByTimeAsync(250);
 
-      expect(writeToPty).toHaveBeenCalledTimes(6);
-      expect(writeToPty).toHaveBeenNthCalledWith(
-        5,
+      // Now second trigger has run: 2 calls each
+      expect(writeToPty).toHaveBeenCalledTimes(2);
+      expect(writeToPtyWithEnter).toHaveBeenCalledTimes(2);
+      expect(writeToPtyWithEnter).toHaveBeenNthCalledWith(
+        2,
         "g1",
         "cli",
         expect.stringContaining("second request"),

@@ -533,26 +533,6 @@ async function buildCliContextMessage(params: {
       `# - 群名：${meta.groupName ?? meta.groupId}`,
     );
 
-    // Member list
-    const memberNames = meta.members
-      .filter((m) => !isBridgeAssistant(m.agentId))
-      .map((m) => {
-        const roleLabel =
-          m.agentId === agentId
-            ? "你"
-            : m.role === "assistant"
-              ? "管理员"
-              : m.bridge
-                ? "CLI Agent"
-                : "成员";
-        return `${m.agentId}（${roleLabel}）`;
-      });
-    sections.push(`# - 成员：${memberNames.join("、")}`);
-
-    if (meta.announcement) {
-      sections.push(`# - 公告：${meta.announcement}`);
-    }
-
     // Project info — resolve from projectId if not already set in meta.project
     const resolvedProjectForContext = meta.project?.directory
       ? meta.project
@@ -641,6 +621,38 @@ async function buildCliContextMessage(params: {
       sections.push("");
     }
   }
+
+  // ─── 成员列表（每次交互都注入） ───
+  const memberNames = meta.members
+    .filter((m) => !isBridgeAssistant(m.agentId))
+    .map((m) => {
+      const roleLabel =
+        m.agentId === agentId
+          ? "你"
+          : m.role === "assistant"
+            ? "管理员"
+            : m.bridge
+              ? "CLI Agent"
+              : "成员";
+      return `${m.agentId}（${roleLabel}）`;
+    });
+  sections.push(`# 群成员：Owner（群主/用户）、${memberNames.join("、")}`);
+
+  // ─── 群公告（每次交互都注入） ───
+  if (meta.announcement) {
+    sections.push(`# 群公告：${meta.announcement}`);
+  }
+
+  // ─── 约束信息（每次交互都注入） ───
+  sections.push(
+    "# 重要约束：",
+    "# - 你是 Bridge Agent（CLI），拥有完整的文件读写和命令执行权限",
+    "# - 被 @提及 时必须回复 — 即使是重复的问题",
+    "# - 保持回复简洁聚焦",
+    '# - 不要说"让我问问..." — 直接用 @agentId 提问',
+    "# - 需要字面显示 @ 时使用 \\@ 转义（邮箱、随意引用）",
+    "# - 绝不输出敏感信息（API 密钥、密码、令牌）",
+  );
 
   // The actual request (trigger message — the last user/agent message)
   const triggerMsg = transcriptSnapshot[transcriptSnapshot.length - 1];

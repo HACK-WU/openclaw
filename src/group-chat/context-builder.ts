@@ -4,29 +4,104 @@
  * Builds the extraSystemPrompt section injected into each agent's
  * system prompt when reasoning in a group chat context.
  *
- * Includes: group info, member list, announcement, role prompt, constraints.
+ * Includes: group info, member list, announcement, role prompt (interval-based),
+ * communication guide, constraints, project memory (full injection),
+ * core files, and plan mode context.
  */
 
-import { resolveProjectMemoryPaths, sanitizeGroupDirName } from "./bridge-memory.js";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { resolveCliAgentIdentityDir } from "../agents/cli-agent-scope.js";
+import {
+  isEmptyTemplate,
+  resolveProjectMemoryPaths,
+  sanitizeGroupDirName,
+  shouldInjectMemoryContent,
+  shouldInjectMemoryPrompt,
+  DEFAULT_MEMORY_CONTENT_INTERVAL,
+  DEFAULT_MEMORY_PROMPT_INTERVAL,
+} from "./bridge-memory.js";
+import { type ContextConfig, DEFAULT_ROLE_REMINDER_INTERVAL } from "./bridge-types.js";
 import { buildPlanModeAssistantPrompt, buildPlanModeExecutorPrompt } from "./plan-mode-context.js";
 import { resolveRolePrompt } from "./role-prompt.js";
 import type { GroupSessionEntry } from "./types.js";
 import { isBridgeAssistant } from "./types.js";
 
-/**
- * Build the group chat context string for injection into an agent's system prompt.
- */
-export function buildGroupChatContext(params: {
+// ─── Core File Definitions ───
+
+/** Core files that have their content injected on first interaction. */
+const CORE_CONTENT_FILES = ["PERSONALITY.md", "SOUL.md", "AGENTS.md"] as const;
+
+/** All core files and their descriptive titles. */
+const CORE_FILE_TITLES: Record<string, string> = {
+  "IDENTITY.md": "Identity — who you are",
+  "PERSONALITY.md": "Personality — your character traits",
+  "SOUL.md": "Soul — your core principles",
+  "AGENTS.md": "Project guidelines",
+  "TOOLS.md": "Tools & environment notes",
+};
+
+// ─── File Helpers ───
+
+async function readFileOrNull(filePath: string): Promise<string | null> {
+  try {
+    return await fs.readFile(filePath, "utf-8");
+  } catch {
+    return null;
+  }
+}
+
+async function directoryExists(dirPath: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(dirPath);
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+// ─── Types ───
+
+export type BuildGroupChatContextParams = {
   meta: GroupSessionEntry;
   agentId: string;
-}): string {
-  const { meta, agentId } = params;
+  groupId: string;
+  isFirstInteraction: boolean;
+  interactionCount: number;
+  lastRoleReminderAt: number;
+  contextConfig?: ContextConfig;
+};
+
+export type BuildGroupChatContextResult = {
+  content: string;
+  roleReminderSent: boolean;
+};
+
+/**
+ * Build the group chat context string for injection into an agent's system prompt.
+ *
+ * This is an async function because memory content and core file injection
+ * require reading files from disk.
+ */
+export async function buildGroupChatContext(
+  params: BuildGroupChatContextParams,
+): Promise<BuildGroupChatContextResult> {
+  const {
+    meta,
+    agentId,
+    groupId,
+    isFirstInteraction,
+    interactionCount,
+    lastRoleReminderAt,
+    contextConfig,
+  } = params;
   const member = meta.members.find((m) => m.agentId === agentId);
   if (!member) {
-    return "";
+    return { content: "", roleReminderSent: false };
   }
 
   const sections: string[] = [];
+  let roleReminderSent = false;
 
   // 1. Group info
   const roleName =
@@ -68,10 +143,24 @@ ${memberLines.join("\n")}`);
 ${meta.announcement}`);
   }
 
-  // 4. Role prompt
+  // 4. Role prompt — first interaction: full; subsequent: interval-based reminder
   const rolePrompt = resolveRolePrompt(agentId, member.role, meta.memberRolePrompts);
-  sections.push(`### Your Role
+  const roleReminderInterval =
+    contextConfig?.roleReminderInterval ?? DEFAULT_ROLE_REMINDER_INTERVAL;
+
+  if (isFirstInteraction) {
+    sections.push(`### Your Role
 ${rolePrompt}`);
+  } else {
+    const shouldSendRoleReminder = interactionCount - lastRoleReminderAt >= roleReminderInterval;
+    if (shouldSendRoleReminder) {
+      sections.push(`### Role Reminder
+You are **${roleName}** (agentId: \`${agentId}\`) in group "${meta.groupName ?? meta.groupId}".
+
+${rolePrompt}`);
+      roleReminderSent = true;
+    }
+  }
 
   // 5. Communication Guide
   sections.push(`### Communication Guide
@@ -143,38 +232,21 @@ Use \`@agentId\` on its **own line** to route your message to another agent.
 - **Escape \`@\` with \`\\@\`** when you need to display it literally (emails, casual references)`);
   }
 
-  // 7. Project memory context (file paths for awareness)
-  const hasBridgeMembers = meta.members.some((m) => m.bridge);
-  if (hasBridgeMembers) {
-    const groupDirName = sanitizeGroupDirName(meta.groupName ?? meta.groupId, meta.groupId);
-    const projectDir = meta.project?.directory;
-    if (projectDir) {
-      const memPaths = resolveProjectMemoryPaths(projectDir, groupDirName, agentId);
-      sections.push(`### Project Memory
+  // 7. Project memory context — full injection with interval-based content/prompt
+  await injectMemoryContext(sections, {
+    meta,
+    agentId,
+    groupId,
+    member,
+    isFirstInteraction,
+    interactionCount,
+    contextConfig,
+  });
 
-This group has a project-level memory system. Memory files are stored at:
-- **Shared permanent memory**: \`${memPaths.sharedMemoryFile}\` — long-term project knowledge (architecture decisions, coding conventions, lessons learned)
-- **Shared session memory**: \`${memPaths.sharedSessionFile}\` — current session progress and notes
-- **Agent memory files**: \`${memPaths.dir}/{agentId}.md\` — each CLI agent's private memory
+  // 8. Core files — first interaction: content + paths; subsequent: paths only
+  await injectCoreFiles(sections, { agentId, isFirstInteraction });
 
-${
-  member.role === "assistant"
-    ? `As the **assistant (coordinator)**, you are the **memory manager**:
-- You have **read/write** access to MEMORY.md and SESSION.md
-- Other agents only have read access to shared files
-- When performing memory merge/compact operations, read all agent memory files and consolidate key information into shared files
-- Keep shared memory concise and well-organized`
-    : `You have **read-only** access to shared memory files (MEMORY.md, SESSION.md).
-Only the assistant agent can write to shared files.`
-}`);
-    } else {
-      sections.push(`### Memory System (Temp Mode)
-
-This group uses temporary memory mode (no project directory). Each CLI agent has a private memory file in the state directory. No shared memory files are available.`);
-    }
-  }
-
-  // 8. Plan Mode context injection
+  // 9. Plan Mode context injection
   if (meta.planMode) {
     if (member.role === "assistant") {
       sections.push(buildPlanModeAssistantPrompt(meta));
@@ -183,5 +255,187 @@ This group uses temporary memory mode (no project directory). Each CLI agent has
     }
   }
 
-  return sections.join("\n\n");
+  return {
+    content: sections.join("\n\n"),
+    roleReminderSent,
+  };
+}
+
+// ─── Memory Injection (Markdown format for LLM Agent) ───
+
+async function injectMemoryContext(
+  sections: string[],
+  params: {
+    meta: GroupSessionEntry;
+    agentId: string;
+    groupId: string;
+    member: { role: string; bridge?: unknown };
+    isFirstInteraction: boolean;
+    interactionCount: number;
+    contextConfig?: ContextConfig;
+  },
+): Promise<void> {
+  const { meta, agentId, isFirstInteraction, interactionCount, contextConfig } = params;
+  const memoryConfig = contextConfig?.memory;
+  const contentInterval = memoryConfig?.contentInterval ?? DEFAULT_MEMORY_CONTENT_INTERVAL;
+  const promptInterval = memoryConfig?.promptInterval ?? DEFAULT_MEMORY_PROMPT_INTERVAL;
+
+  const groupDirName = sanitizeGroupDirName(meta.groupName ?? meta.groupId, meta.groupId);
+  const projectDir = meta.project?.directory;
+
+  const injectContent = shouldInjectMemoryContent(
+    isFirstInteraction,
+    interactionCount,
+    contentInterval,
+  );
+  const injectPrompt = shouldInjectMemoryPrompt(
+    isFirstInteraction,
+    interactionCount,
+    promptInterval,
+  );
+
+  if (projectDir) {
+    const memPaths = resolveProjectMemoryPaths(projectDir, groupDirName, agentId);
+
+    // Memory file paths — every interaction
+    sections.push(`### Project Memory
+
+This group has a project-level memory system. Memory files are stored at:
+- **Shared permanent memory**: \`${memPaths.sharedMemoryFile}\` — long-term project knowledge (architecture decisions, coding conventions, lessons learned)
+- **Shared session memory**: \`${memPaths.sharedSessionFile}\` — current session progress and notes
+- **Agent memory files**: \`${memPaths.dir}/{agentId}.md\` — each CLI agent's private memory
+
+You have **read-only** access to all memory files. Memory files are maintained by CLI (Bridge) agents.`);
+
+    // Memory content — injected at contentInterval
+    if (injectContent) {
+      const contentParts: string[] = [];
+
+      const memoryContent = await readFileOrNull(memPaths.sharedMemoryFile);
+      if (memoryContent) {
+        contentParts.push(`**Shared Permanent Memory (MEMORY.md) — Latest Snapshot:**
+
+\`\`\`
+${memoryContent}
+\`\`\``);
+      }
+
+      const sessionContent = await readFileOrNull(memPaths.sharedSessionFile);
+      if (sessionContent && !isEmptyTemplate(sessionContent)) {
+        contentParts.push(`**Shared Session Memory (SESSION.md) — Latest Snapshot:**
+
+\`\`\`
+${sessionContent}
+\`\`\``);
+      }
+
+      const agentContent = await readFileOrNull(memPaths.agentMemoryFile);
+      if (agentContent && !isEmptyTemplate(agentContent)) {
+        contentParts.push(`**Agent Memory (${agentId}.md) — Latest Snapshot:**
+
+\`\`\`
+${agentContent}
+\`\`\``);
+      }
+
+      if (contentParts.length > 0) {
+        sections.push(`### Memory Content
+
+${contentParts.join("\n\n")}`);
+      }
+    }
+
+    // Memory management prompt — injected at promptInterval (read-only version for LLM Agent)
+    if (injectPrompt) {
+      sections.push(`### Memory System Guidelines
+
+You have **read-only** access to the project memory system. You **cannot** write to memory files — only CLI (Bridge) agents can write to them.
+
+When you notice important information that should be remembered (architecture decisions, bugs, conventions), you can:
+1. Ask a CLI agent to record it by @-mentioning them
+2. Reference memory files in your responses to provide context
+
+Memory files:
+- \`MEMORY.md\` — shared permanent memory (architecture, conventions, lessons learned)
+- \`SESSION.md\` — shared session memory (current progress, blockers)
+- \`{agentId}.md\` — each CLI agent's private memory`);
+    }
+  } else {
+    // Temp memory mode — no project directory
+    sections.push(`### Memory System (Temp Mode)
+
+This group uses temporary memory mode (no project directory). Each CLI agent has a private memory file in the state directory. No shared memory files are available.
+
+You have **read-only** access. Only CLI (Bridge) agents can write to memory files.`);
+  }
+}
+
+// ─── Core Files Injection (Markdown format for LLM Agent) ───
+
+async function injectCoreFiles(
+  sections: string[],
+  params: {
+    agentId: string;
+    isFirstInteraction: boolean;
+  },
+): Promise<void> {
+  const { agentId, isFirstInteraction } = params;
+
+  // Resolve CLI Agent identity directory — LLM agents may not have one
+  const identityDir = resolveCliAgentIdentityDir(agentId);
+  const dirExists = await directoryExists(identityDir);
+  if (!dirExists) {
+    return; // No identity directory for this agent — skip core files
+  }
+
+  if (isFirstInteraction) {
+    // First interaction: inject file content + paths
+    const contentParts: string[] = [];
+
+    const readResults = await Promise.all(
+      CORE_CONTENT_FILES.map(async (fileName) => ({
+        fileName,
+        content: await readFileOrNull(path.join(identityDir, fileName)),
+      })),
+    );
+
+    for (const { fileName, content } of readResults) {
+      const title = CORE_FILE_TITLES[fileName] ?? fileName;
+      if (content && content.trim()) {
+        contentParts.push(`**${fileName}** — ${title}:
+
+\`\`\`
+${content.trim()}
+\`\`\``);
+      }
+    }
+
+    if (contentParts.length > 0) {
+      sections.push(`### Core Files
+
+These files define your personality, principles, and project guidelines.
+
+${contentParts.join("\n\n")}`);
+    }
+
+    // Always inject path section on first interaction
+    sections.push(buildCoreFilesPathMarkdown(identityDir));
+  } else {
+    // Subsequent interactions: paths only
+    sections.push(buildCoreFilesPathMarkdown(identityDir));
+  }
+}
+
+function buildCoreFilesPathMarkdown(identityDir: string): string {
+  const lines = [
+    `### Core File Paths
+
+These files are available for reference:`,
+  ];
+
+  for (const [fileName, title] of Object.entries(CORE_FILE_TITLES)) {
+    lines.push(`- **${fileName}** — ${title}: \`${path.join(identityDir, fileName)}\``);
+  }
+
+  return lines.join("\n");
 }

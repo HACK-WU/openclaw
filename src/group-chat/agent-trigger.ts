@@ -31,6 +31,11 @@ import {
 } from "./bridge-types.js";
 import { buildGroupChatContext } from "./context-builder.js";
 import { buildGroupSessionKey } from "./group-session-key.js";
+import {
+  getLlmAgentState,
+  incrementLlmInteraction,
+  updateLastRoleReminder,
+} from "./llm-agent-state.js";
 import { broadcastGroupMessage, broadcastGroupStream } from "./parallel-stream.js";
 import { appendGroupMessage } from "./transcript.js";
 import type {
@@ -242,7 +247,17 @@ export async function triggerAgentReasoning(
   };
 
   // Build group chat context for system prompt injection
-  const groupChatSystemPrompt = buildGroupChatContext({ meta, agentId });
+  const llmState = getLlmAgentState(groupId, agentId);
+  const isFirstInteraction = llmState === undefined;
+  const { content: groupChatSystemPrompt, roleReminderSent } = await buildGroupChatContext({
+    meta,
+    agentId,
+    groupId,
+    isFirstInteraction,
+    interactionCount: llmState?.interactionCount ?? 0,
+    lastRoleReminderAt: llmState?.lastRoleReminderAt ?? 0,
+    contextConfig: meta.contextConfig,
+  });
 
   // Build conversation history for the agent
   const conversationHistory = buildConversationHistory(
@@ -411,6 +426,11 @@ export async function triggerAgentReasoning(
         agentName: agentId,
         state: "final",
       });
+      // Track LLM agent interaction count (even when no reply)
+      incrementLlmInteraction(groupId, agentId);
+      if (roleReminderSent) {
+        updateLastRoleReminder(groupId, agentId);
+      }
       // chainState is no longer updated here - increment happens in group.ts
       return { run, chainState };
     }
@@ -479,6 +499,11 @@ export async function triggerAgentReasoning(
 
     run.status = "completed";
     run.completedAt = Date.now();
+    // Track LLM agent interaction count
+    incrementLlmInteraction(groupId, agentId);
+    if (roleReminderSent) {
+      updateLastRoleReminder(groupId, agentId);
+    }
     // chainState is no longer updated here - increment happens in group.ts
 
     return { run, replyMessage, chainState };
