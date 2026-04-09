@@ -117,6 +117,17 @@ export type GroupMessageSender =
   | { type: "agent"; agentId: string }
   | { type: "system" };
 
+export type GroupToolCall = {
+  /** Tool call ID */
+  id: string;
+  /** Tool name */
+  name: string;
+  /** Tool arguments */
+  args?: Record<string, unknown>;
+  /** Tool result (if available) */
+  result?: string;
+};
+
 export type GroupChatMessage = {
   id: string;
   groupId: string;
@@ -129,6 +140,8 @@ export type GroupChatMessage = {
   timestamp: number;
   /** Image attachments included with this message (base64-encoded) */
   images?: Array<{ type: "image"; data: string; mimeType: string }>;
+  /** Tool calls made during this message (persisted in transcript) */
+  toolCalls?: GroupToolCall[];
 };
 
 export type BridgeTerminalStatus =
