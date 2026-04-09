@@ -1434,6 +1434,16 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
 
       <!-- Plan Mode Section -->
       ${renderPlanModeSection(meta, props)}
+
+      <!-- Actions Section -->
+      <div class="group-members-panel__actions">
+        <button
+          class="btn btn--danger btn--sm btn--full-width"
+          @click=${() => props.onOpenClearMessagesDialog()}
+        >
+          ${icons.trash} ${t("chat.group.clearMessages")}
+        </button>
+      </div>
     </div>
   `;
 }
