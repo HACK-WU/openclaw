@@ -251,6 +251,20 @@ export type GroupChatState = {
     editing: boolean;
     draft: string;
   } | null;
+  // ─── Project content (read-only, loaded from associated project) ───
+  /** Rules from the associated project */
+  groupProjectRules: Array<{ id: string; title: string; content: string }>;
+  /** Skills from the associated project */
+  groupProjectSkills: Array<{ id: string; name: string; content: string }>;
+  /** Docs from the associated project */
+  groupProjectDocs: Array<{ id: string; name: string; content: string }>;
+  /** Whether project content is being loaded */
+  groupProjectContentLoading: boolean;
+  /** Project content preview dialog state (read-only) */
+  projectContentPreviewDialog: {
+    title: string;
+    content: string;
+  } | null;
 };
 
 export type GroupCreateDialogState = {
@@ -338,6 +352,11 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   planFilesStatus: null,
   memoryStatus: null,
   memoryPreviewDialog: null,
+  groupProjectRules: [],
+  groupProjectSkills: [],
+  groupProjectDocs: [],
+  groupProjectContentLoading: false,
+  projectContentPreviewDialog: null,
 };
 
 // ─── Helpers ───
@@ -562,6 +581,11 @@ function resetGroupRoomState(host: GroupChatState): void {
   host.bridgeTerminalStatuses = new Map();
   host.memoryStatus = null;
   host.memoryPreviewDialog = null;
+  host.groupProjectRules = [];
+  host.groupProjectSkills = [];
+  host.groupProjectDocs = [];
+  host.groupProjectContentLoading = false;
+  host.projectContentPreviewDialog = null;
 }
 
 export function openGroupList(host: GroupChatState): void {
@@ -2654,6 +2678,44 @@ export async function enterGroupChat(host: GroupHost, groupId: string): Promise<
   // Sync URL with group parameter after successfully entering
   if (host.activeGroupId === groupId && !host.groupNotFound) {
     syncUrlWithGroup(groupId);
+  }
+  // Auto-load project content if the group has an associated project
+  if (host.activeGroupMeta?.projectId) {
+    void loadGroupProjectContent(host, host.activeGroupMeta.projectId);
+  }
+}
+
+/**
+ * Load project rules, skills, and docs for the associated project.
+ * Used in the group info panel to display project content in read-only mode.
+ */
+export async function loadGroupProjectContent(host: GroupHost, projectId: string): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  host.groupProjectContentLoading = true;
+  try {
+    const [rules, skills, docs] = await Promise.all([
+      host.client.request<Array<{ id: string; title: string; content: string }>>(
+        "projects.rules.list",
+        { projectId },
+      ),
+      host.client.request<Array<{ id: string; name: string; content: string }>>(
+        "projects.skills.list",
+        { projectId },
+      ),
+      host.client.request<Array<{ id: string; name: string; content: string }>>(
+        "projects.docs.list",
+        { projectId },
+      ),
+    ]);
+    host.groupProjectRules = rules ?? [];
+    host.groupProjectSkills = skills ?? [];
+    host.groupProjectDocs = docs ?? [];
+  } catch {
+    // Silently fail — project content is optional
+  } finally {
+    host.groupProjectContentLoading = false;
   }
 }
 

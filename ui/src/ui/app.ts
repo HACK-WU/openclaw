@@ -263,6 +263,17 @@ export class OpenClawApp extends LitElement {
   @state()
   memoryPreviewDialog: import("./controllers/group-chat.js").GroupChatState["memoryPreviewDialog"] =
     null;
+  @state()
+  groupProjectRules: import("./controllers/group-chat.js").GroupChatState["groupProjectRules"] = [];
+  @state()
+  groupProjectSkills: import("./controllers/group-chat.js").GroupChatState["groupProjectSkills"] =
+    [];
+  @state()
+  groupProjectDocs: import("./controllers/group-chat.js").GroupChatState["groupProjectDocs"] = [];
+  @state() groupProjectContentLoading = false;
+  @state()
+  projectContentPreviewDialog: import("./controllers/group-chat.js").GroupChatState["projectContentPreviewDialog"] =
+    null;
 
   // Project management state
   @state() projectsList: ProjectIndexEntry[] = [];

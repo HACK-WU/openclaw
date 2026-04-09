@@ -456,6 +456,13 @@ export const zhTW: Record<string, string> = {
   "chat.group.project.docs.count": "{count} 個文檔",
   // 群聊資訊面板 - 項目顯示
   "chat.group.project.associated": "關聯項目",
+  // 群聊資訊面板 - 項目內容（唯讀）
+  "chat.group.projectContent": "項目內容",
+  "chat.group.projectContent.rules": "規則",
+  "chat.group.projectContent.skills": "技能",
+  "chat.group.projectContent.docs": "文檔",
+  "chat.group.projectContent.empty": "暫無內容",
+  "chat.group.projectContent.loading": "載入項目內容中...",
 
   // Memory Management
   "chat.group.memoryManagement": "記憶管理",

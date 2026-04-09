@@ -383,6 +383,15 @@ export type GroupChatViewProps = {
     contentInterval?: number;
     promptInterval?: number;
   }) => void;
+  // Project content (read-only display in info panel)
+  groupProjectRules?: Array<{ id: string; title: string; content: string }>;
+  groupProjectSkills?: Array<{ id: string; name: string; content: string }>;
+  groupProjectDocs?: Array<{ id: string; name: string; content: string }>;
+  groupProjectContentLoading?: boolean;
+  onLoadProjectContent?: () => void;
+  projectContentPreviewDialog?: { title: string; content: string } | null;
+  onOpenProjectContentPreview?: (title: string, content: string) => void;
+  onCloseProjectContentPreview?: () => void;
 };
 
 // ─── Main Render ───
@@ -981,6 +990,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
       ${renderDisbandGroupDialog(props)}
       ${renderClearMessagesDialog(props)}
       ${renderMemoryPreviewDialog(props)}
+      ${renderProjectContentPreviewDialog(props)}
       ${renderAnnouncementEditDialog(meta, props)}
     </div>
   `;
@@ -1780,6 +1790,9 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
           </div>
         </div>
 
+        <!-- Project Content (read-only) -->
+        ${renderProjectContentSection(meta, props)}
+
         <!-- Context Configuration -->
         <div class="group-info-panel__section">
           <label>${t("chat.group.contextConfiguration")}</label>
@@ -1869,6 +1882,136 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Project Content Section (Info Panel — read-only) ───
+
+function renderProjectContentSection(meta: GroupSessionMeta, props: GroupChatViewProps) {
+  // Only show when the group has an associated project
+  if (!meta.projectId) {
+    return nothing;
+  }
+
+  const rules = props.groupProjectRules ?? [];
+  const skills = props.groupProjectSkills ?? [];
+  const docs = props.groupProjectDocs ?? [];
+  const loading = props.groupProjectContentLoading ?? false;
+  const totalCount = rules.length + skills.length + docs.length;
+
+  return html`
+    <div class="group-info-panel__section">
+      <label>
+        ${t("chat.group.projectContent")}
+        ${!loading && totalCount > 0 ? html`<span style="font-weight: 400; color: var(--muted);"> (${totalCount})</span>` : nothing}
+      </label>
+      <div class="group-info-panel__settings">
+        ${
+          loading
+            ? html`<div class="group-info-panel__setting-item">
+                <span class="group-info-panel__setting-desc">${t("chat.group.projectContent.loading")}</span>
+              </div>`
+            : totalCount === 0
+              ? html`<div class="group-info-panel__setting-item">
+                  <span class="group-info-panel__setting-desc">${t("chat.group.projectContent.empty")}</span>
+                  ${
+                    props.onLoadProjectContent
+                      ? html`<button class="btn btn--secondary btn--sm" style="margin-top: 4px;" @click=${() => props.onLoadProjectContent?.()}>
+                          ${icons.refresh} ${t("action.refresh")}
+                        </button>`
+                      : nothing
+                  }
+                </div>`
+              : html`
+                <!-- Rules -->
+                ${
+                  rules.length > 0
+                    ? html`
+                    <div class="group-info-panel__setting-item">
+                      <span class="group-info-panel__setting-name" style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">${t("chat.group.projectContent.rules")} (${rules.length})</span>
+                      <div class="memory-file-list">
+                        ${rules.map(
+                          (rule) => html`
+                          <div class="memory-file-item">
+                            <span class="memory-file-item__name">${rule.title}</span>
+                            ${
+                              props.onOpenProjectContentPreview
+                                ? html`<button class="btn btn--sm btn--icon memory-file-item__action" title="${t("action.preview")}" @click=${() => props.onOpenProjectContentPreview?.(rule.title, rule.content)}>${icons.fileText}</button>`
+                                : nothing
+                            }
+                          </div>
+                        `,
+                        )}
+                      </div>
+                    </div>
+                  `
+                    : nothing
+                }
+
+                <!-- Skills -->
+                ${
+                  skills.length > 0
+                    ? html`
+                    <div class="group-info-panel__setting-item">
+                      <span class="group-info-panel__setting-name" style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">${t("chat.group.projectContent.skills")} (${skills.length})</span>
+                      <div class="memory-file-list">
+                        ${skills.map(
+                          (skill) => html`
+                          <div class="memory-file-item">
+                            <span class="memory-file-item__name">${skill.name}</span>
+                            ${
+                              props.onOpenProjectContentPreview
+                                ? html`<button class="btn btn--sm btn--icon memory-file-item__action" title="${t("action.preview")}" @click=${() => props.onOpenProjectContentPreview?.(skill.name, skill.content)}>${icons.fileText}</button>`
+                                : nothing
+                            }
+                          </div>
+                        `,
+                        )}
+                      </div>
+                    </div>
+                  `
+                    : nothing
+                }
+
+                <!-- Docs -->
+                ${
+                  docs.length > 0
+                    ? html`
+                    <div class="group-info-panel__setting-item">
+                      <span class="group-info-panel__setting-name" style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">${t("chat.group.projectContent.docs")} (${docs.length})</span>
+                      <div class="memory-file-list">
+                        ${docs.map(
+                          (doc) => html`
+                          <div class="memory-file-item">
+                            <span class="memory-file-item__name">${doc.name}</span>
+                            ${
+                              props.onOpenProjectContentPreview
+                                ? html`<button class="btn btn--sm btn--icon memory-file-item__action" title="${t("action.preview")}" @click=${() => props.onOpenProjectContentPreview?.(doc.name, doc.content)}>${icons.fileText}</button>`
+                                : nothing
+                            }
+                          </div>
+                        `,
+                        )}
+                      </div>
+                    </div>
+                  `
+                    : nothing
+                }
+
+                <!-- Refresh button -->
+                ${
+                  props.onLoadProjectContent
+                    ? html`<div class="group-info-panel__setting-item" style="display: flex; flex-direction: row; gap: 8px;">
+                        <button class="btn btn--secondary btn--sm" @click=${() => props.onLoadProjectContent?.()}>
+                          ${icons.refresh} ${t("action.refresh")}
+                        </button>
+                      </div>`
+                    : nothing
+                }
+              `
+        }
       </div>
     </div>
   `;
@@ -2239,6 +2382,47 @@ function renderMemoryPreviewDialog(props: GroupChatViewProps) {
               </button>`
               : nothing
           }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Project Content Preview Dialog (read-only) ───
+
+function renderProjectContentPreviewDialog(props: GroupChatViewProps) {
+  const dialog = props.projectContentPreviewDialog;
+  if (!dialog) {
+    return nothing;
+  }
+
+  const previewHtml = dialog.content.trim() ? toSanitizedMarkdownHtml(dialog.content) : "";
+
+  return html`
+    <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
+      @click=${(e: Event) => {
+        if ((e.target as HTMLElement).classList.contains("modal-overlay--light")) {
+          props.onCloseProjectContentPreview?.();
+        }
+      }}
+    >
+      <div class="modal-card memory-preview-dialog">
+        <div class="modal-header memory-preview-dialog__header">
+          <h3 class="modal-title">${dialog.title}</h3>
+        </div>
+        <div class="memory-preview-dialog__body">
+          <div class="memory-preview-dialog__content chat-text">
+            ${
+              previewHtml
+                ? unsafeHTML(previewHtml)
+                : html`<span class="muted">${t("chat.group.projectContent.empty")}</span>`
+            }
+          </div>
+        </div>
+        <div class="memory-preview-dialog__actions">
+          <button class="btn btn--secondary" @click=${() => props.onCloseProjectContentPreview?.()}>
+            ${t("action.close")}
+          </button>
         </div>
       </div>
     </div>

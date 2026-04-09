@@ -2488,6 +2488,31 @@ export function renderApp(state: AppViewState) {
                 // Memory management
                 memoryStatus: state.memoryStatus ?? null,
                 memoryPreviewDialog: state.memoryPreviewDialog ?? null,
+                // Project content (read-only)
+                groupProjectRules: state.groupProjectRules ?? [],
+                groupProjectSkills: state.groupProjectSkills ?? [],
+                groupProjectDocs: state.groupProjectDocs ?? [],
+                groupProjectContentLoading: state.groupProjectContentLoading ?? false,
+                projectContentPreviewDialog: state.projectContentPreviewDialog ?? null,
+                onOpenProjectContentPreview: (title: string, content: string) => {
+                  state.projectContentPreviewDialog = { title, content };
+                },
+                onCloseProjectContentPreview: () => {
+                  state.projectContentPreviewDialog = null;
+                },
+                onLoadProjectContent: () => {
+                  const projectId = state.activeGroupMeta?.projectId;
+                  if (projectId) {
+                    void (async () => {
+                      const { loadGroupProjectContent } =
+                        await import("./controllers/group-chat.ts");
+                      await loadGroupProjectContent(
+                        state as unknown as Parameters<typeof loadGroupProjectContent>[0],
+                        projectId,
+                      );
+                    })();
+                  }
+                },
                 onLoadMemoryStatus: () => {
                   if (state.activeGroupId) {
                     void (async () => {

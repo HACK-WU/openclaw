@@ -542,4 +542,11 @@ export const zhCN: Record<string, string> = {
   "chat.group.project.docs.count": "{count} 个文档",
   // 群聊信息面板 - 项目显示
   "chat.group.project.associated": "关联项目",
+  // 群聊信息面板 - 项目内容（只读）
+  "chat.group.projectContent": "项目内容",
+  "chat.group.projectContent.rules": "规则",
+  "chat.group.projectContent.skills": "技能",
+  "chat.group.projectContent.docs": "文档",
+  "chat.group.projectContent.empty": "暂无内容",
+  "chat.group.projectContent.loading": "加载项目内容中...",
 };

@@ -601,4 +601,11 @@ export const en: Record<string, string> = {
   "chat.group.project.docs.count": "{count} documents",
   // Group info panel - project display
   "chat.group.project.associated": "Associated Project",
+  // Group info panel - project content (read-only)
+  "chat.group.projectContent": "Project Content",
+  "chat.group.projectContent.rules": "Rules",
+  "chat.group.projectContent.skills": "Skills",
+  "chat.group.projectContent.docs": "Docs",
+  "chat.group.projectContent.empty": "No content configured",
+  "chat.group.projectContent.loading": "Loading project content...",
 };

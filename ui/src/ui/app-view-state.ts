@@ -363,6 +363,11 @@ export type AppViewState = {
     groupInfoPanelOpen: boolean;
     memoryStatus: import("./controllers/group-chat.js").GroupChatState["memoryStatus"];
     memoryPreviewDialog: import("./controllers/group-chat.js").GroupChatState["memoryPreviewDialog"];
+    groupProjectRules: import("./controllers/group-chat.js").GroupChatState["groupProjectRules"];
+    groupProjectSkills: import("./controllers/group-chat.js").GroupChatState["groupProjectSkills"];
+    groupProjectDocs: import("./controllers/group-chat.js").GroupChatState["groupProjectDocs"];
+    groupProjectContentLoading: import("./controllers/group-chat.js").GroupChatState["groupProjectContentLoading"];
+    projectContentPreviewDialog: import("./controllers/group-chat.js").GroupChatState["projectContentPreviewDialog"];
     // Project management state
     projectsList: ProjectIndexEntry[];
     projectsLoading: boolean;
