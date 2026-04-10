@@ -13,6 +13,7 @@ import { extractThinkingCached, formatReasoningMarkdown } from "../chat/message-
 import { classifyToolCards, extractToolCards } from "../chat/tool-cards.ts";
 import { typewriter } from "../chat/typewriter-directive.ts";
 import {
+  BridgeTerminalCompletedEvent,
   BridgeTerminalResizeEvent,
   BridgeTerminalStreamEndEvent,
   BridgeTerminalStreamUpdateEvent,
@@ -328,6 +329,7 @@ export type GroupChatViewProps = {
   onTerminalResize?: (groupId: string, agentId: string, cols: number, rows: number) => void;
   onTerminalStreamUpdate?: (groupId: string, agentId: string, text: string) => void;
   onTerminalStreamEnd?: (groupId: string, agentId: string, extractedText: string) => void;
+  onTerminalCompleted?: (groupId: string, agentId: string, extractedText: string) => void;
   // Announcement editor
   announcementEditor: { open: boolean; draft: string; preview: boolean };
   onOpenAnnouncementEditor: () => void;
@@ -655,6 +657,14 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
       @bridge-terminal-stream-end=${(event: Event) => {
         const endEvent = event as BridgeTerminalStreamEndEvent;
         props.onTerminalStreamEnd?.(endEvent.groupId, endEvent.agentId, endEvent.extractedText);
+      }}
+      @bridge-terminal-completed=${(event: Event) => {
+        const completedEvent = event as BridgeTerminalCompletedEvent;
+        props.onTerminalCompleted?.(
+          completedEvent.groupId,
+          completedEvent.agentId,
+          completedEvent.extractedText,
+        );
       }}
     >
       <div class="group-chat-room__header">

@@ -2238,6 +2238,41 @@ export function renderApp(state: AppViewState) {
                     })();
                   }
                 },
+                onTerminalCompleted: (groupId, agentId, extractedText) => {
+                  const hadActiveBridgeStream = Boolean(
+                    state.groupStreams.get(agentId)?.runId.startsWith("__bridge__"),
+                  );
+
+                  // Frontend idle-detection determined the CLI has completed.
+                  // Update bridgeTerminalStatuses immediately so the loading
+                  // indicator stops without waiting for the backend event.
+                  if (state.bridgeTerminalStatuses?.get(agentId) !== "completed") {
+                    const statuses = new Map(state.bridgeTerminalStatuses);
+                    statuses.set(agentId, "completed");
+                    state.bridgeTerminalStatuses = statuses;
+                  }
+
+                  const nextPending = new Set(state.groupPendingAgents);
+                  if (nextPending.delete(agentId)) {
+                    state.groupPendingAgents = nextPending;
+                  }
+
+                  // If no live bridge stream bubble was ever created for this
+                  // cycle, push the extracted text here so the backend still
+                  // receives the final transcript payload exactly once.
+                  if (!hadActiveBridgeStream && extractedText?.trim()) {
+                    void (async () => {
+                      const { sendTerminalTextExtracted } =
+                        await import("./controllers/group-chat.ts");
+                      await sendTerminalTextExtracted(
+                        state as unknown as Parameters<typeof sendTerminalTextExtracted>[0],
+                        groupId,
+                        agentId,
+                        extractedText,
+                      );
+                    })();
+                  }
+                },
                 // Group settings callbacks
                 onUpdateGroupName: (name) => {
                   if (state.activeGroupId) {

@@ -71,6 +71,23 @@ export class BridgeTerminalStreamEndEvent extends Event {
 }
 
 /**
+ * Event fired when the frontend idle-detection determines the CLI has completed.
+ * The controller uses this to update `bridgeTerminalStatuses` and clear the
+ * active stream / loading state immediately — without waiting for the backend
+ * `group.terminalStatus` event which may arrive much later.
+ */
+export class BridgeTerminalCompletedEvent extends Event {
+  static readonly eventName = "bridge-terminal-completed";
+  constructor(
+    public readonly groupId: string,
+    public readonly agentId: string,
+    public readonly extractedText: string = "",
+  ) {
+    super(BridgeTerminalCompletedEvent.eventName, { bubbles: true, composed: true });
+  }
+}
+
+/**
  * Event fired when user resizes the terminal.
  */
 export class BridgeTerminalResizeEvent extends Event {
@@ -924,17 +941,25 @@ export class BridgeTerminal extends LitElement {
     // that needs to be sent to the backend for transcript persistence.
     const extractedText = this.extractVisibleText();
 
-    // Stop streaming: notify controller to freeze the chat bubble,
-    // push extracted text to backend, then clean up local stream state.
-    if (this._streamUpdateEmitted) {
+    const hadStreamedOutput = this._streamUpdateEmitted;
+
+    // Mark as completed first so controller-side snapshots freeze with the
+    // final status instead of the old working/ready state.
+    this.status = "completed";
+
+    // Notify controller so it updates bridgeTerminalStatuses immediately,
+    // clearing the loading indicator without waiting for the backend event.
+    this.dispatchEvent(new BridgeTerminalCompletedEvent(this.groupId, this.agentId, extractedText));
+
+    // If this working cycle emitted a live stream bubble, freeze it after the
+    // completed status is visible in controller state.
+    if (hadStreamedOutput) {
       this.dispatchEvent(
         new BridgeTerminalStreamEndEvent(this.groupId, this.agentId, extractedText),
       );
     }
-    this._resetStreamState();
 
-    // Mark as completed (the frozen bubble remains as the final output)
-    this.status = "completed";
+    this._resetStreamState();
   }
 
   /**
