@@ -108,9 +108,9 @@ describe("context-builder", () => {
     expect(result.content).toContain("Broadcast");
   });
 
-  it("includes read-only constraints for LLM agents", async () => {
+  it("includes constraints for LLM agents", async () => {
     const result = await buildGroupChatContext(firstInteractionParams(makeMeta(), "coder"));
-    expect(result.content).toContain("read-only mode");
+    expect(result.content).toContain("OpenClaw core configuration is read-only");
     expect(result.content).toContain("Always respond when @-mentioned");
     expect(result.content).toContain("Communication Guide");
   });
@@ -209,7 +209,7 @@ describe("context-builder", () => {
       const result = await buildGroupChatContext(firstInteractionParams(meta, "coder"));
       expect(result.content).toContain("### Project Memory");
       expect(result.content).toContain("Shared permanent memory");
-      expect(result.content).toContain("read-only");
+      expect(result.content).toContain("read/write");
     });
 
     it("injects memory paths even without bridge members", async () => {
@@ -228,7 +228,7 @@ describe("context-builder", () => {
     it("injects temp mode memory section when no project directory", async () => {
       const result = await buildGroupChatContext(firstInteractionParams(makeMeta(), "coder"));
       expect(result.content).toContain("Temp Mode");
-      expect(result.content).toContain("read-only");
+      expect(result.content).toContain("read/write");
     });
 
     it("injects memory content on first interaction", async () => {
@@ -286,8 +286,8 @@ describe("context-builder", () => {
       });
       const result = await buildGroupChatContext(firstInteractionParams(meta, "coder"));
       expect(result.content).toContain("Memory System Guidelines");
-      expect(result.content).toContain("read-only");
-      expect(result.content).toContain("cannot");
+      expect(result.content).toContain("read and write");
+      expect(result.content).toContain("do NOT modify");
     });
 
     it("skips memory management prompt when interval not reached", async () => {

@@ -142,22 +142,22 @@ const handleGroupCreate: GatewayRequestHandler = async ({ params, respond, conte
     sessionKey: buildGroupSessionKey(entry.groupId),
   });
 
-  // Initialize project memory files for all Bridge Agent members at creation time.
-  // This ensures memory directories and template files exist before agents interact.
-  const bridgeMembers = members.filter((m) => m.bridge || resolveBridgeForMember(m));
-  if (bridgeMembers.length > 0) {
+  // Initialize project memory files for ALL members at creation time.
+  // This ensures memory directories and template files exist before agents interact,
+  // so the memory panel shows all agents immediately (both Bridge and LLM).
+  if (members.length > 0) {
     const { ensureProjectMemoryFiles, ensureTempMemoryFiles, sanitizeGroupDirName } =
       await import("../../group-chat/bridge-memory.js");
     const groupDirName = sanitizeGroupDirName(entry.groupName ?? entry.groupId, entry.groupId);
 
     if (project?.directory) {
-      for (const m of bridgeMembers) {
+      for (const m of members) {
         await ensureProjectMemoryFiles(project.directory, groupDirName, m.agentId);
       }
     } else {
       const { resolveStateDir } = await import("../../config/paths.js");
       const stateDir = resolveStateDir();
-      for (const m of bridgeMembers) {
+      for (const m of members) {
         await ensureTempMemoryFiles(stateDir, entry.groupId, m.agentId);
       }
     }
@@ -463,6 +463,37 @@ const handleGroupAddMembers: GatewayRequestHandler = async ({ params, respond, c
   });
 
   respond(true, { ok: true });
+
+  // Initialize memory files for newly added members
+  if (updated.project?.directory || updated.projectId) {
+    const { ensureProjectMemoryFiles, ensureTempMemoryFiles, sanitizeGroupDirName } =
+      await import("../../group-chat/bridge-memory.js");
+    const groupDirName = sanitizeGroupDirName(
+      updated.groupName ?? updated.groupId,
+      updated.groupId,
+    );
+    const projectDir = updated.project?.directory;
+
+    if (projectDir) {
+      for (const nm of newMembers) {
+        await ensureProjectMemoryFiles(projectDir, groupDirName, nm.agentId);
+      }
+    } else {
+      const { resolveStateDir } = await import("../../config/paths.js");
+      const stateDir = resolveStateDir();
+      for (const nm of newMembers) {
+        await ensureTempMemoryFiles(stateDir, groupId, nm.agentId);
+      }
+    }
+  } else {
+    // No project — temp mode
+    const { ensureTempMemoryFiles } = await import("../../group-chat/bridge-memory.js");
+    const { resolveStateDir } = await import("../../config/paths.js");
+    const stateDir = resolveStateDir();
+    for (const nm of newMembers) {
+      await ensureTempMemoryFiles(stateDir, groupId, nm.agentId);
+    }
+  }
 
   for (const nm of newMembers) {
     await appendSystemMessage(groupId, `${nm.agentId} joined the group`);
@@ -1679,7 +1710,7 @@ const handleGroupMemoryStatus: GatewayRequestHandler = async ({ params, respond 
     await import("../../group-chat/bridge-memory.js");
   const { resolveStateDir } = await import("../../config/paths.js");
   const groupDirName = sanitizeGroupDirName(meta.groupName ?? meta.groupId, meta.groupId);
-  const bridgeAgentIds = meta.members.filter((m) => m.bridge).map((m) => m.agentId);
+  const allAgentIds = meta.members.map((m) => m.agentId);
   const maxSizeKB = meta.contextConfig?.memory?.maxSize;
 
   const status = await getMemoryStatus({
@@ -1687,7 +1718,7 @@ const handleGroupMemoryStatus: GatewayRequestHandler = async ({ params, respond 
     stateDir: resolveStateDir(),
     groupId,
     groupName: groupDirName,
-    agentIds: bridgeAgentIds,
+    agentIds: allAgentIds,
     maxSizeKB,
   });
 

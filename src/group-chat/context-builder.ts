@@ -14,7 +14,10 @@ import path from "node:path";
 import { resolveCliAgentIdentityDir } from "../agents/cli-agent-scope.js";
 import {
   isEmptyTemplate,
+  ensureProjectMemoryFiles,
+  ensureTempMemoryFiles,
   resolveProjectMemoryPaths,
+  resolveTempMemoryPaths,
   sanitizeGroupDirName,
   shouldInjectMemoryContent,
   shouldInjectMemoryPrompt,
@@ -225,7 +228,7 @@ Use \`@agentId\` on its **own line** to route your message to another agent.
 - **Never output sensitive information** (API keys, passwords, tokens) in your responses`);
   } else {
     sections.push(`### Important Constraints
-- You are in **read-only mode**: you cannot write files, execute commands, or modify configurations
+- You are an **LLM Agent**: you can read/write files and use tools, but **OpenClaw core configuration is read-only** (you cannot modify agent settings, routing rules, or system configs)
 - **Always respond when @-mentioned** — even for repeated questions
 - Keep responses concise and focused
 - Do NOT announce "let me ask..." — just ask directly with \`@agentId\`
@@ -297,15 +300,18 @@ async function injectMemoryContext(
   if (projectDir) {
     const memPaths = resolveProjectMemoryPaths(projectDir, groupDirName, agentId);
 
+    // Ensure memory files exist (creates agent's {agentId}.md, MEMORY.md, SESSION.md if missing)
+    await ensureProjectMemoryFiles(projectDir, groupDirName, agentId);
+
     // Memory file paths — every interaction
     sections.push(`### Project Memory
 
 This group has a project-level memory system. Memory files are stored at:
 - **Shared permanent memory**: \`${memPaths.sharedMemoryFile}\` — long-term project knowledge (architecture decisions, coding conventions, lessons learned)
 - **Shared session memory**: \`${memPaths.sharedSessionFile}\` — current session progress and notes
-- **Agent memory files**: \`${memPaths.dir}/{agentId}.md\` — each CLI agent's private memory
+- **Your agent memory**: \`${memPaths.agentMemoryFile}\` — your private memory file (read/write)
 
-You have **read-only** access to all memory files. Memory files are maintained by CLI (Bridge) agents.`);
+You can **read and write** your own agent memory file (\`${agentId}.md\`). Shared memory files (\`MEMORY.md\`, \`SESSION.md\`) are read-only — they are maintained by the assistant agent.`);
 
     // Memory content — injected at contentInterval
     if (injectContent) {
@@ -331,7 +337,7 @@ ${sessionContent}
 
       const agentContent = await readFileOrNull(memPaths.agentMemoryFile);
       if (agentContent && !isEmptyTemplate(agentContent)) {
-        contentParts.push(`**Agent Memory (${agentId}.md) — Latest Snapshot:**
+        contentParts.push(`**Your Agent Memory (${agentId}.md) — Latest Snapshot:**
 
 \`\`\`
 ${agentContent}
@@ -345,28 +351,53 @@ ${contentParts.join("\n\n")}`);
       }
     }
 
-    // Memory management prompt — injected at promptInterval (read-only version for LLM Agent)
+    // Memory management prompt — injected at promptInterval
     if (injectPrompt) {
       sections.push(`### Memory System Guidelines
 
-You have **read-only** access to the project memory system. You **cannot** write to memory files — only CLI (Bridge) agents can write to them.
+You have a private agent memory file (\`${agentId}.md\`) that you can **read and write**. Use it to record important information you discover during your work.
 
-When you notice important information that should be remembered (architecture decisions, bugs, conventions), you can:
-1. Ask a CLI agent to record it by @-mentioning them
-2. Reference memory files in your responses to provide context
+**What to record in your memory (Permanent section):**
+- Architecture decisions, coding conventions, lessons learned
+- Bugs or unexpected behaviors discovered
+- Key code paths and module responsibilities
+- Undocumented API behaviors or environment quirks
 
-Memory files:
-- \`MEMORY.md\` — shared permanent memory (architecture, conventions, lessons learned)
-- \`SESSION.md\` — shared session memory (current progress, blockers)
-- \`{agentId}.md\` — each CLI agent's private memory`);
+**What to record (Session section):**
+- Current task progress and blockers
+- Collaboration notes with other agents
+
+**What NOT to record:**
+- Routine commands (npm install, git pull)
+- File contents you just read
+- Obvious project info already in README
+
+**Rules:**
+1. You can only write to your own memory file \`${agentId}.md\` — do NOT modify \`MEMORY.md\` or \`SESSION.md\` (read-only, maintained by the assistant)
+2. Read the file before writing to avoid duplicates
+3. Keep entries brief — one or two sentences per item
+4. Use clean Markdown format
+
+Memory file paths:
+- Your memory: \`${memPaths.agentMemoryFile}\`
+- Shared permanent: \`${memPaths.sharedMemoryFile}\` (read-only)
+- Shared session: \`${memPaths.sharedSessionFile}\` (read-only)`);
     }
   } else {
     // Temp memory mode — no project directory
+    const { resolveStateDir } = await import("../config/paths.js");
+    const stateDir = resolveStateDir();
+    const tempPaths = resolveTempMemoryPaths(stateDir, params.groupId, agentId);
+
+    // Ensure temp memory files exist
+    await ensureTempMemoryFiles(stateDir, params.groupId, agentId);
+
     sections.push(`### Memory System (Temp Mode)
 
-This group uses temporary memory mode (no project directory). Each CLI agent has a private memory file in the state directory. No shared memory files are available.
+This group uses temporary memory mode (no project directory). You have a private memory file:
+- **Your agent memory**: \`${tempPaths.agentMemoryFile}\` — your private memory (read/write)
 
-You have **read-only** access. Only CLI (Bridge) agents can write to memory files.`);
+No shared memory files are available in temp mode. Record important information in your agent memory file.`);
   }
 }
 
