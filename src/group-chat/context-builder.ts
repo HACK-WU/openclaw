@@ -13,6 +13,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveCliAgentIdentityDir } from "../agents/cli-agent-scope.js";
 import {
+  loadProjectMeta,
+  loadProjectRules,
+  loadProjectSkills,
+  loadProjectDocs,
+  resolveProjectRulesDir,
+  resolveProjectSkillsDir,
+  resolveProjectDocsDir,
+} from "../projects/project-store.js";
+import {
   isEmptyTemplate,
   ensureProjectMemoryFiles,
   ensureTempMemoryFiles,
@@ -22,12 +31,14 @@ import {
   shouldInjectAnnouncement,
   shouldInjectMemoryContent,
   shouldInjectMemoryPrompt,
+  shouldInjectProjectInfo,
   DEFAULT_MEMORY_CONTENT_INTERVAL,
   DEFAULT_MEMORY_PROMPT_INTERVAL,
 } from "./bridge-memory.js";
 import {
   type ContextConfig,
   DEFAULT_ANNOUNCEMENT_INTERVAL,
+  DEFAULT_PROJECT_INFO_INTERVAL,
   DEFAULT_ROLE_REMINDER_INTERVAL,
 } from "./bridge-types.js";
 import { buildPlanModeAssistantPrompt, buildPlanModeExecutorPrompt } from "./plan-mode-context.js";
@@ -125,12 +136,27 @@ export async function buildGroupChatContext(
       ? "Unicast — messages without @mentions go to the assistant only"
       : "Broadcast — messages without @mentions go to all members in parallel";
 
+  // Resolve project directory: prefer meta.project.directory, fallback to loadProjectMeta
+  const resolvedProject = meta.project?.directory
+    ? meta.project
+    : meta.projectId
+      ? (loadProjectMeta(meta.projectId) ?? undefined)
+      : undefined;
+  const projectLines: string[] = [];
+  if (resolvedProject?.directory) {
+    projectLines.push(`Project directory: \`${resolvedProject.directory}\``);
+  }
+  if (resolvedProject?.documents && resolvedProject.documents.length > 0) {
+    projectLines.push(`Project docs: ${resolvedProject.documents.join(", ")}`);
+  }
+  const projectSection = projectLines.length > 0 ? `\n${projectLines.join("\n")}` : "";
+
   sections.push(`## Group Chat Context
 
 You are currently in group chat "${meta.groupName ?? meta.groupId}" (ID: ${meta.groupId}).
 Your role: **${roleName}**
 Your agentId: \`${agentId}\`
-Message mode: ${modeDesc}`);
+Message mode: ${modeDesc}${projectSection}`);
 
   // 2. Member list (exclude bridge-assistants for cleaner display)
   const memberLines = meta.members
@@ -152,6 +178,44 @@ ${memberLines.join("\n")}`);
     if (shouldInjectAnnouncement(isFirstInteraction, interactionCount, announcementInterval)) {
       sections.push(`### Group Announcement
 ${meta.announcement}`);
+    }
+  }
+
+  // 3.5 Project files — first interaction: always; subsequent: interval-based
+  if (meta.projectId) {
+    const projectInfoInterval = contextConfig?.projectInfoInterval ?? DEFAULT_PROJECT_INFO_INTERVAL;
+    if (shouldInjectProjectInfo(isFirstInteraction, interactionCount, projectInfoInterval)) {
+      const rules = loadProjectRules(meta.projectId);
+      const skills = loadProjectSkills(meta.projectId);
+      const docs = loadProjectDocs(meta.projectId);
+      if (rules.length > 0 || skills.length > 0 || docs.length > 0) {
+        const rulesDir = resolveProjectRulesDir(meta.projectId);
+        const skillsDir = resolveProjectSkillsDir(meta.projectId);
+        const docsDir = resolveProjectDocsDir(meta.projectId);
+        const lines: string[] = ["### Project Files", ""];
+        if (rules.length > 0) {
+          lines.push("**[Rules]**");
+          for (const r of rules) {
+            lines.push(`${r.title}  → ${rulesDir}/${r.id}.json`);
+          }
+          lines.push("");
+        }
+        if (skills.length > 0) {
+          lines.push("**[Skills]**");
+          for (const s of skills) {
+            lines.push(`${s.name}  → ${skillsDir}/${s.id}.json`);
+          }
+          lines.push("");
+        }
+        if (docs.length > 0) {
+          lines.push("**[Docs]**");
+          for (const d of docs) {
+            lines.push(`${d.name}  → ${docsDir}/${d.id}.json`);
+          }
+          lines.push("");
+        }
+        sections.push(lines.join("\n"));
+      }
     }
   }
 

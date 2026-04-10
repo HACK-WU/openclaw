@@ -21,6 +21,7 @@ import {
   shouldInjectMemoryContent,
   shouldInjectMemoryPrompt,
   shouldInjectAnnouncement,
+  shouldInjectProjectInfo,
   checkMemoryBeforeDissolve,
   _test,
 } from "./bridge-memory.js";
@@ -198,6 +199,42 @@ describe("shouldInjectAnnouncement", () => {
     expect(shouldInjectAnnouncement(false, 7)).toBe(true);
     expect(shouldInjectAnnouncement(false, 14)).toBe(true);
     expect(shouldInjectAnnouncement(false, 6)).toBe(false);
+  });
+});
+
+describe("shouldInjectProjectInfo", () => {
+  it("always injects on first interaction", () => {
+    expect(shouldInjectProjectInfo(true, 0, 5)).toBe(true);
+    expect(shouldInjectProjectInfo(true, 3, 5)).toBe(true);
+  });
+
+  it("does not inject at count 0 for non-first interaction", () => {
+    expect(shouldInjectProjectInfo(false, 0, 5)).toBe(false);
+  });
+
+  it("injects at multiples of interval", () => {
+    expect(shouldInjectProjectInfo(false, 5, 5)).toBe(true);
+    expect(shouldInjectProjectInfo(false, 10, 5)).toBe(true);
+    expect(shouldInjectProjectInfo(false, 15, 5)).toBe(true);
+  });
+
+  it("does not inject at non-multiples", () => {
+    expect(shouldInjectProjectInfo(false, 1, 5)).toBe(false);
+    expect(shouldInjectProjectInfo(false, 3, 5)).toBe(false);
+    expect(shouldInjectProjectInfo(false, 7, 5)).toBe(false);
+    expect(shouldInjectProjectInfo(false, 12, 5)).toBe(false);
+  });
+
+  it("respects custom interval", () => {
+    expect(shouldInjectProjectInfo(false, 3, 3)).toBe(true);
+    expect(shouldInjectProjectInfo(false, 6, 3)).toBe(true);
+    expect(shouldInjectProjectInfo(false, 4, 3)).toBe(false);
+  });
+
+  it("uses default interval of 5 when not specified", () => {
+    expect(shouldInjectProjectInfo(false, 5)).toBe(true);
+    expect(shouldInjectProjectInfo(false, 10)).toBe(true);
+    expect(shouldInjectProjectInfo(false, 4)).toBe(false);
   });
 });
 

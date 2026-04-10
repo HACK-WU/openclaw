@@ -143,6 +143,8 @@ export type ContextConfig = {
   roleReminderInterval?: number;
   /** Announcement injection interval (inject every N interactions). Default 7. */
   announcementInterval?: number;
+  /** Project info injection interval (inject every N interactions). Default 5. */
+  projectInfoInterval?: number;
   /** Project memory configuration for CLI agents. */
   memory?: MemoryContextConfig;
 };
@@ -206,3 +208,5 @@ export const DEFAULT_CONTEXT_MAX_CHARACTERS = 50_000;
 export const DEFAULT_ROLE_REMINDER_INTERVAL = 5;
 /** Default announcement injection interval (inject every N interactions). */
 export const DEFAULT_ANNOUNCEMENT_INTERVAL = 7;
+/** Default project info injection interval (inject every N interactions). */
+export const DEFAULT_PROJECT_INFO_INTERVAL = 5;

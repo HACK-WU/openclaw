@@ -303,6 +303,7 @@ export type GroupChatViewProps = {
     maxCharacters?: number;
     includeSystemMessages?: boolean;
     announcementInterval?: number;
+    projectInfoInterval?: number;
   }) => void;
   onUpdateProjectDocs: (docs: string[]) => void;
   onUpdatePlanMode: (enabled: boolean) => void;
@@ -2335,6 +2336,32 @@ function renderMemoryManagementSection(meta: GroupSessionMeta, props: GroupChatV
                 </div>
               </div>
               <span class="group-info-panel__setting-desc">${t("chat.group.announcementIntervalDesc")}</span>
+            </div>
+            <div class="group-info-panel__setting-item">
+              <div class="group-info-panel__setting-header">
+                <span class="group-info-panel__setting-name">${t("chat.group.projectInfoInterval")}</span>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <input
+                    type="number"
+                    class="field group-info-panel__setting-input"
+                    style="width: 60px;"
+                    .value=${String(meta.contextConfig?.projectInfoInterval ?? 5)}
+                    min="1"
+                    max="50"
+                    @change=${(e: Event) => {
+                      const value = parseInt((e.target as HTMLInputElement).value, 10);
+                      if (!isNaN(value) && value >= 1 && value <= 50) {
+                        props.onUpdateContextConfig({
+                          ...meta.contextConfig,
+                          projectInfoInterval: value,
+                        });
+                      }
+                    }}
+                  />
+                  <span style="font-size: 12px; color: var(--text-secondary);">${t("chat.group.memory.times")}</span>
+                </div>
+              </div>
+              <span class="group-info-panel__setting-desc">${t("chat.group.projectInfoIntervalDesc")}</span>
             </div>
           `
         }
