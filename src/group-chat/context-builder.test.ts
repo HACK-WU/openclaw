@@ -97,6 +97,48 @@ describe("context-builder", () => {
     expect(result.content).not.toContain("Announcement");
   });
 
+  // ─── Announcement Interval ───
+
+  it("injects announcement on first interaction", async () => {
+    const meta = makeMeta({ announcement: "Sprint planning today" });
+    const result = await buildGroupChatContext(firstInteractionParams(meta, "coder"));
+    expect(result.content).toContain("Sprint planning today");
+  });
+
+  it("skips announcement on subsequent non-interval interactions", async () => {
+    const meta = makeMeta({ announcement: "Sprint planning today" });
+    const result = await buildGroupChatContext({
+      ...subsequentParams(meta, "coder", { interactionCount: 3 }),
+    });
+    expect(result.content).not.toContain("Sprint planning today");
+  });
+
+  it("injects announcement at default interval (7)", async () => {
+    const meta = makeMeta({ announcement: "Sprint planning today" });
+    const result = await buildGroupChatContext({
+      ...subsequentParams(meta, "coder", { interactionCount: 7 }),
+    });
+    expect(result.content).toContain("Sprint planning today");
+  });
+
+  it("respects custom announcementInterval", async () => {
+    const meta = makeMeta({ announcement: "Sprint planning today" });
+    const result = await buildGroupChatContext({
+      ...subsequentParams(meta, "coder", { interactionCount: 3 }),
+      contextConfig: { announcementInterval: 3 },
+    });
+    expect(result.content).toContain("Sprint planning today");
+  });
+
+  it("skips announcement when custom interval not reached", async () => {
+    const meta = makeMeta({ announcement: "Sprint planning today" });
+    const result = await buildGroupChatContext({
+      ...subsequentParams(meta, "coder", { interactionCount: 4 }),
+      contextConfig: { announcementInterval: 3 },
+    });
+    expect(result.content).not.toContain("Sprint planning today");
+  });
+
   it("describes unicast mode", async () => {
     const result = await buildGroupChatContext(firstInteractionParams(makeMeta(), "coder"));
     expect(result.content).toContain("Unicast");

@@ -20,6 +20,7 @@ import {
   scanAgentMemoryFiles,
   shouldInjectMemoryContent,
   shouldInjectMemoryPrompt,
+  shouldInjectAnnouncement,
   checkMemoryBeforeDissolve,
   _test,
 } from "./bridge-memory.js";
@@ -161,6 +162,42 @@ describe("shouldInjectMemoryPrompt", () => {
   it("does not inject at non-multiples", () => {
     expect(shouldInjectMemoryPrompt(false, 3, 5)).toBe(false);
     expect(shouldInjectMemoryPrompt(false, 7, 5)).toBe(false);
+  });
+});
+
+describe("shouldInjectAnnouncement", () => {
+  it("always injects on first interaction", () => {
+    expect(shouldInjectAnnouncement(true, 0, 7)).toBe(true);
+    expect(shouldInjectAnnouncement(true, 5, 7)).toBe(true);
+  });
+
+  it("does not inject at count 0 for non-first interaction", () => {
+    expect(shouldInjectAnnouncement(false, 0, 7)).toBe(false);
+  });
+
+  it("injects at multiples of interval", () => {
+    expect(shouldInjectAnnouncement(false, 7, 7)).toBe(true);
+    expect(shouldInjectAnnouncement(false, 14, 7)).toBe(true);
+    expect(shouldInjectAnnouncement(false, 21, 7)).toBe(true);
+  });
+
+  it("does not inject at non-multiples", () => {
+    expect(shouldInjectAnnouncement(false, 1, 7)).toBe(false);
+    expect(shouldInjectAnnouncement(false, 3, 7)).toBe(false);
+    expect(shouldInjectAnnouncement(false, 8, 7)).toBe(false);
+    expect(shouldInjectAnnouncement(false, 13, 7)).toBe(false);
+  });
+
+  it("respects custom interval", () => {
+    expect(shouldInjectAnnouncement(false, 3, 3)).toBe(true);
+    expect(shouldInjectAnnouncement(false, 6, 3)).toBe(true);
+    expect(shouldInjectAnnouncement(false, 4, 3)).toBe(false);
+  });
+
+  it("uses default interval of 7 when not specified", () => {
+    expect(shouldInjectAnnouncement(false, 7)).toBe(true);
+    expect(shouldInjectAnnouncement(false, 14)).toBe(true);
+    expect(shouldInjectAnnouncement(false, 6)).toBe(false);
   });
 });
 

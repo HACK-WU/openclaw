@@ -32,6 +32,7 @@ import {
   resolveProjectMemoryPaths,
   resolveTempMemoryPaths,
   sanitizeGroupDirName,
+  shouldInjectAnnouncement,
   shouldInjectMemoryContent,
   shouldInjectMemoryPrompt,
   DEFAULT_MEMORY_CONTENT_INTERVAL,
@@ -51,6 +52,7 @@ import {
 } from "./bridge-pty.js";
 import type { BridgeConfig } from "./bridge-types.js";
 import {
+  DEFAULT_ANNOUNCEMENT_INTERVAL,
   DEFAULT_CONTEXT_MAX_CHARACTERS,
   DEFAULT_CONTEXT_MAX_MESSAGES,
   DEFAULT_REPLY_TIMEOUT_MS,
@@ -638,9 +640,20 @@ async function buildCliContextMessage(params: {
     });
   sections.push(`# 群成员：Owner（群主/用户）、${memberNames.join("、")}`);
 
-  // ─── 群公告（每次交互都注入） ───
+  // ─── 群公告（首次注入 + 按间隔周期注入） ───
   if (meta.announcement) {
-    sections.push(`# 群公告：${meta.announcement}`);
+    const announcementInterval =
+      contextConfig?.announcementInterval ?? DEFAULT_ANNOUNCEMENT_INTERVAL;
+    const announcementInteractionCount = ptyStateForMemory?.interactionCount ?? 0;
+    if (
+      shouldInjectAnnouncement(
+        isFirstInteraction,
+        announcementInteractionCount,
+        announcementInterval,
+      )
+    ) {
+      sections.push(`# 群公告：${meta.announcement}`);
+    }
   }
 
   // ─── 约束信息（每次交互都注入） ───

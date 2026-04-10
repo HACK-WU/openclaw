@@ -350,6 +350,9 @@ export const en: Record<string, string> = {
   "chat.group.maxCharactersDesc": "Maximum total characters in context (10,000-200,000).",
   "chat.group.includeSystemMessages": "Include System Messages",
   "chat.group.includeSystemMessagesDesc": "Include member join/leave events in context.",
+  "chat.group.announcementInterval": "Announcement Injection Interval",
+  "chat.group.announcementIntervalDesc":
+    "Inject group announcement every N interactions (1-50). First interaction always includes the announcement.",
 
   // Memory Management
   "chat.group.memoryManagement": "Memory Management",

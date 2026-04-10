@@ -1247,6 +1247,15 @@ const handleGroupSetContextConfig: GatewayRequestHandler = async ({ params, resp
         return;
       }
     }
+    if (contextConfig.announcementInterval != null) {
+      if (contextConfig.announcementInterval < 1 || contextConfig.announcementInterval > 50) {
+        respond(false, undefined, {
+          message: "announcementInterval must be between 1 and 50",
+          code: 400,
+        });
+        return;
+      }
+    }
   }
 
   await updateGroupMeta(groupId, (meta) => ({

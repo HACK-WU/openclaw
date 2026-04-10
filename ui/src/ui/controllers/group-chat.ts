@@ -1917,6 +1917,7 @@ export async function updateGroupContextConfig(
     maxMessages?: number;
     maxCharacters?: number;
     includeSystemMessages?: boolean;
+    announcementInterval?: number;
   },
 ): Promise<void> {
   return updateGroupSettings(host, groupId, "setContextConfig", { contextConfig });

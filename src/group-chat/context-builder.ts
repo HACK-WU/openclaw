@@ -19,12 +19,17 @@ import {
   resolveProjectMemoryPaths,
   resolveTempMemoryPaths,
   sanitizeGroupDirName,
+  shouldInjectAnnouncement,
   shouldInjectMemoryContent,
   shouldInjectMemoryPrompt,
   DEFAULT_MEMORY_CONTENT_INTERVAL,
   DEFAULT_MEMORY_PROMPT_INTERVAL,
 } from "./bridge-memory.js";
-import { type ContextConfig, DEFAULT_ROLE_REMINDER_INTERVAL } from "./bridge-types.js";
+import {
+  type ContextConfig,
+  DEFAULT_ANNOUNCEMENT_INTERVAL,
+  DEFAULT_ROLE_REMINDER_INTERVAL,
+} from "./bridge-types.js";
 import { buildPlanModeAssistantPrompt, buildPlanModeExecutorPrompt } from "./plan-mode-context.js";
 import { resolveRolePrompt } from "./role-prompt.js";
 import type { GroupSessionEntry } from "./types.js";
@@ -140,10 +145,14 @@ Message mode: ${modeDesc}`);
 - **Owner** (creator, human user)
 ${memberLines.join("\n")}`);
 
-  // 3. Announcement
+  // 3. Announcement — first interaction: always; subsequent: interval-based
   if (meta.announcement) {
-    sections.push(`### Group Announcement
+    const announcementInterval =
+      contextConfig?.announcementInterval ?? DEFAULT_ANNOUNCEMENT_INTERVAL;
+    if (shouldInjectAnnouncement(isFirstInteraction, interactionCount, announcementInterval)) {
+      sections.push(`### Group Announcement
 ${meta.announcement}`);
+    }
   }
 
   // 4. Role prompt — first interaction: full; subsequent: interval-based reminder

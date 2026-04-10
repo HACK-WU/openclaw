@@ -141,6 +141,8 @@ export type ContextConfig = {
   includeSystemMessages?: boolean;
   /** Role reminder interval (send role reminder every N interactions). Default 5. */
   roleReminderInterval?: number;
+  /** Announcement injection interval (inject every N interactions). Default 7. */
+  announcementInterval?: number;
   /** Project memory configuration for CLI agents. */
   memory?: MemoryContextConfig;
 };
@@ -202,3 +204,5 @@ export const DEFAULT_CONTEXT_MAX_MESSAGES = 30;
 export const DEFAULT_CONTEXT_MAX_CHARACTERS = 50_000;
 /** Default role reminder interval (send role reminder every N interactions). */
 export const DEFAULT_ROLE_REMINDER_INTERVAL = 5;
+/** Default announcement injection interval (inject every N interactions). */
+export const DEFAULT_ANNOUNCEMENT_INTERVAL = 7;

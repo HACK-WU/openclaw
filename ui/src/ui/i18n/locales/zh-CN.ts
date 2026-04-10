@@ -315,6 +315,9 @@ export const zhCN: Record<string, string> = {
   "chat.group.maxCharactersDesc": "上下文中的最大总字符数 (10,000-200,000)。",
   "chat.group.includeSystemMessages": "包含系统消息",
   "chat.group.includeSystemMessagesDesc": "在上下文中包含成员加入/离开事件。",
+  "chat.group.announcementInterval": "群公告注入间隔",
+  "chat.group.announcementIntervalDesc":
+    "每多少次交互注入一次群公告 (1-50)。首次交互始终包含公告。",
 
   // Memory Management
   "chat.group.memoryManagement": "记忆管理",
