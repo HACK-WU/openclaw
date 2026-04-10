@@ -68,6 +68,7 @@ vi.mock("./bridge-memory.js", () => ({
   })),
   ensureProjectMemoryFiles: vi.fn().mockResolvedValue(undefined),
   ensureTempMemoryFiles: vi.fn().mockResolvedValue(undefined),
+  shouldInjectAnnouncement: vi.fn(() => true),
   shouldInjectMemoryContent: vi.fn(() => false),
   shouldInjectMemoryPrompt: vi.fn(() => false),
   buildMemoryPathSection: vi.fn(() => []),
@@ -133,7 +134,10 @@ function makePtyState(overrides?: Partial<BridgePtyState>): BridgePtyState {
   };
 }
 
-function makeParams(content: string): TriggerAgentParams {
+function makeParams(
+  content: string,
+  signal: AbortSignal = new AbortController().signal,
+): TriggerAgentParams {
   const meta = makeMeta();
   const now = Date.now();
   return {
@@ -165,13 +169,13 @@ function makeParams(content: string): TriggerAgentParams {
       triggeredAgents: ["cli"],
     },
     broadcast: vi.fn(),
-    signal: new AbortController().signal,
+    signal,
   };
 }
 
 describe("buildCliContextMessage — always-injected sections", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     _test.resetBridgeAgentQueues();
 
     buildCoreFilesContentSection.mockResolvedValue("# core content");
@@ -223,7 +227,7 @@ describe("buildCliContextMessage — always-injected sections", () => {
         command: "cli",
       } as BridgeConfig);
 
-      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(1_000);
 
       // writeToPty is called with the hidden context
       expect(writeToPty).toHaveBeenCalledTimes(1);
@@ -258,7 +262,7 @@ describe("buildCliContextMessage — always-injected sections", () => {
         command: "cli",
       } as BridgeConfig);
 
-      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(1_000);
 
       expect(writeToPty).toHaveBeenCalledTimes(1);
       const contextWritten = writeToPty.mock.calls[0][2] as string;
@@ -287,7 +291,7 @@ describe("buildCliContextMessage — always-injected sections", () => {
         command: "cli",
       } as BridgeConfig);
 
-      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(1_000);
 
       expect(writeToPty).toHaveBeenCalledTimes(1);
       const contextWritten = writeToPty.mock.calls[0][2] as string;
@@ -306,7 +310,7 @@ describe("buildCliContextMessage — always-injected sections", () => {
 
 describe("bridge-trigger queueing", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     _test.resetBridgeAgentQueues();
 
     buildCoreFilesContentSection.mockResolvedValue("# core content");
@@ -358,7 +362,7 @@ describe("bridge-trigger queueing", () => {
         command: "cli",
       } as BridgeConfig);
 
-      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(1_000);
 
       // writeToPty called once (hidden context), writeToPtyWithEnter once (visible request)
       expect(writeToPty).toHaveBeenCalledTimes(1);
@@ -375,7 +379,7 @@ describe("bridge-trigger queueing", () => {
         command: "cli",
       } as BridgeConfig);
 
-      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(1_000);
 
       // Still only 1 call each — second trigger is queued
       expect(writeToPty).toHaveBeenCalledTimes(1);
@@ -383,7 +387,7 @@ describe("bridge-trigger queueing", () => {
 
       firstResolve("first reply");
       await firstRun;
-      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(1_000);
 
       // Now second trigger has run: 2 calls each
       expect(writeToPty).toHaveBeenCalledTimes(2);
@@ -400,6 +404,121 @@ describe("bridge-trigger queueing", () => {
 
       expect(waitForFrontendExtractedText).toHaveBeenCalledTimes(2);
       expect(appendGroupMessage).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("bridge-trigger abort handling", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    _test.resetBridgeAgentQueues();
+
+    buildCoreFilesContentSection.mockResolvedValue("# core content");
+    buildCoreFilesPathSection.mockReturnValue("# core paths");
+    createBridgePty.mockResolvedValue(makePtyState());
+    getPtyState.mockReturnValue(makePtyState());
+    setInputPhase.mockImplementation(() => {});
+    clearFrontendExtractedText.mockImplementation(() => {});
+    updateLastTranscriptIndex.mockImplementation(() => {});
+    appendGroupMessage.mockImplementation(
+      async (groupId: string, msg: Record<string, unknown>) => ({
+        ...msg,
+        groupId,
+        serverSeq: 1,
+      }),
+    );
+    writeToPty.mockReturnValue(true);
+    writeToPtyWithEnter.mockResolvedValue(true);
+    isPtyRunning.mockReturnValue(true);
+    killBridgePty.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    _test.resetBridgeAgentQueues();
+  });
+
+  it("handles signals that are already aborted before waitForCompletion finishes wiring listeners", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      clearFrontendExtractedText.mockImplementationOnce(() => {
+        controller.abort();
+      });
+
+      const run = triggerBridgeAgent(
+        makeParams("abort before completion wait", controller.signal),
+        {
+          type: "custom",
+          command: "cli",
+        } as BridgeConfig,
+      );
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await run;
+
+      expect(killBridgePty).toHaveBeenCalledTimes(1);
+      expect(killBridgePty).toHaveBeenCalledWith("g1", "cli", "user_abort");
+      expect(appendGroupMessage).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps later triggers queued until abort PTY cleanup fully finishes", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      let resolveKill!: () => void;
+      let firstSettled = false;
+
+      clearFrontendExtractedText.mockImplementationOnce(() => {
+        controller.abort();
+      });
+      waitForFrontendExtractedText.mockResolvedValueOnce("second reply");
+      killBridgePty.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveKill = resolve;
+          }),
+      );
+
+      const firstRun = triggerBridgeAgent(makeParams("first request", controller.signal), {
+        type: "custom",
+        command: "cli",
+      } as BridgeConfig);
+      void firstRun.then(() => {
+        firstSettled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(killBridgePty).toHaveBeenCalledTimes(1);
+      expect(firstSettled).toBe(false);
+
+      const secondRun = triggerBridgeAgent(makeParams("second request"), {
+        type: "custom",
+        command: "cli",
+      } as BridgeConfig);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(firstSettled).toBe(false);
+      expect(writeToPtyWithEnter).toHaveBeenCalledTimes(1);
+
+      resolveKill();
+      await firstRun;
+      await vi.advanceTimersByTimeAsync(1_000);
+      await secondRun;
+
+      expect(writeToPtyWithEnter).toHaveBeenCalledTimes(2);
+      expect(writeToPtyWithEnter).toHaveBeenNthCalledWith(
+        2,
+        "g1",
+        "cli",
+        expect.stringContaining("second request"),
+      );
     } finally {
       vi.useRealTimers();
     }

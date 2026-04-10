@@ -854,22 +854,69 @@ async function waitForCompletion(params: {
   const { groupId, agentId, signal, timeoutMs, broadcast } = params;
 
   return new Promise<string>((resolve) => {
-    let resolved = false;
+    let completionState: "pending" | "closing" | "done" = "pending";
+    let globalTimer: ReturnType<typeof setTimeout> | null = null;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
 
     const cleanup = () => {
-      clearTimeout(globalTimer);
-      clearInterval(pollInterval);
+      if (globalTimer) {
+        clearTimeout(globalTimer);
+        globalTimer = null;
+      }
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
       signal.removeEventListener("abort", onAbort);
     };
 
+    const beginAsyncFinish = (): boolean => {
+      if (completionState !== "pending") {
+        return false;
+      }
+      completionState = "closing";
+      cleanup();
+      return true;
+    };
+
     const finish = (text: string) => {
-      if (resolved) {
+      if (completionState !== "pending") {
         return;
       }
-      resolved = true;
+      completionState = "done";
       cleanup();
       resolve(text);
     };
+
+    const resolveAfterAsyncFinish = (text: string) => {
+      if (completionState === "done") {
+        return;
+      }
+      completionState = "done";
+      resolve(text);
+    };
+
+    const finishAfterKillingPty = async (reason: string, status: string, message: string) => {
+      if (!beginAsyncFinish()) {
+        return;
+      }
+      broadcastTerminalStatus(broadcast, groupId, agentId, status, message);
+      try {
+        await killBridgePty(groupId, agentId, reason);
+      } finally {
+        resolveAfterAsyncFinish("");
+      }
+    };
+
+    const onAbort = () => {
+      void finishAfterKillingPty("user_abort", "disconnected", "CLI agent aborted by user");
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
 
     // 1. Main path: wait for frontend-pushed extracted text.
     //    The frontend detects 8s idle → extracts xterm buffer → sends via WebSocket.
@@ -883,36 +930,25 @@ async function waitForCompletion(params: {
     });
 
     // 2. Global timeout fallback — kill PTY and resolve
-    const globalTimer = setTimeout(() => {
-      broadcastTerminalStatus(broadcast, groupId, agentId, "timeout", "CLI response timeout");
-      // Terminate the PTY process on timeout (cliTimeout)
-      void killBridgePty(groupId, agentId, "cli_timeout");
-      finish("");
+    globalTimer = setTimeout(() => {
+      void finishAfterKillingPty("cli_timeout", "timeout", "CLI response timeout");
     }, timeoutMs);
     globalTimer.unref();
 
-    // 3. Abort signal — terminate PTY and broadcast aborted status
-    const onAbort = () => {
-      broadcastTerminalStatus(
-        broadcast,
-        groupId,
-        agentId,
-        "disconnected",
-        "CLI agent aborted by user",
-      );
-      void killBridgePty(groupId, agentId, "user_abort");
-      finish("");
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-
-    // 4. PTY exit detection (process crashed/terminated)
-    const pollInterval = setInterval(() => {
-      if (resolved) {
-        clearInterval(pollInterval);
+    // 3. PTY exit detection (process crashed/terminated)
+    pollInterval = setInterval(() => {
+      if (completionState !== "pending") {
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
         return;
       }
       if (!isPtyRunning(groupId, agentId)) {
-        clearInterval(pollInterval);
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
         broadcastTerminalStatus(broadcast, groupId, agentId, "completed", "CLI process exited");
         // Give frontend 2s to push whatever it has extracted so far
         void waitForFrontendExtractedText(groupId, agentId, 2_000).then((text) => {
@@ -924,6 +960,10 @@ async function waitForCompletion(params: {
 
     // Check for immediate completion (PTY may have already exited)
     if (!isPtyRunning(groupId, agentId)) {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
       broadcastTerminalStatus(broadcast, groupId, agentId, "completed", "CLI process exited");
       void waitForFrontendExtractedText(groupId, agentId, 2_000).then((text) => {
         finish((text ?? "").trim());
