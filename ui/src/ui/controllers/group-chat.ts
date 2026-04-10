@@ -1628,6 +1628,11 @@ export async function sendGroupMessage(
       if (chain) {
         for (const id of pendingAgents) {
           chain.pendingAgents.add(id);
+          // Record as "already triggered" so that if another agent's reply
+          // @mentions this agent while it is still responding, the mention
+          // is correctly queued for later delivery instead of triggering a
+          // duplicate parallel run.
+          addMentionedAgent(chain, id);
         }
       }
     }
