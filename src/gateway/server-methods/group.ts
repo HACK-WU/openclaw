@@ -1256,15 +1256,6 @@ const handleGroupSetContextConfig: GatewayRequestHandler = async ({ params, resp
         return;
       }
     }
-    if (contextConfig.projectInfoInterval != null) {
-      if (contextConfig.projectInfoInterval < 1 || contextConfig.projectInfoInterval > 50) {
-        respond(false, undefined, {
-          message: "projectInfoInterval must be between 1 and 50",
-          code: 400,
-        });
-        return;
-      }
-    }
   }
 
   await updateGroupMeta(groupId, (meta) => ({

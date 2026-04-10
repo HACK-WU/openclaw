@@ -353,9 +353,6 @@ export const en: Record<string, string> = {
   "chat.group.announcementInterval": "Announcement Injection Interval",
   "chat.group.announcementIntervalDesc":
     "Inject group announcement every N interactions (1-50). First interaction always includes the announcement.",
-  "chat.group.projectInfoInterval": "Project Info Injection Interval",
-  "chat.group.projectInfoIntervalDesc":
-    "Inject project file list every N interactions (1-50). First interaction always includes it.",
 
   // Memory Management
   "chat.group.memoryManagement": "Memory Management",

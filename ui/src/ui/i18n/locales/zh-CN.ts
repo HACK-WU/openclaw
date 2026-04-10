@@ -318,9 +318,6 @@ export const zhCN: Record<string, string> = {
   "chat.group.announcementInterval": "群公告注入间隔",
   "chat.group.announcementIntervalDesc":
     "每多少次交互注入一次群公告 (1-50)。首次交互始终包含公告。",
-  "chat.group.projectInfoInterval": "项目信息注入间隔",
-  "chat.group.projectInfoIntervalDesc":
-    "每多少次交互注入一次项目文件清单 (1-50)。首次交互始终包含。",
 
   // Memory Management
   "chat.group.memoryManagement": "记忆管理",

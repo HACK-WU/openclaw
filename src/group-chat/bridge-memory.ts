@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getLogger } from "../logging.js";
-import { DEFAULT_ANNOUNCEMENT_INTERVAL, DEFAULT_PROJECT_INFO_INTERVAL } from "./bridge-types.js";
+import { DEFAULT_ANNOUNCEMENT_INTERVAL } from "./bridge-types.js";
 
 const log = getLogger("group-chat:bridge-memory");
 
@@ -281,21 +281,6 @@ export function shouldInjectAnnouncement(
   isFirstInteraction: boolean,
   interactionCount: number,
   interval: number = DEFAULT_ANNOUNCEMENT_INTERVAL,
-): boolean {
-  if (isFirstInteraction) {
-    return true;
-  }
-  return interactionCount > 0 && interactionCount % interval === 0;
-}
-
-/**
- * Determine whether the project info should be injected this interaction.
- * Project info is injected on first interaction and every `interval` interactions after.
- */
-export function shouldInjectProjectInfo(
-  isFirstInteraction: boolean,
-  interactionCount: number,
-  interval: number = DEFAULT_PROJECT_INFO_INTERVAL,
 ): boolean {
   if (isFirstInteraction) {
     return true;

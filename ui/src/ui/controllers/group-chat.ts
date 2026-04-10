@@ -1918,7 +1918,6 @@ export async function updateGroupContextConfig(
     maxCharacters?: number;
     includeSystemMessages?: boolean;
     announcementInterval?: number;
-    projectInfoInterval?: number;
   },
 ): Promise<void> {
   return updateGroupSettings(host, groupId, "setContextConfig", { contextConfig });

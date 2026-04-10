@@ -1,8 +1,8 @@
 ---
 name: ui-craftsman
 description: 专门用于 OpenClaw 项目的前端 UI 设计和开发专家。精通 Lit 3.x Web Components、响应式设计和本项目的设计系统。用于创建美观、一致、高质量的用户界面组件和视图。
-model: kimi-k2.5
-tools: list_dir, search_file, search_content, read_file, read_lints, replace_in_file, write_to_file, execute_command, create_rule, delete_file, preview_url, web_fetch, use_skill, web_search
+model: claude-opus-4.6
+tools: list_dir, search_file, search_content, read_file, read_lints, replace_in_file, write_to_file, execute_command, delete_file, preview_url, web_fetch, use_skill, web_search
 agentMode: agentic
 enabled: true
 enabledAutoRun: true

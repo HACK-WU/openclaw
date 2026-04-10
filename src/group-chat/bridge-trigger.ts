@@ -43,7 +43,6 @@ import {
   shouldInjectAnnouncement,
   shouldInjectMemoryContent,
   shouldInjectMemoryPrompt,
-  shouldInjectProjectInfo,
   DEFAULT_MEMORY_CONTENT_INTERVAL,
   DEFAULT_MEMORY_PROMPT_INTERVAL,
 } from "./bridge-memory.js";
@@ -64,7 +63,6 @@ import {
   DEFAULT_ANNOUNCEMENT_INTERVAL,
   DEFAULT_CONTEXT_MAX_CHARACTERS,
   DEFAULT_CONTEXT_MAX_MESSAGES,
-  DEFAULT_PROJECT_INFO_INTERVAL,
   DEFAULT_REPLY_TIMEOUT_MS,
   DEFAULT_ROLE_REMINDER_INTERVAL,
   MAX_SINGLE_MESSAGE_CHARS,
@@ -666,41 +664,35 @@ async function buildCliContextMessage(params: {
     }
   }
 
-  // ─── 项目文件清单（首次注入 + 按间隔周期注入） ───
+  // ─── 项目文件清单（每次交互都注入） ───
   if (meta.projectId) {
-    const projectInfoInterval = contextConfig?.projectInfoInterval ?? DEFAULT_PROJECT_INFO_INTERVAL;
-    const projectInfoInteractionCount = ptyStateForMemory?.interactionCount ?? 0;
-    if (
-      shouldInjectProjectInfo(isFirstInteraction, projectInfoInteractionCount, projectInfoInterval)
-    ) {
-      const rules = loadProjectRules(meta.projectId);
-      const skills = loadProjectSkills(meta.projectId);
-      const docs = loadProjectDocs(meta.projectId);
-      if (rules.length > 0 || skills.length > 0 || docs.length > 0) {
-        const rulesDir = resolveProjectRulesDir(meta.projectId);
-        const skillsDir = resolveProjectSkillsDir(meta.projectId);
-        const docsDir = resolveProjectDocsDir(meta.projectId);
-        const lines: string[] = ["# ──── 项目文件 ────"];
-        if (rules.length > 0) {
-          lines.push("# [规则]");
-          for (const r of rules) {
-            lines.push(`# ${r.title}  → ${rulesDir}/${r.id}.json`);
-          }
+    const rules = loadProjectRules(meta.projectId);
+    const skills = loadProjectSkills(meta.projectId);
+    const docs = loadProjectDocs(meta.projectId);
+    if (rules.length > 0 || skills.length > 0 || docs.length > 0) {
+      const rulesDir = resolveProjectRulesDir(meta.projectId);
+      const skillsDir = resolveProjectSkillsDir(meta.projectId);
+      const docsDir = resolveProjectDocsDir(meta.projectId);
+      const lines: string[] = ["# ──── 项目文件 ────"];
+      if (rules.length > 0) {
+        lines.push("# [规则]");
+        for (const r of rules) {
+          lines.push(`# ${r.title}  → ${rulesDir}/${r.id}.json`);
         }
-        if (skills.length > 0) {
-          lines.push("# [技能]");
-          for (const s of skills) {
-            lines.push(`# ${s.name}  → ${skillsDir}/${s.id}.json`);
-          }
-        }
-        if (docs.length > 0) {
-          lines.push("# [文档]");
-          for (const d of docs) {
-            lines.push(`# ${d.name}  → ${docsDir}/${d.id}.json`);
-          }
-        }
-        sections.push(lines.join("\n"));
       }
+      if (skills.length > 0) {
+        lines.push("# [技能]");
+        for (const s of skills) {
+          lines.push(`# ${s.name}  → ${skillsDir}/${s.id}.json`);
+        }
+      }
+      if (docs.length > 0) {
+        lines.push("# [文档]");
+        for (const d of docs) {
+          lines.push(`# ${d.name}  → ${docsDir}/${d.id}.json`);
+        }
+      }
+      sections.push(lines.join("\n"));
     }
   }
 

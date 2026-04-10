@@ -31,14 +31,12 @@ import {
   shouldInjectAnnouncement,
   shouldInjectMemoryContent,
   shouldInjectMemoryPrompt,
-  shouldInjectProjectInfo,
   DEFAULT_MEMORY_CONTENT_INTERVAL,
   DEFAULT_MEMORY_PROMPT_INTERVAL,
 } from "./bridge-memory.js";
 import {
   type ContextConfig,
   DEFAULT_ANNOUNCEMENT_INTERVAL,
-  DEFAULT_PROJECT_INFO_INTERVAL,
   DEFAULT_ROLE_REMINDER_INTERVAL,
 } from "./bridge-types.js";
 import { buildPlanModeAssistantPrompt, buildPlanModeExecutorPrompt } from "./plan-mode-context.js";
@@ -181,41 +179,38 @@ ${meta.announcement}`);
     }
   }
 
-  // 3.5 Project files — first interaction: always; subsequent: interval-based
+  // 3.5 Project files — always injected
   if (meta.projectId) {
-    const projectInfoInterval = contextConfig?.projectInfoInterval ?? DEFAULT_PROJECT_INFO_INTERVAL;
-    if (shouldInjectProjectInfo(isFirstInteraction, interactionCount, projectInfoInterval)) {
-      const rules = loadProjectRules(meta.projectId);
-      const skills = loadProjectSkills(meta.projectId);
-      const docs = loadProjectDocs(meta.projectId);
-      if (rules.length > 0 || skills.length > 0 || docs.length > 0) {
-        const rulesDir = resolveProjectRulesDir(meta.projectId);
-        const skillsDir = resolveProjectSkillsDir(meta.projectId);
-        const docsDir = resolveProjectDocsDir(meta.projectId);
-        const lines: string[] = ["### Project Files", ""];
-        if (rules.length > 0) {
-          lines.push("**[Rules]**");
-          for (const r of rules) {
-            lines.push(`${r.title}  → ${rulesDir}/${r.id}.json`);
-          }
-          lines.push("");
+    const rules = loadProjectRules(meta.projectId);
+    const skills = loadProjectSkills(meta.projectId);
+    const docs = loadProjectDocs(meta.projectId);
+    if (rules.length > 0 || skills.length > 0 || docs.length > 0) {
+      const rulesDir = resolveProjectRulesDir(meta.projectId);
+      const skillsDir = resolveProjectSkillsDir(meta.projectId);
+      const docsDir = resolveProjectDocsDir(meta.projectId);
+      const lines: string[] = ["### Project Files", ""];
+      if (rules.length > 0) {
+        lines.push("**[Rules]**");
+        for (const r of rules) {
+          lines.push(`${r.title}  → ${rulesDir}/${r.id}.json`);
         }
-        if (skills.length > 0) {
-          lines.push("**[Skills]**");
-          for (const s of skills) {
-            lines.push(`${s.name}  → ${skillsDir}/${s.id}.json`);
-          }
-          lines.push("");
-        }
-        if (docs.length > 0) {
-          lines.push("**[Docs]**");
-          for (const d of docs) {
-            lines.push(`${d.name}  → ${docsDir}/${d.id}.json`);
-          }
-          lines.push("");
-        }
-        sections.push(lines.join("\n"));
+        lines.push("");
       }
+      if (skills.length > 0) {
+        lines.push("**[Skills]**");
+        for (const s of skills) {
+          lines.push(`${s.name}  → ${skillsDir}/${s.id}.json`);
+        }
+        lines.push("");
+      }
+      if (docs.length > 0) {
+        lines.push("**[Docs]**");
+        for (const d of docs) {
+          lines.push(`${d.name}  → ${docsDir}/${d.id}.json`);
+        }
+        lines.push("");
+      }
+      sections.push(lines.join("\n"));
     }
   }
 
