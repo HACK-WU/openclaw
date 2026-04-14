@@ -905,11 +905,6 @@ export class BridgeTerminal extends LitElement {
       this._completionCheckTimer = null;
     }
 
-    // Only start completion detection if status is "working" or "ready"
-    if (this.status !== "working" && this.status !== "ready") {
-      return;
-    }
-
     // Set new timer
     this._completionCheckTimer = window.setTimeout(() => {
       this._checkCompletion();
@@ -932,8 +927,10 @@ export class BridgeTerminal extends LitElement {
       return; // Not idle yet, timer was reset
     }
 
-    // Double-check status
-    if (this.status !== "working" && this.status !== "ready") {
+    // Only skip if already in a definitive final state that prevents data writing.
+    // We intentionally do not block on "disconnected" or "error" because we
+    // still want to flush extracted text to the backend if there was any.
+    if (this.status === "completed" || this.status === "timeout") {
       return;
     }
 
