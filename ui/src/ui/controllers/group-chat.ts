@@ -1679,14 +1679,84 @@ export async function abortGroupChat(host: GroupHost, groupId: string): Promise<
   try {
     await host.client.request("group.abort", { groupId });
 
-    // Clear local state immediately after abort request
-    // This ensures UI updates even if backend doesn't send aborted events
+    // Preserve partial streaming content before clearing state.
+    // Convert active streams into frozen "aborted" messages so the user
+    // can still see what the agent had produced so far.
     if (host.activeGroupId === groupId) {
+      // 1. Flush any pending batch-sync so groupStreams has up-to-date text
+      if (batchSyncTimer !== null) {
+        clearTimeout(batchSyncTimer);
+        batchSyncTimer = null;
+      }
+      batchSyncGroupStreams(host);
+
+      // 2. Convert LLM agent streams (non-bridge) into aborted messages
+      const newMessages: GroupChatMessage[] = [];
+      for (const [agentId, stream] of host.groupStreams.entries()) {
+        const text = stream.text?.trim();
+        if (!text) {
+          continue;
+        }
+        // Skip bridge terminal streams — they are handled via snapshots
+        if (stream.runId.startsWith(BRIDGE_STREAM_RUN_PREFIX)) {
+          continue;
+        }
+        newMessages.push({
+          id: `aborted-${agentId}-${Date.now()}`,
+          groupId,
+          role: "assistant",
+          content: `${text}\n\n*(已中断)*`,
+          sender: { type: "agent", agentId },
+          serverSeq: 0,
+          timestamp: stream.startedAt,
+        });
+      }
+
+      // 3. Convert active bridge terminal streams into frozen snapshots
+      //    so the partial output is preserved in the timeline.
+      for (const [agentId, stream] of host.groupStreams.entries()) {
+        if (!stream.runId.startsWith(BRIDGE_STREAM_RUN_PREFIX)) {
+          continue;
+        }
+        const text = stream.text?.trim();
+        if (!text) {
+          continue;
+        }
+        upsertBridgeSnapshot(host, {
+          groupId,
+          agentId,
+          runId: stream.runId,
+          text: `${stream.text}\n\n*(已中断)*`,
+          startedAt: stream.startedAt,
+          timelineOrder: stream.timelineOrder,
+          terminalVisible: true,
+          terminalStatus: "completed",
+          source: "live-freeze",
+        });
+      }
+
+      // 4. Append aborted messages to groupMessages
+      if (newMessages.length > 0) {
+        host.groupMessages = [...host.groupMessages, ...newMessages];
+      }
+
+      // 5. Clear streaming / pending state
       host.groupPendingAgents = new Set();
       host.groupStreams = new Map();
-      host.groupBridgeSnapshots = new Map();
+      // Note: do NOT clear groupBridgeSnapshots — we just wrote frozen snapshots above
       host.groupToolMessages = new Map();
       streamBuffers.clear();
+
+      // 6. Reset bridge terminal statuses for aborted terminals
+      if (host.bridgeTerminalStatuses) {
+        const nextStatuses = new Map(host.bridgeTerminalStatuses);
+        for (const [agentId, status] of nextStatuses) {
+          if (status === "working" || status === "ready") {
+            nextStatuses.set(agentId, "completed");
+          }
+        }
+        host.bridgeTerminalStatuses = nextStatuses;
+      }
     }
 
     // Clear chain state to prevent further auto-forwards
