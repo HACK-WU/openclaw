@@ -2447,7 +2447,7 @@ export function renderApp(state: AppViewState) {
                   state.groupAnnouncementEditor = {
                     open: true,
                     draft: state.activeGroupMeta?.announcement || "",
-                    preview: false,
+                    preview: true,
                   };
                 },
                 onCloseAnnouncementEditor: () => {

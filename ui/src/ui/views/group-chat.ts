@@ -1482,16 +1482,16 @@ function renderAnnouncementEditDialog(meta: GroupSessionMeta, props: GroupChatVi
           <h3 class="modal-title">${t("chat.group.announcement")}</h3>
           <div class="announcement-edit-dialog__tabs">
             <button
-              class="btn ${!editor.preview ? "btn--primary" : ""}"
-              @click=${() => props.onAnnouncementEditorTogglePreview(false)}
-            >
-              ${icons.edit} ${t("action.edit")}
-            </button>
-            <button
               class="btn ${editor.preview ? "btn--primary" : ""}"
               @click=${() => props.onAnnouncementEditorTogglePreview(true)}
             >
               ${icons.fileText} ${t("action.preview")}
+            </button>
+            <button
+              class="btn ${!editor.preview ? "btn--primary" : ""}"
+              @click=${() => props.onAnnouncementEditorTogglePreview(false)}
+            >
+              ${icons.edit} ${t("action.edit")}
             </button>
           </div>
         </div>
