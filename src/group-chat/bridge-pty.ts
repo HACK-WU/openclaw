@@ -309,6 +309,83 @@ export function writeToPty(groupId: string, agentId: string, data: string): bool
   }
 }
 
+// ─── Chunked Write (for large context injection) ───────────────────────────
+
+/** Default chunk size in lines for large context writes. */
+const CHUNK_SIZE_LINES = 80;
+
+/** Default delay between chunks (ms) — lets TUI process each block. */
+const CHUNK_DELAY_MS = 80;
+
+/**
+ * Write large context data to PTY in chunks with delays.
+ *
+ * Some CLI agents (e.g. ink-based TUIs) have limited input buffer capacity.
+ * Writing too much data at once can cause truncation or loss.
+ * This function splits the input into manageable chunks and writes them
+ * sequentially with small delays to ensure reliable delivery.
+ *
+ * @returns `true` if all chunks were written successfully.
+ */
+export async function writeToPtyChunked(
+  groupId: string,
+  agentId: string,
+  data: string,
+  options?: {
+    /** Chunk size in lines (default: 80). */
+    chunkSizeLines?: number;
+    /** Delay between chunks in ms (default: 80). */
+    chunkDelayMs?: number;
+  },
+): Promise<boolean> {
+  const chunkSize = options?.chunkSizeLines ?? CHUNK_SIZE_LINES;
+  const delayMs = options?.chunkDelayMs ?? CHUNK_DELAY_MS;
+
+  const lines = data.split("\n");
+  const totalChunks = Math.ceil(lines.length / chunkSize);
+
+  log.info("[BRIDGE_PTY_CHUNKED_START]", {
+    groupId,
+    agentId,
+    totalLines: lines.length,
+    chunkSize,
+    totalChunks,
+  });
+
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * chunkSize;
+    const end = Math.min(start + chunkSize, lines.length);
+    const chunkLines = lines.slice(start, end);
+    const chunkData = chunkLines.join("\n");
+
+    // Write this chunk
+    const success = writeToPty(groupId, agentId, chunkData);
+    if (!success) {
+      log.info("[BRIDGE_PTY_CHUNKED_WRITE_FAILED]", {
+        groupId,
+        agentId,
+        chunkIndex: i,
+        totalChunks,
+      });
+      return false;
+    }
+
+    // Add delay between chunks (except after the last one)
+    if (i < totalChunks - 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  log.info("[BRIDGE_PTY_CHUNKED_COMPLETE]", {
+    groupId,
+    agentId,
+    totalChunks,
+    totalLines: lines.length,
+  });
+
+  return true;
+}
+
 // ─── Write-with-Enter (retry-aware) ────────────────────────────────────
 
 /** Default delay (ms) between writing text and sending Enter. */

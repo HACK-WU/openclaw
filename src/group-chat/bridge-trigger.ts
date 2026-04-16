@@ -55,7 +55,7 @@ import {
   setInputPhase,
   updateLastTranscriptIndex,
   waitForFrontendExtractedText,
-  writeToPty,
+  writeToPtyChunked,
   writeToPtyWithEnter,
 } from "./bridge-pty.js";
 import type { BridgeConfig } from "./bridge-types.js";
@@ -271,8 +271,11 @@ async function triggerBridgeAgentInternal(
     // 3a. Inject hidden context first.
     //     Suppress onRawData broadcast during this phase so the terminal does
     //     not show the full injected context block.
+    //     Use chunked writes to avoid truncation in CLI agents with limited buffer.
     setInputPhase(groupId, agentId, true);
-    const writtenContext = contextMessage ? writeToPty(groupId, agentId, contextMessage) : true;
+    const writtenContext = contextMessage
+      ? await writeToPtyChunked(groupId, agentId, contextMessage)
+      : true;
     if (!writtenContext) {
       setInputPhase(groupId, agentId, false);
       run.status = "error";
