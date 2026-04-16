@@ -1415,6 +1415,11 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
             const showId = displayName !== m.agentId;
             const roleLabel = m.bridge ? "bridge" : m.role;
             const canRemove = m.role !== "assistant";
+            // Check bridge agent online status
+            const bridgeStatus = m.bridge
+              ? props.bridgeTerminalStatuses?.get(m.agentId)
+              : undefined;
+            const isOnline = bridgeStatus && ["idle", "working", "ready"].includes(bridgeStatus);
             return html`
               <li class="group-members-panel__item">
                 <span class="group-members-panel__emoji">
@@ -1424,6 +1429,16 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
                   <span class="group-members-panel__name">${displayName}</span>
                   ${showId ? html`<span class="group-members-panel__id">${m.agentId}</span>` : nothing}
                 </span>
+                ${
+                  m.bridge
+                    ? html`
+                        <span
+                          class="group-members-panel__status group-members-panel__status--${isOnline ? "online" : "offline"}"
+                          title=${isOnline ? "Online" : "Offline"}
+                        ></span>
+                      `
+                    : nothing
+                }
                 <span class="group-members-panel__role badge badge--${roleLabel}">${roleLabel}</span>
                 ${
                   canRemove
