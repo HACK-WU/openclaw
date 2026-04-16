@@ -559,7 +559,9 @@ async function buildCliContextMessage(params: {
     sections.push("");
 
     // Transcript history (with truncation)
-    const historyMessages = truncateTranscript(transcriptSnapshot, {
+    // Exclude the last message (triggerMessage) to avoid duplication with "用户请求" section
+    const historyTranscript = transcriptSnapshot.slice(0, -1);
+    const historyMessages = truncateTranscript(historyTranscript, {
       maxMessages,
       maxChars,
       includeSystemMessages,
@@ -567,7 +569,7 @@ async function buildCliContextMessage(params: {
     });
 
     if (historyMessages.length > 0) {
-      const omitted = transcriptSnapshot.length - historyMessages.length;
+      const omitted = historyTranscript.length - historyMessages.length;
       if (omitted > 0) {
         sections.push(
           `# 最近对话（最近 ${historyMessages.length} 条，已省略 ${omitted} 条更早的消息）：`,
@@ -610,7 +612,8 @@ async function buildCliContextMessage(params: {
 
     // Only include messages since last interaction
     // Slice from lastTranscriptIndex + 1 to get new messages only
-    const newMessages = transcriptSnapshot.slice(lastTranscriptIndex + 1);
+    // Exclude the last message (triggerMessage) to avoid duplication with "用户请求" section
+    const newMessages = transcriptSnapshot.slice(lastTranscriptIndex + 1, -1);
     if (newMessages.length > 0) {
       sections.push(
         "# ================================================================================",
