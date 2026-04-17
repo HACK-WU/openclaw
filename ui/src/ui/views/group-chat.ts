@@ -395,6 +395,8 @@ export type GroupChatViewProps = {
   projectContentPreviewDialog?: { title: string; content: string } | null;
   onOpenProjectContentPreview?: (title: string, content: string) => void;
   onCloseProjectContentPreview?: () => void;
+  // Image lightbox
+  onOpenImageLightbox?: (url: string) => void;
 };
 
 // ─── Main Render ───
@@ -776,6 +778,7 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
                       props.agentsList,
                       props.showThinking,
                       props.onOpenSidebar,
+                      props.onOpenImageLightbox,
                     );
                   case "stream":
                     return renderTimelineStream(
@@ -1015,6 +1018,7 @@ function renderGroupMessage(
   agentsList: GroupChatViewProps["agentsList"],
   showThinking = false,
   onOpenSidebar?: (content: string) => void,
+  onOpenImageLightbox?: (url: string) => void,
 ) {
   const isSystem = msg.role === "system" || msg.sender.type === "system";
   if (isSystem) {
@@ -1078,6 +1082,11 @@ function renderGroupMessage(
                 src=${url}
                 alt="Attached image"
                 class="chat-message-image"
+                @click=${() => {
+                  if (onOpenImageLightbox) {
+                    onOpenImageLightbox(url);
+                  }
+                }}
               />
             `;
           })}
@@ -1460,6 +1469,9 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
 
       <!-- Plan Mode Section -->
       ${renderPlanModeSection(meta, props)}
+
+      <!-- Memory Management Section (in members panel) -->
+      ${renderMembersPanelMemorySection(meta, props)}
 
       <!-- Actions Section -->
       <div class="group-members-panel__actions">
@@ -2362,6 +2374,178 @@ function renderMemoryManagementSection(meta: GroupSessionMeta, props: GroupChatV
               <span class="group-info-panel__setting-desc">${t("chat.group.announcementIntervalDesc")}</span>
             </div>
           `
+        }
+      </div>
+    </div>
+  `;
+}
+
+// ─── Members Panel Memory Section (compact version for right sidebar) ───
+
+function renderMembersPanelMemorySection(meta: GroupSessionMeta, props: GroupChatViewProps) {
+  const status = props.memoryStatus;
+  const hasBridgeMembers = meta.members.some((m) => m.bridge);
+
+  // Only show memory management if there are bridge (CLI) members
+  if (!hasBridgeMembers) {
+    return nothing;
+  }
+
+  return html`
+    <div class="group-members-panel__memory">
+      <div class="group-members-panel__memory-header">
+        <h3>${t("chat.group.memoryManagement")}</h3>
+        ${
+          status && status.files.length > 0 && props.onLoadMemoryStatus
+            ? html`<button
+              class="btn btn--sm btn--icon"
+              title=${t("action.refresh")}
+              @click=${() => props.onLoadMemoryStatus?.()}
+            >
+              ${icons.refresh}
+            </button>`
+            : nothing
+        }
+      </div>
+
+      <div class="group-members-panel__memory-content">
+        ${
+          !status || status.files.length === 0
+            ? html`
+              <div class="group-members-panel__memory-empty">
+                <span>${t("chat.group.memory.noMemory")}</span>
+                ${
+                  props.onLoadMemoryStatus
+                    ? html`<button class="btn btn--secondary btn--sm" @click=${() => props.onLoadMemoryStatus?.()}>
+                      ${icons.refresh} ${t("action.refresh")}
+                    </button>`
+                    : nothing
+                }
+              </div>
+            `
+            : html`
+              <!-- Shared Memory Files -->
+              ${
+                status.files.some((f) => f.name === "MEMORY.md" || f.name === "SESSION.md")
+                  ? html`
+                    <div class="group-members-panel__memory-subsection">
+                      <span class="group-members-panel__memory-label">${t("chat.group.memory.sharedMemory")}</span>
+                      <div class="memory-file-list memory-file-list--compact">
+                        ${status.files
+                          .filter((f) => f.name === "MEMORY.md" || f.name === "SESSION.md")
+                          .map(
+                            (f) => html`
+                              <div class="memory-file-item memory-file-item--compact">
+                                <span class="memory-file-item__name">${f.name}</span>
+                                <span class="memory-file-item__size ${!f.exists ? "memory-file-item__size--missing" : ""}">
+                                  ${f.exists ? formatFileSize(f.size) : t("chat.group.memory.missing")}
+                                </span>
+                                ${
+                                  f.exists && props.onOpenMemoryPreview
+                                    ? html`<button
+                                      class="btn btn--sm btn--icon memory-file-item__action"
+                                      title="${t("action.preview")}"
+                                      @click=${() => props.onOpenMemoryPreview?.(f.name)}
+                                    >
+                                      ${icons.fileText}
+                                    </button>`
+                                    : nothing
+                                }
+                              </div>
+                            `,
+                          )}
+                      </div>
+                    </div>
+                  `
+                  : nothing
+              }
+
+              <!-- Agent Memory Files -->
+              ${
+                status.files.some((f) => f.name !== "MEMORY.md" && f.name !== "SESSION.md")
+                  ? html`
+                    <div class="group-members-panel__memory-subsection">
+                      <span class="group-members-panel__memory-label">${t("chat.group.memory.agentMemory")}</span>
+                      <div class="memory-file-list memory-file-list--compact">
+                        ${status.files
+                          .filter((f) => f.name !== "MEMORY.md" && f.name !== "SESSION.md")
+                          .map(
+                            (f) => html`
+                              <div class="memory-file-item memory-file-item--compact">
+                                <span class="memory-file-item__name">${f.name}</span>
+                                <span class="memory-file-item__size ${!f.exists ? "memory-file-item__size--missing" : ""}">
+                                  ${f.exists ? formatFileSize(f.size) : t("chat.group.memory.missing")}
+                                </span>
+                                ${
+                                  f.exists && props.onOpenMemoryPreview
+                                    ? html`<button
+                                      class="btn btn--sm btn--icon memory-file-item__action"
+                                      title="${t("action.preview")}"
+                                      @click=${() => props.onOpenMemoryPreview?.(f.name)}
+                                    >
+                                      ${icons.fileText}
+                                    </button>`
+                                    : nothing
+                                }
+                              </div>
+                            `,
+                          )}
+                      </div>
+                    </div>
+                  `
+                  : nothing
+              }
+
+              <!-- Size Progress Bar -->
+              <div class="group-members-panel__memory-bar">
+                <div class="memory-size-bar">
+                  <div class="memory-size-bar__header">
+                    <span>${formatFileSize(status.totalSize)} / ${status.maxSizeKB} KB</span>
+                    <span>${Math.min(100, Math.round((status.totalSize / status.maxSize) * 100))}%</span>
+                  </div>
+                  <div class="memory-size-bar__track">
+                    <div
+                      class="memory-size-bar__fill memory-size-bar__fill--${status.warning}"
+                      style="width: ${Math.min(100, (status.totalSize / status.maxSize) * 100)}%"
+                    ></div>
+                  </div>
+                </div>
+                ${
+                  status.warning === "approaching-limit"
+                    ? html`<span class="memory-warning memory-warning--approaching">${t("chat.group.memory.warningApproaching")}</span>`
+                    : nothing
+                }
+                ${
+                  status.warning === "over-limit"
+                    ? html`<span class="memory-warning memory-warning--over">${t("chat.group.memory.warningOverLimit")}</span>`
+                    : nothing
+                }
+              </div>
+
+              <!-- Merge / Compact Buttons -->
+              ${
+                meta.project?.directory
+                  ? html`
+                    <div class="group-members-panel__memory-actions">
+                      ${
+                        props.onMergeMemory
+                          ? html`<button class="btn btn--secondary btn--sm" @click=${() => props.onMergeMemory?.()}>
+                            ${t("chat.group.memory.merge")}
+                          </button>`
+                          : nothing
+                      }
+                      ${
+                        props.onCompactMemory
+                          ? html`<button class="btn btn--secondary btn--sm" @click=${() => props.onCompactMemory?.()}>
+                            ${t("chat.group.memory.compact")}
+                          </button>`
+                          : nothing
+                      }
+                    </div>
+                  `
+                  : nothing
+              }
+            `
         }
       </div>
     </div>

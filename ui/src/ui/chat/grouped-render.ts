@@ -179,6 +179,7 @@ export function renderMessageGroup(
     showReasoning: boolean;
     assistantName?: string;
     assistantAvatar?: string | null;
+    onOpenImageLightbox?: (url: string) => void;
   },
 ) {
   const normalizedRole = normalizeRoleForGrouping(group.role);
@@ -224,6 +225,7 @@ export function renderMessageGroup(
               showReasoning: opts.showReasoning,
             },
             opts.onOpenSidebar,
+            opts.onOpenImageLightbox,
           ),
         )}
         ${classified ? renderInlineToolCards(classified, opts.onOpenSidebar) : nothing}
@@ -277,13 +279,17 @@ function isAvatarUrl(value: string): boolean {
   );
 }
 
-function renderMessageImages(images: ImageBlock[]) {
+function renderMessageImages(images: ImageBlock[], onOpenImageLightbox?: (url: string) => void) {
   if (images.length === 0) {
     return nothing;
   }
 
   const openImage = (url: string) => {
-    openExternalUrlSafe(url, { allowDataImage: true });
+    if (onOpenImageLightbox) {
+      onOpenImageLightbox(url);
+    } else {
+      openExternalUrlSafe(url, { allowDataImage: true });
+    }
   };
 
   return html`
@@ -306,6 +312,7 @@ function renderGroupedMessage(
   message: unknown,
   opts: { isStreaming: boolean; showReasoning: boolean },
   _onOpenSidebar?: (content: string) => void,
+  onOpenImageLightbox?: (url: string) => void,
 ) {
   const m = message as Record<string, unknown>;
   const role = typeof m.role === "string" ? m.role : "unknown";
@@ -342,7 +349,7 @@ function renderGroupedMessage(
     if (hasImages) {
       return html`
         <div class="chat-bubble fade-in">
-          ${renderMessageImages(images)}
+          ${renderMessageImages(images, onOpenImageLightbox)}
         </div>
       `;
     }
@@ -358,7 +365,7 @@ function renderGroupedMessage(
   return html`
     <div class="${bubbleClasses}">
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
-      ${renderMessageImages(images)}
+      ${renderMessageImages(images, onOpenImageLightbox)}
       ${
         reasoningMarkdown
           ? html`<div class="chat-thinking">${unsafeHTML(

@@ -12,6 +12,7 @@ import {
 } from "./app-render.helpers.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
+import { renderImageLightbox } from "./components/image-lightbox.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
@@ -2046,6 +2047,7 @@ export function renderApp(state: AppViewState) {
                   closeGroupChatView(state);
                   void switchSession(state as unknown as Parameters<typeof switchSession>[0], key);
                 },
+                onOpenImageLightbox: (url: string) => state.openImageLightbox(url),
               })
             : nothing
         }
@@ -2671,6 +2673,7 @@ export function renderApp(state: AppViewState) {
                     })();
                   }
                 },
+                onOpenImageLightbox: (url: string) => state.openImageLightbox(url),
               })
             : nothing
         }
@@ -2781,6 +2784,12 @@ export function renderApp(state: AppViewState) {
 
       <!-- 删除会话确认对话框 -->
       ${renderDeleteSessionDialog(state as unknown as Parameters<typeof renderDeleteSessionDialog>[0])}
+
+      <!-- 图片放大 Lightbox -->
+      ${renderImageLightbox({
+        url: state.imageLightboxUrl,
+        onClose: () => state.closeImageLightbox(),
+      })}
     </div>
   `;
 }

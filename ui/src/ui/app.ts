@@ -316,6 +316,9 @@ export class OpenClawApp extends LitElement {
   > = new Map();
   pendingGatewayToken: string | null = null;
 
+  // Image lightbox state
+  @state() imageLightboxUrl: string | null = null;
+
   @state() configLoading = false;
   @state() configRaw = "{\n}\n";
   @state() configRawOriginal = "";
@@ -953,6 +956,14 @@ export class OpenClawApp extends LitElement {
     const newRatio = Math.max(0.4, Math.min(0.7, ratio));
     this.splitRatio = newRatio;
     this.applySettings({ ...this.settings, splitRatio: newRatio });
+  }
+
+  openImageLightbox(url: string) {
+    this.imageLightboxUrl = url;
+  }
+
+  closeImageLightbox() {
+    this.imageLightboxUrl = null;
   }
 
   render() {

@@ -263,6 +263,8 @@ export type AppViewState = {
   usageLogFilterTools: string[];
   usageLogFilterHasTools: boolean;
   usageLogFilterQuery: string;
+  // Image lightbox state
+  imageLightboxUrl: string | null;
 } & Pick<
   CronState,
   | "cronLoading"
@@ -462,4 +464,6 @@ export type AppViewState = {
     handleOpenSidebar: (content: string) => void;
     handleCloseSidebar: () => void;
     handleSplitRatioChange: (ratio: number) => void;
+    openImageLightbox: (url: string) => void;
+    closeImageLightbox: () => void;
   };
