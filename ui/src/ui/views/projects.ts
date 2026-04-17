@@ -1987,7 +1987,7 @@ function renderDocImportDialog(props: ProjectsViewProps): TemplateResult | typeo
     return nothing;
   }
 
-  const conflictCount = dialog.previewDocs.filter((d) => d.isConflict).length;
+  const conflictCount = dialog.previewDocs.filter((d) => d.hasConflict).length;
 
   return html`
     <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
@@ -2021,11 +2021,11 @@ function renderDocImportDialog(props: ProjectsViewProps): TemplateResult | typeo
                 <div class="projects-docs-import__doc-list">
                   ${dialog.previewDocs.map(
                     (doc) => html`
-                      <div class="projects-docs-import__doc-item ${doc.isConflict ? "projects-docs-import__doc-item--conflict" : ""}">
+                      <div class="projects-docs-import__doc-item ${doc.hasConflict ? "projects-docs-import__doc-item--conflict" : ""}">
                         <span class="projects-docs-import__doc-icon">${icons.fileText}</span>
                         <span class="projects-docs-import__doc-name">${doc.name}</span>
                         ${
-                          doc.isConflict
+                          doc.hasConflict
                             ? html`<span class="projects-docs-import__conflict-badge">${t("project.docs.import.dialog.conflict")}</span>`
                             : html`<span class="projects-docs-import__new-badge">${t("project.docs.import.dialog.newDoc")}</span>`
                         }

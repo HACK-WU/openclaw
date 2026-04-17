@@ -174,22 +174,25 @@ export type DocExportResult = {
   contentType: string;
   data: string; // base64
   docCount: number;
+  docIds?: string[];
 };
 
 export type DocImportPreviewDoc = {
   name: string;
-  isConflict: boolean;
+  contentPreview?: string;
+  hasConflict: boolean;
+  existingDocId?: string;
 };
 
 export type DocImportPreviewResult = {
-  docCount: number;
-  docs: DocImportPreviewDoc[];
+  preview: DocImportPreviewDoc[];
 };
 
 export type DocImportResult = {
   imported: number;
   skipped: number;
   errors: Array<{ name: string; reason: string }>;
+  importedDocIds?: string[];
 };
 
 export type DocExportDialogState = {
@@ -873,7 +876,7 @@ export async function openDocImportDialog(host: ProjectsHost): Promise<void> {
             fileName: file.name,
             fileData: base64,
             format,
-            previewDocs: preview.docs,
+            previewDocs: preview.preview,
             conflictStrategy: "rename",
             isImporting: false,
             error: null,
