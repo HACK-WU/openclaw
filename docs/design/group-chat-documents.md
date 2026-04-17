@@ -71,6 +71,7 @@ project-store.ts (loadProjectDocs)
 // 请求
 {
   projectId: string;
+  docIds?: string[];         // 指定要导出的文档ID列表，不传则导出全部
   format?: "zip" | "json";  // 默认 zip
 }
 
@@ -80,6 +81,7 @@ project-store.ts (loadProjectDocs)
   contentType: string;       // MIME 类型
   data: string;              // Base64 编码的文件内容
   docCount: number;          // 导出的文档数量
+  docIds: string[];          // 实际导出的文档ID列表
 }
 ```
 
@@ -327,7 +329,7 @@ export const projectsHandlers: GatewayRequestHandlers = {
 │                                                               │
 │  项目文档                                                    │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │  + 创建文档   [导出全部]  [导入]                       │   │
+│  │  + 创建文档   [导出]  [导入]                          │   │
 │  └─────────────────────────────────────────────────────┘   │
 │                                                               │
 │  ┌─────────────────────────────────────────────────────┐   │
@@ -352,7 +354,7 @@ export const projectsHandlers: GatewayRequestHandlers = {
 ┌─────────────────────────────────────────────────────────────┐
 │  项目文档                                                    │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │  + 创建规则   [导出全部]  [导入]                       │   │
+│  │  + 创建规则   [导出]  [导入]                          │   │
 │  └─────────────────────────────────────────────────────┘   │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │                                                     │   │
@@ -377,13 +379,13 @@ export const projectsHandlers: GatewayRequestHandlers = {
 interface DocHeaderActionsProps {
   docCount: number;           // 当前文档数量
   onCreate: () => void;       // 创建新文档
-  onExport: () => void;       // 导出全部
+  onExport: () => void;       // 导出（打开选择弹窗）
   onImport: () => void;       // 导入（Phase 2）
 }
 
 // 按钮状态
 - "创建文档" - 始终可用
-- "导出全部" - docCount > 0 时可用，否则禁用
+- "导出" - docCount > 0 时可用，否则禁用
 - "导入" - 始终可用（Phase 2）
 ```
 
@@ -405,23 +407,25 @@ interface DocListItemProps {
 #### 3.3 导出流程
 
 ```
-用户点击 [导出全部]
+用户点击 [导出]
         ↓
-显示导出确认弹窗
+显示导出选择弹窗
         ↓
 ┌──────────────────────────────────────┐
 │  导出项目文档                          │
 │                                       │
-│  即将导出 3 篇文档为 ZIP 文件          │
+│  选择要导出的文档（已选择 3/3）         │
 │                                       │
-│  📄 API 文档.md                       │
-│  📄 部署指南.md                       │
-│  📄 架构设计.md                       │
+│  ☑ 全选                               │
+│                                       │
+│  ☑ API 文档.md                        │
+│  ☑ 部署指南.md                        │
+│  ☑ 架构设计.md                        │
 │                                       │
 │  [取消]              [确认导出]        │
 └──────────────────────────────────────┘
         ↓
-调用 RPC: projects.docs.export
+调用 RPC: projects.docs.export（传入选中的 docIds）
         ↓
 显示加载状态
         ↓
@@ -461,12 +465,13 @@ interface DocListItemProps {
 
 #### 3.5 错误处理
 
-| 错误场景   | 处理方式                                   |
-| ---------- | ------------------------------------------ |
-| 项目无文档 | 导出按钮禁用，Tooltip 提示"暂无文档可导出" |
-| 导出超时   | Toast 提示"导出超时，请稍后重试"           |
-| 文件过大   | Modal 提示"文档总大小超过 100MB，无法导出" |
-| 网络中断   | 重试机制，最多 3 次                        |
+| 错误场景   | 处理方式                                         |
+| ---------- | ------------------------------------------------ |
+| 项目无文档 | 导出按钮禁用，Tooltip 提示"暂无文档可导出"       |
+| 未选择文档 | 导出弹窗中确认按钮禁用，提示"请选择至少一篇文档" |
+| 导出超时   | Toast 提示"导出超时，请稍后重试"                 |
+| 文件过大   | Modal 提示"文档总大小超过 100MB，无法导出"       |
+| 网络中断   | 重试机制，最多 3 次                              |
 
 ### 4. 状态管理
 
@@ -488,9 +493,10 @@ interface ProjectDocsState {
 }
 
 // Actions
-- exportAllDocs(projectId: string): Promise<void>
+- exportDocs(projectId: string, docIds?: string[]): Promise<void>  // docIds 不传则导出全部
+- exportSingleDoc(projectId: string, docId: string): Promise<void>
 - importDocs(projectId: string, file: File, strategy: ConflictStrategy): Promise<ImportResult>
-- showExportPreview(): void
+- showExportDialog(): void
 - showImportPreview(file: File): void
 ```
 
@@ -499,9 +505,9 @@ interface ProjectDocsState {
 ```
 桌面端 (>768px):
 ┌─────────────────────────────────────────────────────┐
-│ + 创建文档  [导出全部]  [导入]                       │
+│ + 创建文档  [导出]  [导入]                          │
 │                                                     │
-│ 📄 文档名称              编辑  删除                 │
+│ ☑ 📄 文档名称            编辑  删除  [导出]         │
 └─────────────────────────────────────────────────────┘
 
 移动端 (<768px):
@@ -509,17 +515,18 @@ interface ProjectDocsState {
 │ + 创建                  │
 │ [导出] [导入]            │
 │                         │
-│ 📄 文档名称    ⋮        │
+│ ☑ 📄 文档名称    ⋮      │
 └─────────────────────────┘
 - 更多操作折叠在菜单中
+- 支持行内单篇导出按钮
 ```
 
 ### 6. 快捷键
 
-| 快捷键               | 功能                       |
-| -------------------- | -------------------------- |
-| Ctrl/Cmd + E         | 快速导出全部文档           |
-| Ctrl/Cmd + Shift + E | 导出当前编辑的文档（单篇） |
+| 快捷键               | 功能                         |
+| -------------------- | ---------------------------- |
+| Ctrl/Cmd + E         | 快速导出（打开导出选择弹窗） |
+| Ctrl/Cmd + Shift + E | 导出当前编辑的文档（单篇）   |
 
 ### 前端集成（概念）
 
@@ -595,11 +602,9 @@ describe("exportProjectDocs", () => {
 | MVP     | ZIP 导出功能（后端 + 基础测试） | 4h       |
 | Phase 2 | 导入功能 + 冲突处理             | 4h       |
 | Phase 3 | 前端 UI 集成 + 下载体验优化     | 4h       |
-| Phase 4 | 支持 PDF/HTML 导出格式          | 待定     |
 
 ## 后续扩展
 
-1. **PDF 导出**: 使用 `puppeteer` 或 `markdown-pdf` 将 Markdown 转换为 PDF
-2. **HTML 导出**: 复用会话导出的模板机制
-3. **单文档导出**: 支持导出单个文档为 `.md` 文件
-4. **自动备份**: 定时自动导出项目文档到指定目录
+1. ~~PDF/HTML 导出格式~~（已取消）
+2. **单文档导出**: 支持导出单个文档为 `.md` 文件
+3. **自动备份**: 定时自动导出项目文档到指定目录
