@@ -2627,11 +2627,15 @@ export function renderApp(state: AppViewState) {
                       (m) => m.role === "assistant" || m.role === "bridge-assistant",
                     );
                     if (assistant) {
-                      const prompt = `@${assistant.agentId} 请将各 Agent 的专属记忆汇总合并到共享记忆文件 MEMORY.md 中。具体步骤：
-1. 读取每个 Agent 的专属记忆文件
-2. 提取有价值的、与项目相关的知识
-3. 去重后合并到共享 MEMORY.md
-4. 完成后回复合并结果摘要`;
+                      const prompt = `@${assistant.agentId} 请将各 Agent 的专属记忆汇总合并到群聊的共享记忆文件中。具体步骤：
+
+1. 读取每个 Agent 的专属记忆文件（{agentId}.md）
+2. 区分两类共享记忆：
+   - MEMORY.md — 项目的永久记忆，存放长期有效、跨会话的项目知识（如架构决策、编码规范、技术选型等）
+   - SESSION.md — 当前群聊的临时记忆，存放本次会话的短期上下文（如当前讨论进度、临时决策、待办事项等）
+3. 提取有价值的知识，将永久性的内容写入 MEMORY.md，将临时性的内容写入 SESSION.md
+4. 去重后分别合并到对应的共享记忆文件
+n5. 完成后回复合并结果摘要，包括：向 MEMORY.md 添加了 X 条，向 SESSION.md 添加了 Y 条`;
                       void sendGroupMessage(
                         state as unknown as Parameters<typeof sendGroupMessage>[0],
                         state.activeGroupId,
