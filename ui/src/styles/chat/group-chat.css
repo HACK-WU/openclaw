@@ -441,6 +441,7 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
 }
 
 /* Announcement section */
@@ -702,8 +703,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  overflow-y: auto;
-  flex: 1;
+  flex-shrink: 0;
 }
 
 .group-members-panel__item {
@@ -1786,6 +1786,7 @@
 .plan-mode-section {
   padding: 12px 16px;
   border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .plan-mode-section__header {
@@ -1837,10 +1838,147 @@
   }
 }
 
+/* ─── Group Members Panel Memory Section ─── */
+
+.group-members-panel__memory {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+}
+
+.group-members-panel__memory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.group-members-panel__memory-header h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.group-members-panel__memory-header .btn--icon {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.6;
+  transition: opacity var(--duration-fast) ease;
+}
+
+.group-members-panel__memory-header .btn--icon:hover {
+  opacity: 1;
+}
+
+.group-members-panel__memory-header .btn--icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.group-members-panel__memory-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.group-members-panel__memory-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.group-members-panel__memory-empty span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.group-members-panel__memory-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.group-members-panel__memory-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.group-members-panel__memory-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+}
+
+.group-members-panel__memory-bar .memory-size-bar__header {
+  font-size: 10px;
+}
+
+.group-members-panel__memory-bar .memory-size-bar__track {
+  height: 4px;
+}
+
+.group-members-panel__memory-bar .memory-warning {
+  font-size: 10px;
+}
+
+.group-members-panel__memory-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.group-members-panel__memory-actions .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+/* Compact memory file list for members panel */
+.memory-file-list--compact {
+  gap: 2px;
+}
+
+.memory-file-item--compact {
+  padding: 6px 8px;
+  min-height: 28px;
+}
+
+.memory-file-item--compact .memory-file-item__name {
+  font-size: 12px;
+}
+
+.memory-file-item--compact .memory-file-item__size {
+  font-size: 10px;
+}
+
+.memory-file-item--compact .memory-file-item__action {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+}
+
+.memory-file-item--compact .memory-file-item__action svg {
+  width: 12px;
+  height: 12px;
+}
+
 /* ─── Group Members Panel Actions ─── */
 
 .group-members-panel__actions {
   padding: 12px 16px;
   border-top: 1px solid var(--border);
-  margin-top: auto;
+  flex-shrink: 0;
 }
