@@ -13,6 +13,7 @@ import {
 } from "../../group-chat/group-store.js";
 import { getLogger } from "../../logging.js";
 import { exportProjectDocs } from "../../projects/doc-export.js";
+import { importProjectDocs, previewImportDocs } from "../../projects/doc-import.js";
 import {
   createProject,
   createProjectDoc,
@@ -764,6 +765,87 @@ const handleProjectsDocsExport: GatewayRequestHandler = async ({ params, respond
   }
 };
 
+const handleProjectsDocsImport: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const data = params.data as string;
+  const format = params.format as "zip" | "json";
+  const conflictStrategy = params.conflictStrategy as "skip" | "overwrite" | "rename" | undefined;
+
+  if (!projectId) {
+    respond(false, undefined, { message: "projectId is required", code: 400 });
+    return;
+  }
+
+  if (!data) {
+    respond(false, undefined, { message: "data is required", code: 400 });
+    return;
+  }
+
+  if (!format || (format !== "zip" && format !== "json")) {
+    respond(false, undefined, { message: "format must be 'zip' or 'json'", code: 400 });
+    return;
+  }
+
+  try {
+    const result = await importProjectDocs({
+      projectId,
+      data,
+      format,
+      conflictStrategy: conflictStrategy ?? "rename",
+    });
+    log.info(
+      `Docs imported: ${result.imported} imported, ${result.skipped} skipped, ${result.errors.length} errors`,
+    );
+    respond(true, result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("not found")) {
+      respond(false, undefined, { message: msg, code: 404 });
+    } else if (msg.includes("exceeds size limit")) {
+      respond(false, undefined, { message: msg, code: 413 });
+    } else if (msg.includes("Invalid") || msg.includes("must contain")) {
+      respond(false, undefined, { message: msg, code: 400 });
+    } else {
+      log.error(`Failed to import docs: ${msg}`);
+      respond(false, undefined, { message: `Import failed: ${msg}`, code: 500 });
+    }
+  }
+};
+
+const handleProjectsDocsImportPreview: GatewayRequestHandler = async ({ params, respond }) => {
+  const data = params.data as string;
+  const format = params.format as "zip" | "json";
+  const projectId = params.projectId as string;
+
+  if (!data) {
+    respond(false, undefined, { message: "data is required", code: 400 });
+    return;
+  }
+
+  if (!format || (format !== "zip" && format !== "json")) {
+    respond(false, undefined, { message: "format must be 'zip' or 'json'", code: 400 });
+    return;
+  }
+
+  if (!projectId) {
+    respond(false, undefined, { message: "projectId is required", code: 400 });
+    return;
+  }
+
+  try {
+    const preview = await previewImportDocs(data, format, projectId);
+    respond(true, { preview });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("Invalid") || msg.includes("must contain")) {
+      respond(false, undefined, { message: msg, code: 400 });
+    } else {
+      log.error(`Failed to preview import: ${msg}`);
+      respond(false, undefined, { message: `Preview failed: ${msg}`, code: 500 });
+    }
+  }
+};
+
 // ─── Export Handlers ───
 
 export const projectsHandlers: GatewayRequestHandlers = {
@@ -791,6 +873,8 @@ export const projectsHandlers: GatewayRequestHandlers = {
   "projects.docs.update": handleProjectsDocsUpdate,
   "projects.docs.delete": handleProjectsDocsDelete,
   "projects.docs.export": handleProjectsDocsExport,
+  "projects.docs.import": handleProjectsDocsImport,
+  "projects.docs.importPreview": handleProjectsDocsImportPreview,
   // Phase 2: Group integration
   "projects.getLinkedGroups": handleProjectsGetLinkedGroups,
   "projects.linkGroup": handleProjectsLinkGroup,
