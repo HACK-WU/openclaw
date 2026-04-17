@@ -13,6 +13,26 @@
       "skipFiles": ["<node_internals>/**"]
     },
     {
+      "name": "Debug Gateway (openclaw)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "--inspect-brk", "src/entry.ts", "gateway"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Debug Gateway (Source)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "--inspect-brk", "src/entry.ts", "gateway"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
       "name": "Debug Gateway",
       "type": "node",
       "request": "launch",
@@ -20,7 +40,10 @@
       "runtimeArgs": ["gateway:dev"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"]
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "resolveSourceMapLocations": ["${workspaceFolder}/dist/**/*.js", "!**/node_modules/**"]
     },
     {
       "name": "Debug Current Test File",
