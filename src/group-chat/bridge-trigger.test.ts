@@ -524,3 +524,114 @@ describe("bridge-trigger abort handling", () => {
     }
   });
 });
+
+describe("summarizeOwnReply", () => {
+  const { summarizeOwnReply, extractFirstSentence, extractLastTwoSentences } = _test;
+
+  it("returns full content when length <= 200 chars", () => {
+    const shortContent = "这是一段短文本，不需要摘要处理。";
+    expect(summarizeOwnReply(shortContent)).toBe(shortContent);
+  });
+
+  it("summarizes long Chinese content with sentence separators", () => {
+    const longContent =
+      "收到，我来分析一下当前的路由结构。首先查看现有代码，发现路由层存在以下问题：缺少统一错误处理、中间件顺序不合理、缺少请求日志记录、缺少请求验证、缺少性能监控。我会重构路由层，添加统一的错误处理中间件，调整中间件顺序，添加请求日志记录功能，添加请求验证中间件，添加性能监控中间件。好的，开始重构路由层，预计需要修改5个文件，这是一个比较复杂的重构任务，需要仔细处理每个中间件的依赖关系，确保不会破坏现有的功能。";
+
+    const result = summarizeOwnReply(longContent);
+
+    // Should contain first sentence
+    expect(result).toContain("收到，我来分析一下当前的路由结构。");
+    // Should contain omission marker
+    expect(result).toContain("[已省略");
+    // Should contain last sentences
+    expect(result).toContain("确保不会破坏现有的功能。");
+    // Should not contain middle content
+    expect(result).not.toContain("缺少统一错误处理");
+  });
+
+  it("summarizes long English content with sentence separators", () => {
+    const longContent =
+      "I will analyze the current routing structure. First, I check the existing code and find several issues: missing unified error handling, middleware order is unreasonable, missing request logging. I will refactor the routing layer, add unified error handling middleware, adjust middleware order, and add request logging. Okay, starting the refactoring, expecting to modify 5 files.";
+
+    const result = summarizeOwnReply(longContent);
+
+    // Should contain first sentence
+    expect(result).toContain("I will analyze the current routing structure.");
+    // Should contain omission marker
+    expect(result).toContain("[已省略");
+    // Should contain last sentences
+    expect(result).toContain("Okay, starting the refactoring");
+  });
+
+  it("handles content with newline separators", () => {
+    const longContent =
+      "收到，开始分析。\n首先查看代码结构。\n发现几个问题。\n需要重构路由层。\n添加错误处理。\n好的，开始实现。\n这是第七行内容。\n这是第八行内容。\n这是第九行内容。\n这是第十行内容。\n这是第十一行内容。\n这是第十二行内容。\n这是第十三行内容。\n这是第十四行内容。\n这是第十五行内容。\n这是第十六行内容。\n这是第十七行内容。\n这是第十八行内容。\n这是第十九行内容。\n这是第二十行内容。\n这是第二十一行内容。\n这是第二十二行内容。\n这是第二十三行内容。\n这是第二十四行内容。\n这是第二十五行内容。\n这是最后一行内容。";
+
+    const result = summarizeOwnReply(longContent);
+
+    expect(result).toContain("收到，开始分析。");
+    expect(result).toContain("[已省略");
+    expect(result).toContain("这是最后一行内容。");
+  });
+
+  it("extracts first sentence correctly for Chinese", () => {
+    const content = "这是第一句话。这是第二句话。这是第三句话。";
+    const result = extractFirstSentence(content, 50);
+    expect(result).toBe("这是第一句话。");
+  });
+
+  it("extracts first sentence correctly for English", () => {
+    const content =
+      "This is the first sentence. This is the second sentence. This is the third sentence.";
+    const result = extractFirstSentence(content, 50);
+    expect(result).toBe("This is the first sentence. ");
+  });
+
+  it("extracts first sentence with max length limit", () => {
+    const content = "这是一段很长很长很长很长很长很长很长很长的文本没有句号分隔";
+    const result = extractFirstSentence(content, 20);
+    expect(result.length).toBe(20);
+    expect(result).toBe(content.slice(0, 20));
+  });
+
+  it("extracts last two sentences correctly for Chinese", () => {
+    const content = "这是第一句话。这是第二句话。这是第三句话。这是第四句话。";
+    const result = extractLastTwoSentences(content, 100);
+    expect(result).toBe("这是第三句话。这是第四句话。");
+  });
+
+  it("extracts last two sentences correctly for English", () => {
+    const content =
+      "This is the first sentence. This is the second sentence. This is the third sentence. This is the fourth sentence.";
+    const result = extractLastTwoSentences(content, 100);
+    expect(result).toBe("This is the third sentence. This is the fourth sentence.");
+  });
+
+  it("extracts last two sentences with max length limit", () => {
+    const content =
+      "这是第一句话。这是第二句话。这是第三句话。这是第四句话这是第五句话这是第六句话这是第七句话这是第八句话";
+    const result = extractLastTwoSentences(content, 20);
+    expect(result.length).toBeLessThanOrEqual(20);
+  });
+
+  it("handles content without sentence separators", () => {
+    const longContent =
+      "这是一段很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长的文本";
+    const result = summarizeOwnReply(longContent);
+
+    // Should still create summary with head and tail
+    expect(result).toContain("[已省略");
+    expect(result.length).toBeLessThan(longContent.length);
+  });
+
+  it("handles mixed Chinese and English content", () => {
+    const longContent =
+      "收到，开始分析。First, I check the code structure. 发现几个问题。I will refactor the routing layer. 好的，开始实现。This is line seven. 这是第八行。This is line nine. 这是第十行。This is line eleven. 这是第十二行。This is line thirteen. 这是第十四行。This is line fifteen. 这是第十六行。This is line seventeen. 这是第十八行。This is line nineteen. 这是最后一行。";
+
+    const result = summarizeOwnReply(longContent);
+
+    expect(result).toContain("收到，开始分析。");
+    expect(result).toContain("[已省略");
+    expect(result).toContain("这是最后一行。");
+  });
+});

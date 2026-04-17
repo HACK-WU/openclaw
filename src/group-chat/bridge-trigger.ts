@@ -631,8 +631,19 @@ async function buildCliContextMessage(params: {
           continue;
         }
         const sender = msg.sender.type === "owner" ? "Owner" : (msg.sender.agentId ?? "Agent");
-        const content = truncateSingleMessage(msg.content);
-        sections.push(`# > ${sender}: ${content}`);
+
+        // Check if this is CLI agent's own reply
+        const isOwnReply = msg.sender.type === "agent" && msg.sender.agentId === agentId;
+
+        if (isOwnReply) {
+          // Summarize own reply to avoid redundant display (terminal already has full content)
+          const summary = summarizeOwnReply(msg.content);
+          sections.push(`# > ${sender}: ${summary}`);
+        } else {
+          // Other members' messages: show full content (or truncated)
+          const content = truncateSingleMessage(msg.content);
+          sections.push(`# > ${sender}: ${content}`);
+        }
       }
       sections.push("");
     }
@@ -836,6 +847,93 @@ function truncateSingleMessage(content: string): string {
   return content.slice(0, MAX_SINGLE_MESSAGE_CHARS) + " [...]";
 }
 
+/**
+ * Summarize CLI agent's own reply to avoid redundant display in context.
+ * Format: first sentence + [omitted N chars] + last two sentences
+ */
+function summarizeOwnReply(content: string): string {
+  const MAX_HEAD = 50; // Max chars for head
+  const MAX_TAIL = 100; // Max chars for tail
+  const MIN_CONTENT = 200; // Don't summarize short content
+
+  if (content.length <= MIN_CONTENT) {
+    return content; // Content too short, no need to summarize
+  }
+
+  // Extract first sentence (or first MAX_HEAD chars)
+  const head = extractFirstSentence(content, MAX_HEAD);
+
+  // Extract last two sentences (or last MAX_TAIL chars)
+  const tail = extractLastTwoSentences(content, MAX_TAIL);
+
+  // Check if head and tail overlap or are too close
+  // If so, just return truncated content instead of summary format
+  if (head.length + tail.length >= content.length) {
+    return truncateSingleMessage(content);
+  }
+
+  // Calculate omitted chars
+  const omitted = content.length - head.length - tail.length;
+
+  return `${head} [已省略 ${omitted} 字] ${tail}`;
+}
+
+/**
+ * Extract first sentence from content (by punctuation or newline)
+ */
+function extractFirstSentence(content: string, maxLength: number): string {
+  // Sentence separators (Chinese and English)
+  const separators = ["。", "！", "？", "\n", ". ", "! ", "? "];
+
+  let firstEnd = maxLength;
+
+  for (const sep of separators) {
+    const idx = content.indexOf(sep);
+    if (idx > 0 && idx < firstEnd) {
+      firstEnd = idx + sep.length;
+    }
+  }
+
+  return content.slice(0, Math.min(firstEnd, maxLength));
+}
+
+/**
+ * Extract last two sentences from content
+ */
+function extractLastTwoSentences(content: string, maxLength: number): string {
+  // Sentence separators (Chinese and English)
+  const separators = ["。", "！", "？", "\n", ". ", "! ", "? "];
+
+  // Split content into sentences by finding all separator positions
+  const sentences: string[] = [];
+  let lastEnd = 0;
+
+  for (let i = 0; i < content.length; i++) {
+    for (const sep of separators) {
+      const sepLen = sep.length;
+      if (i >= sepLen - 1 && content.slice(i - sepLen + 1, i + 1) === sep) {
+        sentences.push(content.slice(lastEnd, i + 1));
+        lastEnd = i + 1;
+        break;
+      }
+    }
+  }
+
+  // Add remaining content as last sentence (if any)
+  if (lastEnd < content.length) {
+    sentences.push(content.slice(lastEnd));
+  }
+
+  // Extract last two sentences
+  if (sentences.length <= 1) {
+    // Only one sentence or no sentences, return last maxLength chars
+    return content.length > maxLength ? content.slice(-maxLength) : content;
+  }
+
+  const lastTwo = sentences.slice(-2).join("");
+  return lastTwo.length > maxLength ? lastTwo.slice(-maxLength) : lastTwo;
+}
+
 // ─── Completion Detection ───
 
 /**
@@ -980,4 +1078,7 @@ async function waitForCompletion(params: {
 
 export const _test = {
   resetBridgeAgentQueues,
+  summarizeOwnReply,
+  extractFirstSentence,
+  extractLastTwoSentences,
 };
