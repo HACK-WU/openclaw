@@ -30,6 +30,8 @@ import type {
   ProjectDocCreateDialogState,
   ProjectDocDeleteDialogState,
   ProjectDocEditDialogState,
+  DocExportDialogState,
+  DocImportDialogState,
 } from "./controllers/projects.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway.ts";
@@ -397,6 +399,8 @@ export type AppViewState = {
     projectDocCreateDialog: ProjectDocCreateDialogState | null;
     projectDocEditDialog: ProjectDocEditDialogState | null;
     projectDocDeleteDialog: ProjectDocDeleteDialogState | null;
+    projectDocExportDialog: DocExportDialogState | null;
+    projectDocImportDialog: DocImportDialogState | null;
     // Project linked groups state
     projectLinkedGroups: LinkedGroupEntry[];
     projectLinkedGroupsLoading: boolean;

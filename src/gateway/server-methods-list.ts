@@ -144,6 +144,22 @@ const BASE_METHODS = [
   "projects.rules.create",
   "projects.rules.update",
   "projects.rules.delete",
+  "projects.skills.list",
+  "projects.skills.get",
+  "projects.skills.create",
+  "projects.skills.update",
+  "projects.skills.delete",
+  "projects.docs.list",
+  "projects.docs.get",
+  "projects.docs.create",
+  "projects.docs.update",
+  "projects.docs.delete",
+  "projects.docs.export",
+  "projects.docs.import",
+  "projects.docs.importPreview",
+  "projects.getLinkedGroups",
+  "projects.linkGroup",
+  "projects.unlinkGroup",
 ];
 
 export function listGatewayMethods(): string[] {

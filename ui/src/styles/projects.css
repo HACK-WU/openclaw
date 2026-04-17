@@ -711,3 +711,143 @@
   border-top: 1px solid var(--border);
   margin-top: 1rem;
 }
+
+/* ─── Docs Header Actions ─── */
+
+.projects-docs-header__actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ─── Doc Export Dialog ─── */
+
+.projects-docs-export__select-all {
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.projects-docs-export__doc-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+}
+
+.projects-docs-export__doc-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.projects-docs-export__doc-item:hover {
+  background: var(--bg-hover);
+}
+
+.projects-docs-export__doc-name {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  color: var(--fg);
+}
+
+.projects-docs-export__doc-name svg {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+
+/* ─── Doc Import Dialog ─── */
+
+.projects-docs-import__filename {
+  font-size: 0.875rem;
+  color: var(--fg);
+  background: var(--bg-raised);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  word-break: break-all;
+}
+
+.projects-docs-import__doc-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+}
+
+.projects-docs-import__doc-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+}
+
+.projects-docs-import__doc-item--conflict {
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+
+.projects-docs-import__doc-icon svg {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+
+.projects-docs-import__doc-name {
+  flex: 1;
+  color: var(--fg);
+}
+
+.projects-docs-import__conflict-badge {
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
+  font-weight: 500;
+}
+
+.projects-docs-import__new-badge {
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+  font-weight: 500;
+}
+
+.projects-docs-import__strategy-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* ─── Form Checkbox / Radio (shared) ─── */
+
+.form-checkbox,
+.form-radio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--fg);
+}
+
+.form-checkbox input[type="checkbox"],
+.form-radio input[type="radio"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}

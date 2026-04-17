@@ -167,6 +167,49 @@ export type ProjectDocDeleteDialogState = {
   error: string | null;
 };
 
+// ─── Doc Export/Import Types ───
+
+export type DocExportResult = {
+  filename: string;
+  contentType: string;
+  data: string; // base64
+  docCount: number;
+};
+
+export type DocImportPreviewDoc = {
+  name: string;
+  isConflict: boolean;
+};
+
+export type DocImportPreviewResult = {
+  docCount: number;
+  docs: DocImportPreviewDoc[];
+};
+
+export type DocImportResult = {
+  imported: number;
+  skipped: number;
+  errors: Array<{ name: string; reason: string }>;
+};
+
+export type DocExportDialogState = {
+  projectId: string;
+  selectedDocIds: Set<string>;
+  isExporting: boolean;
+  error: string | null;
+};
+
+export type DocImportDialogState = {
+  projectId: string;
+  fileName: string;
+  fileData: string; // base64
+  format: "zip" | "json";
+  previewDocs: DocImportPreviewDoc[];
+  conflictStrategy: "rename" | "overwrite" | "skip";
+  isImporting: boolean;
+  error: string | null;
+};
+
 // 关联群聊条目（从后端 GroupIndexEntry 映射）
 export type LinkedGroupEntry = {
   groupId: string;
@@ -212,6 +255,9 @@ export type ProjectsState = {
   projectDocCreateDialog: ProjectDocCreateDialogState | null;
   projectDocEditDialog: ProjectDocEditDialogState | null;
   projectDocDeleteDialog: ProjectDocDeleteDialogState | null;
+  // 文档导出/导入状态
+  projectDocExportDialog: DocExportDialogState | null;
+  projectDocImportDialog: DocImportDialogState | null;
   // 关联群聊
   projectLinkedGroups: LinkedGroupEntry[];
   projectLinkedGroupsLoading: boolean;
@@ -243,6 +289,8 @@ export const DEFAULT_PROJECTS_STATE: ProjectsState = {
   projectDocCreateDialog: null,
   projectDocEditDialog: null,
   projectDocDeleteDialog: null,
+  projectDocExportDialog: null,
+  projectDocImportDialog: null,
 };
 
 export type ProjectsHost = {
@@ -694,5 +742,196 @@ export function setProjectManageTab(
       ...host.projectManageDialog,
       activeTab: tab,
     };
+  }
+}
+
+// ─── Doc Export/Import RPC Functions ───
+
+export function openDocExportDialog(host: ProjectsHost): void {
+  const dialog = host.projectManageDialog;
+  if (!dialog) {
+    return;
+  }
+  // Default: select all docs
+  const selectedDocIds = new Set(host.projectDocs.map((d) => d.id));
+  host.projectDocExportDialog = {
+    projectId: dialog.projectId,
+    selectedDocIds,
+    isExporting: false,
+    error: null,
+  };
+}
+
+export function closeDocExportDialog(host: ProjectsHost): void {
+  host.projectDocExportDialog = null;
+}
+
+export function toggleDocExportSelection(host: ProjectsHost, docId: string): void {
+  const dialog = host.projectDocExportDialog;
+  if (!dialog) {
+    return;
+  }
+  const selected = new Set(dialog.selectedDocIds);
+  if (selected.has(docId)) {
+    selected.delete(docId);
+  } else {
+    selected.add(docId);
+  }
+  host.projectDocExportDialog = { ...dialog, selectedDocIds: selected };
+}
+
+export function toggleDocExportSelectAll(host: ProjectsHost): void {
+  const dialog = host.projectDocExportDialog;
+  if (!dialog) {
+    return;
+  }
+  const allSelected = dialog.selectedDocIds.size === host.projectDocs.length;
+  const selectedDocIds = allSelected
+    ? new Set<string>()
+    : new Set(host.projectDocs.map((d) => d.id));
+  host.projectDocExportDialog = { ...dialog, selectedDocIds };
+}
+
+export async function exportProjectDocsFromDialog(host: ProjectsHost): Promise<void> {
+  const dialog = host.projectDocExportDialog;
+  if (!dialog || !host.client || !host.connected) {
+    return;
+  }
+  if (dialog.selectedDocIds.size === 0) {
+    host.projectDocExportDialog = { ...dialog, error: "Please select at least one document" };
+    return;
+  }
+  host.projectDocExportDialog = { ...dialog, isExporting: true, error: null };
+  try {
+    const docIds = Array.from(dialog.selectedDocIds);
+    const result = await host.client.request<DocExportResult>("projects.docs.export", {
+      projectId: dialog.projectId,
+      docIds,
+      format: "zip",
+    });
+    // Trigger browser download
+    const binaryStr = atob(result.data);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: result.contentType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = result.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    // Close dialog on success
+    host.projectDocExportDialog = null;
+  } catch (err) {
+    host.projectDocExportDialog = { ...dialog, isExporting: false, error: String(err) };
+  }
+}
+
+export async function openDocImportDialog(host: ProjectsHost): Promise<void> {
+  const dialog = host.projectManageDialog;
+  if (!dialog) {
+    return;
+  }
+  // Open file picker
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".zip,.json";
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+    // Read file as base64
+    const fileReader = new FileReader();
+    fileReader.addEventListener("load", async () => {
+      const arrayBuffer = fileReader.result as ArrayBuffer;
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+      const format = file.name.endsWith(".json") ? "json" : "zip";
+
+      // Get preview
+      if (host.client && host.connected) {
+        try {
+          const preview = await host.client.request<DocImportPreviewResult>(
+            "projects.docs.importPreview",
+            {
+              projectId: dialog.projectId,
+              data: base64,
+              format,
+            },
+          );
+          host.projectDocImportDialog = {
+            projectId: dialog.projectId,
+            fileName: file.name,
+            fileData: base64,
+            format,
+            previewDocs: preview.docs,
+            conflictStrategy: "rename",
+            isImporting: false,
+            error: null,
+          };
+        } catch (err) {
+          host.projectDocImportDialog = {
+            projectId: dialog.projectId,
+            fileName: file.name,
+            fileData: base64,
+            format,
+            previewDocs: [],
+            conflictStrategy: "rename",
+            isImporting: false,
+            error: String(err),
+          };
+        }
+      }
+    });
+    fileReader.readAsArrayBuffer(file);
+  });
+  input.click();
+}
+
+export function closeDocImportDialog(host: ProjectsHost): void {
+  host.projectDocImportDialog = null;
+}
+
+export function setDocImportConflictStrategy(
+  host: ProjectsHost,
+  strategy: "rename" | "overwrite" | "skip",
+): void {
+  const dialog = host.projectDocImportDialog;
+  if (!dialog) {
+    return;
+  }
+  host.projectDocImportDialog = { ...dialog, conflictStrategy: strategy };
+}
+
+export async function importProjectDocsFromDialog(host: ProjectsHost): Promise<boolean> {
+  const dialog = host.projectDocImportDialog;
+  if (!dialog || !host.client || !host.connected) {
+    return false;
+  }
+  host.projectDocImportDialog = { ...dialog, isImporting: true, error: null };
+  try {
+    const _result = await host.client.request<DocImportResult>("projects.docs.import", {
+      projectId: dialog.projectId,
+      data: dialog.fileData,
+      format: dialog.format,
+      conflictStrategy: dialog.conflictStrategy,
+    });
+    // Refresh docs list
+    await loadProjectDocs(host, dialog.projectId);
+    // Close dialog on success
+    host.projectDocImportDialog = null;
+    return true;
+  } catch (err) {
+    host.projectDocImportDialog = { ...dialog, isImporting: false, error: String(err) };
+    return false;
   }
 }

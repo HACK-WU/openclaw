@@ -8,6 +8,8 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type {
+  DocExportDialogState,
+  DocImportDialogState,
   LinkedGroupEntry,
   Project,
   ProjectCreateDialogState,
@@ -63,6 +65,9 @@ export type ProjectsViewProps = {
   projectDocCreateDialog: ProjectDocCreateDialogState | null;
   projectDocEditDialog: ProjectDocEditDialogState | null;
   projectDocDeleteDialog: ProjectDocDeleteDialogState | null;
+  // 文档导出/导入状态
+  projectDocExportDialog: DocExportDialogState | null;
+  projectDocImportDialog: DocImportDialogState | null;
   // 关联群聊
   projectLinkedGroups: LinkedGroupEntry[];
   projectLinkedGroupsLoading: boolean;
@@ -142,6 +147,16 @@ export type ProjectsViewProps = {
   // 预览模式切换（文档）
   onToggleDocCreatePreview: (previewMode: boolean) => void;
   onToggleDocEditPreview: (previewMode: boolean) => void;
+  // 文档导出/导入回调
+  onOpenDocExportDialog: () => void;
+  onCloseDocExportDialog: () => void;
+  onToggleDocExportSelection: (docId: string) => void;
+  onToggleDocExportSelectAll: () => void;
+  onExportDocs: () => void;
+  onOpenDocImportDialog: () => void;
+  onCloseDocImportDialog: () => void;
+  onSetImportConflictStrategy: (strategy: "rename" | "overwrite" | "skip") => void;
+  onImportDocs: () => void;
 };
 
 // ─── Main Render ───
@@ -1494,13 +1509,32 @@ function renderManageDocsTab(props: ProjectsViewProps): TemplateResult {
               : nothing
           }
         </h4>
-        <button
-          class="btn btn--sm btn--primary"
-          @click=${() => props.onOpenDocCreateDialog()}
-        >
-          ${icons.plus}
-          <span>${t("project.docs.create")}</span>
-        </button>
+        <div class="projects-docs-header__actions">
+          <button
+            class="btn btn--sm btn--primary"
+            @click=${() => props.onOpenDocCreateDialog()}
+          >
+            ${icons.plus}
+            <span>${t("project.docs.create")}</span>
+          </button>
+          <button
+            class="btn btn--sm"
+            ?disabled=${props.projectDocs.length === 0}
+            @click=${() => props.onOpenDocExportDialog()}
+            title=${t("project.docs.export")}
+          >
+            ${icons.download}
+            <span>${t("project.docs.export")}</span>
+          </button>
+          <button
+            class="btn btn--sm"
+            @click=${() => props.onOpenDocImportDialog()}
+            title=${t("project.docs.import")}
+          >
+            ${icons.upload}
+            <span>${t("project.docs.import")}</span>
+          </button>
+        </div>
       </div>
 
       ${
@@ -1526,6 +1560,9 @@ function renderManageDocsTab(props: ProjectsViewProps): TemplateResult {
               </div>
             `
       }
+
+      ${renderDocExportDialog(props)}
+      ${renderDocImportDialog(props)}
     </div>
   `;
 }
@@ -1842,6 +1879,232 @@ function renderDocDeleteDialog(props: ProjectsViewProps): TemplateResult | typeo
           >
             ${dialog.isBusy ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing}
             ${t("project.docs.delete.confirmButton")}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Doc Export Dialog ───
+
+function renderDocExportDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
+  const dialog = props.projectDocExportDialog;
+  if (!dialog) {
+    return nothing;
+  }
+
+  const allSelected = dialog.selectedDocIds.size === props.projectDocs.length;
+  const noneSelected = dialog.selectedDocIds.size === 0;
+
+  return html`
+    <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
+      @click=${(e: Event) => {
+        if ((e.target as HTMLElement).classList.contains("modal-overlay--light")) {
+          props.onCloseDocExportDialog();
+        }
+      }}
+    >
+      <div class="modal-card projects-dialog">
+        <div class="modal-header">
+          <h3 class="modal-title">${t("project.docs.export.dialog.title")}</h3>
+          <button class="modal-close" @click=${() => props.onCloseDocExportDialog()}>
+            ${icons.x}
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">
+              ${t("project.docs.export.dialog.selectLabel")}
+              (${dialog.selectedDocIds.size}/${props.projectDocs.length})
+            </label>
+            <div class="projects-docs-export__select-all">
+              <label class="form-checkbox">
+                <input
+                  type="checkbox"
+                  .checked=${allSelected}
+                  @change=${() => props.onToggleDocExportSelectAll()}
+                />
+                <span>${t("project.docs.export.dialog.selectAll")}</span>
+              </label>
+            </div>
+            <div class="projects-docs-export__doc-list">
+              ${props.projectDocs.map(
+                (doc) => html`
+                  <label class="form-checkbox projects-docs-export__doc-item">
+                    <input
+                      type="checkbox"
+                      .checked=${dialog.selectedDocIds.has(doc.id)}
+                      @change=${() => props.onToggleDocExportSelection(doc.id)}
+                    />
+                    <span class="projects-docs-export__doc-name">${icons.fileText} ${doc.name}</span>
+                  </label>
+                `,
+              )}
+            </div>
+          </div>
+
+          ${
+            dialog.error
+              ? html`
+              <div class="modal-error">
+                <span class="modal-error__icon">${icons.alertCircle}</span>
+                <span>${dialog.error}</span>
+              </div>
+            `
+              : nothing
+          }
+        </div>
+        <div class="modal-actions">
+          <button
+            class="btn btn--secondary"
+            ?disabled=${dialog.isExporting}
+            @click=${() => props.onCloseDocExportDialog()}
+          >
+            ${t("project.docs.export.dialog.cancel")}
+          </button>
+          <button
+            class="btn btn--primary"
+            ?disabled=${noneSelected || dialog.isExporting}
+            @click=${() => props.onExportDocs()}
+          >
+            ${
+              dialog.isExporting ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing
+            }
+            ${t("project.docs.export.dialog.confirm")}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Doc Import Dialog ───
+
+function renderDocImportDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
+  const dialog = props.projectDocImportDialog;
+  if (!dialog) {
+    return nothing;
+  }
+
+  const conflictCount = dialog.previewDocs.filter((d) => d.isConflict).length;
+
+  return html`
+    <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
+      @click=${(e: Event) => {
+        if ((e.target as HTMLElement).classList.contains("modal-overlay--light")) {
+          props.onCloseDocImportDialog();
+        }
+      }}
+    >
+      <div class="modal-card projects-dialog">
+        <div class="modal-header">
+          <h3 class="modal-title">${t("project.docs.import.dialog.title")}</h3>
+          <button class="modal-close" @click=${() => props.onCloseDocImportDialog()}>
+            ${icons.x}
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">${t("project.docs.import.dialog.file")}</label>
+            <div class="projects-docs-import__filename">${dialog.fileName}</div>
+          </div>
+
+          ${
+            dialog.previewDocs.length > 0
+              ? html`
+              <div class="form-group">
+                <label class="form-label">
+                  ${t("project.docs.import.dialog.containedDocs")}
+                  (${dialog.previewDocs.length})
+                </label>
+                <div class="projects-docs-import__doc-list">
+                  ${dialog.previewDocs.map(
+                    (doc) => html`
+                      <div class="projects-docs-import__doc-item ${doc.isConflict ? "projects-docs-import__doc-item--conflict" : ""}">
+                        <span class="projects-docs-import__doc-icon">${icons.fileText}</span>
+                        <span class="projects-docs-import__doc-name">${doc.name}</span>
+                        ${
+                          doc.isConflict
+                            ? html`<span class="projects-docs-import__conflict-badge">${t("project.docs.import.dialog.conflict")}</span>`
+                            : html`<span class="projects-docs-import__new-badge">${t("project.docs.import.dialog.newDoc")}</span>`
+                        }
+                      </div>
+                    `,
+                  )}
+                </div>
+              </div>
+            `
+              : nothing
+          }
+
+          ${
+            conflictCount > 0
+              ? html`
+              <div class="form-group">
+                <label class="form-label">${t("project.docs.import.dialog.conflictStrategy")}</label>
+                <div class="projects-docs-import__strategy-options">
+                  <label class="form-radio">
+                    <input
+                      type="radio"
+                      name="conflictStrategy"
+                      .checked=${dialog.conflictStrategy === "rename"}
+                      @change=${() => props.onSetImportConflictStrategy("rename")}
+                    />
+                    <span>${t("project.docs.import.dialog.strategy.rename")}</span>
+                  </label>
+                  <label class="form-radio">
+                    <input
+                      type="radio"
+                      name="conflictStrategy"
+                      .checked=${dialog.conflictStrategy === "overwrite"}
+                      @change=${() => props.onSetImportConflictStrategy("overwrite")}
+                    />
+                    <span>${t("project.docs.import.dialog.strategy.overwrite")}</span>
+                  </label>
+                  <label class="form-radio">
+                    <input
+                      type="radio"
+                      name="conflictStrategy"
+                      .checked=${dialog.conflictStrategy === "skip"}
+                      @change=${() => props.onSetImportConflictStrategy("skip")}
+                    />
+                    <span>${t("project.docs.import.dialog.strategy.skip")}</span>
+                  </label>
+                </div>
+              </div>
+            `
+              : nothing
+          }
+
+          ${
+            dialog.error
+              ? html`
+              <div class="modal-error">
+                <span class="modal-error__icon">${icons.alertCircle}</span>
+                <span>${dialog.error}</span>
+              </div>
+            `
+              : nothing
+          }
+        </div>
+        <div class="modal-actions">
+          <button
+            class="btn btn--secondary"
+            ?disabled=${dialog.isImporting}
+            @click=${() => props.onCloseDocImportDialog()}
+          >
+            ${t("project.docs.import.dialog.cancel")}
+          </button>
+          <button
+            class="btn btn--primary"
+            ?disabled=${dialog.isImporting || dialog.previewDocs.length === 0}
+            @click=${() => props.onImportDocs()}
+          >
+            ${
+              dialog.isImporting ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing
+            }
+            ${t("project.docs.import.dialog.confirm")}
           </button>
         </div>
       </div>

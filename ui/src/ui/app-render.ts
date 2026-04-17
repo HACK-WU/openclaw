@@ -113,6 +113,8 @@ import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadPresence } from "./controllers/presence.ts";
 import {
+  closeDocExportDialog,
+  closeDocImportDialog,
   createProject,
   createProjectDoc,
   createProjectRule,
@@ -121,11 +123,18 @@ import {
   deleteProjectDoc,
   deleteProjectRule,
   deleteProjectSkill,
+  exportProjectDocsFromDialog,
+  importProjectDocsFromDialog,
   loadLinkedGroups,
   loadProjectDocs,
   loadProjectInfo,
   loadProjectRules,
   loadProjectSkills,
+  openDocExportDialog,
+  openDocImportDialog,
+  setDocImportConflictStrategy,
+  toggleDocExportSelectAll,
+  toggleDocExportSelection,
   updateProject,
   updateProjectDoc,
   updateProjectRule,
@@ -654,6 +663,8 @@ export function renderApp(state: AppViewState) {
                   state.projectSkills = [];
                   state.projectDocs = [];
                   state.projectLinkedGroups = [];
+                  state.projectDocExportDialog = null;
+                  state.projectDocImportDialog = null;
                 },
                 onSetManageTab: (tab) => {
                   if (state.projectManageDialog) {
@@ -859,6 +870,25 @@ export function renderApp(state: AppViewState) {
                     };
                   }
                 },
+                // 文档导出/导入
+                projectDocExportDialog: state.projectDocExportDialog,
+                projectDocImportDialog: state.projectDocImportDialog,
+                onOpenDocExportDialog: () => openDocExportDialog(state as unknown as ProjectsHost),
+                onCloseDocExportDialog: () =>
+                  closeDocExportDialog(state as unknown as ProjectsHost),
+                onToggleDocExportSelection: (docId) =>
+                  toggleDocExportSelection(state as unknown as ProjectsHost, docId),
+                onToggleDocExportSelectAll: () =>
+                  toggleDocExportSelectAll(state as unknown as ProjectsHost),
+                onExportDocs: () =>
+                  void exportProjectDocsFromDialog(state as unknown as ProjectsHost),
+                onOpenDocImportDialog: () => openDocImportDialog(state as unknown as ProjectsHost),
+                onCloseDocImportDialog: () =>
+                  closeDocImportDialog(state as unknown as ProjectsHost),
+                onSetImportConflictStrategy: (strategy) =>
+                  setDocImportConflictStrategy(state as unknown as ProjectsHost, strategy),
+                onImportDocs: () =>
+                  void importProjectDocsFromDialog(state as unknown as ProjectsHost),
               })
             : nothing
         }
