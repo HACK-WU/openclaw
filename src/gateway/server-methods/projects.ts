@@ -12,6 +12,7 @@ import {
   updateGroupMeta,
 } from "../../group-chat/group-store.js";
 import { getLogger } from "../../logging.js";
+import { exportProjectDocs } from "../../projects/doc-export.js";
 import {
   createProject,
   createProjectDoc,
@@ -732,6 +733,37 @@ const handleProjectsDocsDelete: GatewayRequestHandler = async ({ params, respond
   }
 };
 
+const handleProjectsDocsExport: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const docIds = params.docIds as string[] | undefined;
+  const format = (params.format as "zip" | "json" | undefined) ?? "zip";
+
+  if (!projectId) {
+    respond(false, undefined, { message: "projectId is required", code: 400 });
+    return;
+  }
+
+  try {
+    const result = await exportProjectDocs({
+      projectId,
+      docIds,
+      format,
+    });
+    log.info(`Docs exported: ${result.docCount} docs from project ${projectId}`);
+    respond(true, result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("not found")) {
+      respond(false, undefined, { message: msg, code: 404 });
+    } else if (msg.includes("exceeds size limit")) {
+      respond(false, undefined, { message: msg, code: 413 });
+    } else {
+      log.error(`Failed to export docs: ${String(err)}`);
+      respond(false, undefined, { message: "Failed to export docs", code: 500 });
+    }
+  }
+};
+
 // ─── Export Handlers ───
 
 export const projectsHandlers: GatewayRequestHandlers = {
@@ -758,6 +790,7 @@ export const projectsHandlers: GatewayRequestHandlers = {
   "projects.docs.create": handleProjectsDocsCreate,
   "projects.docs.update": handleProjectsDocsUpdate,
   "projects.docs.delete": handleProjectsDocsDelete,
+  "projects.docs.export": handleProjectsDocsExport,
   // Phase 2: Group integration
   "projects.getLinkedGroups": handleProjectsGetLinkedGroups,
   "projects.linkGroup": handleProjectsLinkGroup,
