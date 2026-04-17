@@ -184,8 +184,8 @@ export type BridgeAuditLogEntry = {
 export const DEFAULT_PTY_COLS = 120;
 /** Default rows for new PTY instances. */
 export const DEFAULT_PTY_ROWS = 30;
-/** Default single-reply timeout (5 minutes). */
-export const DEFAULT_REPLY_TIMEOUT_MS = 300_000;
+/** Default single-reply timeout (10 minutes). */
+export const DEFAULT_REPLY_TIMEOUT_MS = 600_000;
 /** Default idle reclaim timeout (10 minutes). */
 export const DEFAULT_IDLE_TIMEOUT_MS = 600_000;
 /** Maximum restarts before giving up. */
