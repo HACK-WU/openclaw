@@ -25,6 +25,8 @@ describe("importProjectDocs", () => {
     vi.mocked(loadProjectMeta).mockReturnValue({
       id: mockProjectId,
       name: "Test Project",
+      directory: "/test/project",
+      documents: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
