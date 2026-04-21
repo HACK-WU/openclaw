@@ -37,6 +37,8 @@ import {
   updateProjectRule,
   updateProjectSkill,
 } from "../../projects/project-store.js";
+import { exportProjectResources } from "../../projects/resource-export.js";
+import { importProjectResources, previewImportResources } from "../../projects/resource-import.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 
 const log = getLogger("projects:handler");
@@ -848,6 +850,127 @@ const handleProjectsDocsImportPreview: GatewayRequestHandler = async ({ params, 
 
 // ─── Export Handlers ───
 
+// ─── Unified Resource Export/Import ───
+
+const handleProjectsResourcesExport: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const resourceTypes = params.resourceTypes as ("docs" | "rules" | "skills")[];
+  const docIds = params.docIds as string[] | undefined;
+  const ruleIds = params.ruleIds as string[] | undefined;
+  const skillIds = params.skillIds as string[] | undefined;
+
+  if (!projectId) {
+    respond(false, undefined, { message: "projectId is required", code: 400 });
+    return;
+  }
+
+  if (!resourceTypes || resourceTypes.length === 0) {
+    respond(false, undefined, {
+      message: "resourceTypes is required and must have at least one type",
+      code: 400,
+    });
+    return;
+  }
+
+  try {
+    const result = await exportProjectResources({
+      projectId,
+      resourceTypes,
+      docIds,
+      ruleIds,
+      skillIds,
+    });
+    log.info(`Resources exported: ${result.stats.total} items from project ${projectId}`);
+    respond(true, result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("not found")) {
+      respond(false, undefined, { message: msg, code: 404 });
+    } else if (msg.includes("exceeds size limit")) {
+      respond(false, undefined, { message: msg, code: 413 });
+    } else if (msg.includes("No resources found") || msg.includes("At least one")) {
+      respond(false, undefined, { message: msg, code: 400 });
+    } else {
+      log.error(`Failed to export resources: ${String(err)}`);
+      respond(false, undefined, { message: "Failed to export resources", code: 500 });
+    }
+  }
+};
+
+const handleProjectsResourcesImportPreview: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const data = params.data as string;
+
+  if (!projectId) {
+    respond(false, undefined, { message: "projectId is required", code: 400 });
+    return;
+  }
+
+  if (!data) {
+    respond(false, undefined, { message: "data is required", code: 400 });
+    return;
+  }
+
+  try {
+    const preview = await previewImportResources(projectId, data);
+    respond(true, preview);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("not found")) {
+      respond(false, undefined, { message: msg, code: 404 });
+    } else if (msg.includes("Invalid") || msg.includes("must contain")) {
+      respond(false, undefined, { message: msg, code: 400 });
+    } else if (msg.includes("exceeds size limit")) {
+      respond(false, undefined, { message: msg, code: 413 });
+    } else {
+      log.error(`Failed to preview import: ${msg}`);
+      respond(false, undefined, { message: `Preview failed: ${msg}`, code: 500 });
+    }
+  }
+};
+
+const handleProjectsResourcesImport: GatewayRequestHandler = async ({ params, respond }) => {
+  const projectId = params.projectId as string;
+  const data = params.data as string;
+  const conflictStrategy = params.conflictStrategy as "rename" | "overwrite" | "skip" | undefined;
+  const resourceTypes = params.resourceTypes as ("docs" | "rules" | "skills")[] | undefined;
+
+  if (!projectId) {
+    respond(false, undefined, { message: "projectId is required", code: 400 });
+    return;
+  }
+
+  if (!data) {
+    respond(false, undefined, { message: "data is required", code: 400 });
+    return;
+  }
+
+  try {
+    const result = await importProjectResources({
+      projectId,
+      data,
+      conflictStrategy: conflictStrategy ?? "rename",
+      resourceTypes,
+    });
+    log.info(
+      `Resources imported: ${result.imported.docs + result.imported.rules + result.imported.skills} imported, ${result.skipped.docs + result.skipped.rules + result.skipped.skills} skipped, ${result.errors.length} errors`,
+    );
+    respond(true, result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("not found")) {
+      respond(false, undefined, { message: msg, code: 404 });
+    } else if (msg.includes("Invalid") || msg.includes("must contain")) {
+      respond(false, undefined, { message: msg, code: 400 });
+    } else if (msg.includes("exceeds size limit")) {
+      respond(false, undefined, { message: msg, code: 413 });
+    } else {
+      log.error(`Failed to import resources: ${msg}`);
+      respond(false, undefined, { message: `Import failed: ${msg}`, code: 500 });
+    }
+  }
+};
+
 export const projectsHandlers: GatewayRequestHandlers = {
   "projects.list": handleProjectsList,
   "projects.info": handleProjectsInfo,
@@ -875,6 +998,10 @@ export const projectsHandlers: GatewayRequestHandlers = {
   "projects.docs.export": handleProjectsDocsExport,
   "projects.docs.import": handleProjectsDocsImport,
   "projects.docs.importPreview": handleProjectsDocsImportPreview,
+  // Unified resource export/import
+  "projects.resources.export": handleProjectsResourcesExport,
+  "projects.resources.importPreview": handleProjectsResourcesImportPreview,
+  "projects.resources.import": handleProjectsResourcesImport,
   // Phase 2: Group integration
   "projects.getLinkedGroups": handleProjectsGetLinkedGroups,
   "projects.linkGroup": handleProjectsLinkGroup,

@@ -135,6 +135,18 @@ import {
   setDocImportConflictStrategy,
   toggleDocExportSelectAll,
   toggleDocExportSelection,
+  openResourceExportDialog,
+  closeResourceExportDialog,
+  toggleResourceExportType,
+  toggleResourceExportDoc,
+  toggleResourceExportRule,
+  toggleResourceExportSkill,
+  toggleResourceExportSelectAll,
+  exportProjectResourcesFromDialog,
+  openResourceImportDialog,
+  closeResourceImportDialog,
+  setResourceImportConflictStrategy,
+  importProjectResourcesFromDialog,
   updateProject,
   updateProjectDoc,
   updateProjectRule,
@@ -665,6 +677,8 @@ export function renderApp(state: AppViewState) {
                   state.projectLinkedGroups = [];
                   state.projectDocExportDialog = null;
                   state.projectDocImportDialog = null;
+                  state.projectResourceExportDialog = null;
+                  state.projectResourceImportDialog = null;
                 },
                 onSetManageTab: (tab) => {
                   if (state.projectManageDialog) {
@@ -889,6 +903,33 @@ export function renderApp(state: AppViewState) {
                   setDocImportConflictStrategy(state as unknown as ProjectsHost, strategy),
                 onImportDocs: () =>
                   void importProjectDocsFromDialog(state as unknown as ProjectsHost),
+                // 统一资源导出/导入
+                projectResourceExportDialog: state.projectResourceExportDialog,
+                projectResourceImportDialog: state.projectResourceImportDialog,
+                onOpenResourceExportDialog: () =>
+                  openResourceExportDialog(state as unknown as ProjectsHost),
+                onCloseResourceExportDialog: () =>
+                  closeResourceExportDialog(state as unknown as ProjectsHost),
+                onToggleResourceExportType: (type) =>
+                  toggleResourceExportType(state as unknown as ProjectsHost, type),
+                onToggleResourceExportDoc: (docId) =>
+                  toggleResourceExportDoc(state as unknown as ProjectsHost, docId),
+                onToggleResourceExportRule: (ruleId) =>
+                  toggleResourceExportRule(state as unknown as ProjectsHost, ruleId),
+                onToggleResourceExportSkill: (skillId) =>
+                  toggleResourceExportSkill(state as unknown as ProjectsHost, skillId),
+                onToggleResourceExportSelectAll: () =>
+                  toggleResourceExportSelectAll(state as unknown as ProjectsHost),
+                onExportResources: () =>
+                  void exportProjectResourcesFromDialog(state as unknown as ProjectsHost),
+                onOpenResourceImportDialog: () =>
+                  openResourceImportDialog(state as unknown as ProjectsHost),
+                onCloseResourceImportDialog: () =>
+                  closeResourceImportDialog(state as unknown as ProjectsHost),
+                onSetResourceImportConflictStrategy: (strategy) =>
+                  setResourceImportConflictStrategy(state as unknown as ProjectsHost, strategy),
+                onImportResources: () =>
+                  void importProjectResourcesFromDialog(state as unknown as ProjectsHost),
               })
             : nothing
         }

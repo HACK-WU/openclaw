@@ -29,6 +29,8 @@ import type {
   ProjectSkillCreateDialogState,
   ProjectSkillDeleteDialogState,
   ProjectSkillEditDialogState,
+  ResourceExportDialogState,
+  ResourceImportDialogState,
   ValidationResult,
 } from "../controllers/projects.ts";
 import { t } from "../i18n/index.ts";
@@ -68,6 +70,9 @@ export type ProjectsViewProps = {
   // 文档导出/导入状态
   projectDocExportDialog: DocExportDialogState | null;
   projectDocImportDialog: DocImportDialogState | null;
+  // 统一资源导出/导入状态
+  projectResourceExportDialog: ResourceExportDialogState | null;
+  projectResourceImportDialog: ResourceImportDialogState | null;
   // 关联群聊
   projectLinkedGroups: LinkedGroupEntry[];
   projectLinkedGroupsLoading: boolean;
@@ -157,6 +162,19 @@ export type ProjectsViewProps = {
   onCloseDocImportDialog: () => void;
   onSetImportConflictStrategy: (strategy: "rename" | "overwrite" | "skip") => void;
   onImportDocs: () => void;
+  // 统一资源导出/导入回调
+  onOpenResourceExportDialog: () => void;
+  onCloseResourceExportDialog: () => void;
+  onToggleResourceExportType: (type: "docs" | "rules" | "skills") => void;
+  onToggleResourceExportDoc: (docId: string) => void;
+  onToggleResourceExportRule: (ruleId: string) => void;
+  onToggleResourceExportSkill: (skillId: string) => void;
+  onToggleResourceExportSelectAll: () => void;
+  onExportResources: () => void;
+  onOpenResourceImportDialog: () => void;
+  onCloseResourceImportDialog: () => void;
+  onSetResourceImportConflictStrategy: (strategy: "rename" | "overwrite" | "skip") => void;
+  onImportResources: () => void;
 };
 
 // ─── Main Render ───
@@ -199,6 +217,8 @@ export function renderProjectsView(props: ProjectsViewProps): TemplateResult {
       ${renderDocCreateDialog(props)}
       ${renderDocEditDialog(props)}
       ${renderDocDeleteDialog(props)}
+      ${renderResourceExportDialog(props)}
+      ${renderResourceImportDialog(props)}
     </div>
   `;
 }
@@ -502,6 +522,24 @@ function renderManageDialog(props: ProjectsViewProps): TemplateResult | typeof n
       <div class="modal-card projects-manage-dialog">
         <div class="modal-header">
           <h3 class="modal-title">${t("project.manage.title")} - ${dialog.projectName}</h3>
+          <div class="projects-manage-dialog__header-actions">
+            <button
+              class="btn btn--sm"
+              @click=${() => props.onOpenResourceExportDialog()}
+              title=${t("project.resources.export")}
+            >
+              ${icons.download}
+              <span>${t("project.resources.export")}</span>
+            </button>
+            <button
+              class="btn btn--sm"
+              @click=${() => props.onOpenResourceImportDialog()}
+              title=${t("project.resources.import")}
+            >
+              ${icons.upload}
+              <span>${t("project.resources.import")}</span>
+            </button>
+          </div>
           <button class="modal-close" @click=${() => props.onCloseManageDialog()}>
             ${icons.x}
           </button>
@@ -1562,7 +1600,6 @@ function renderManageDocsTab(props: ProjectsViewProps): TemplateResult {
       }
 
       ${renderDocExportDialog(props)}
-      ${renderDocImportDialog(props)}
     </div>
   `;
 }
@@ -1979,58 +2016,168 @@ function renderDocExportDialog(props: ProjectsViewProps): TemplateResult | typeo
   `;
 }
 
-// ─── Doc Import Dialog ───
+// ─── Resource Export Dialog ───
 
-function renderDocImportDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
-  const dialog = props.projectDocImportDialog;
+function renderResourceExportDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
+  const dialog = props.projectResourceExportDialog;
   if (!dialog) {
     return nothing;
   }
 
-  const conflictCount = dialog.previewDocs.filter((d) => d.hasConflict).length;
+  // 计算选中数量
+  const docCount = dialog.selectedTypes.has("docs") ? dialog.selectedDocIds.size : 0;
+  const ruleCount = dialog.selectedTypes.has("rules") ? dialog.selectedRuleIds.size : 0;
+  const skillCount = dialog.selectedTypes.has("skills") ? dialog.selectedSkillIds.size : 0;
+  const totalCount = docCount + ruleCount + skillCount;
+
+  // 计算全选状态
+  const allDocsSelected =
+    dialog.selectedTypes.has("docs") && dialog.selectedDocIds.size === props.projectDocs.length;
+  const allRulesSelected =
+    dialog.selectedTypes.has("rules") && dialog.selectedRuleIds.size === props.projectRules.length;
+  const allSkillsSelected =
+    dialog.selectedTypes.has("skills") &&
+    dialog.selectedSkillIds.size === props.projectSkills.length;
+  const allSelected = allDocsSelected && allRulesSelected && allSkillsSelected;
 
   return html`
     <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
       @click=${(e: Event) => {
         if ((e.target as HTMLElement).classList.contains("modal-overlay--light")) {
-          props.onCloseDocImportDialog();
+          props.onCloseResourceExportDialog();
         }
       }}
     >
-      <div class="modal-card projects-dialog">
+      <div class="modal-card projects-dialog projects-dialog--wide">
         <div class="modal-header">
-          <h3 class="modal-title">${t("project.docs.import.dialog.title")}</h3>
-          <button class="modal-close" @click=${() => props.onCloseDocImportDialog()}>
+          <h3 class="modal-title">${t("project.resources.export.dialog.title")}</h3>
+          <button class="modal-close" @click=${() => props.onCloseResourceExportDialog()}>
             ${icons.x}
           </button>
         </div>
         <div class="modal-body">
+          <!-- 选择导出内容 -->
           <div class="form-group">
-            <label class="form-label">${t("project.docs.import.dialog.file")}</label>
-            <div class="projects-docs-import__filename">${dialog.fileName}</div>
+            <label class="form-label">${t("project.resources.export.dialog.selectContent")}</label>
+            <div class="projects-resource-export__type-selector">
+              <label class="form-checkbox projects-resource-export__type-checkbox">
+                <input
+                  type="checkbox"
+                  .checked=${dialog.selectedTypes.has("docs")}
+                  @change=${() => props.onToggleResourceExportType("docs")}
+                />
+                <span>${t("project.resources.export.dialog.docs")} (${props.projectDocs.length})</span>
+              </label>
+              <label class="form-checkbox projects-resource-export__type-checkbox">
+                <input
+                  type="checkbox"
+                  .checked=${dialog.selectedTypes.has("rules")}
+                  @change=${() => props.onToggleResourceExportType("rules")}
+                />
+                <span>${t("project.resources.export.dialog.rules")} (${props.projectRules.length})</span>
+              </label>
+              <label class="form-checkbox projects-resource-export__type-checkbox">
+                <input
+                  type="checkbox"
+                  .checked=${dialog.selectedTypes.has("skills")}
+                  @change=${() => props.onToggleResourceExportType("skills")}
+                />
+                <span>${t("project.resources.export.dialog.skills")} (${props.projectSkills.length})</span>
+              </label>
+            </div>
           </div>
 
+          <div class="projects-resource-export__divider"></div>
+
+          <!-- 全选按钮 -->
+          <div class="form-group">
+            <label class="form-checkbox">
+              <input
+                type="checkbox"
+                .checked=${allSelected}
+                @change=${() => props.onToggleResourceExportSelectAll()}
+              />
+              <span>${t("project.resources.export.dialog.selectAll")}</span>
+            </label>
+          </div>
+
+          <!-- 文档列表 -->
           ${
-            dialog.previewDocs.length > 0
+            dialog.selectedTypes.has("docs") && props.projectDocs.length > 0
               ? html`
               <div class="form-group">
                 <label class="form-label">
-                  ${t("project.docs.import.dialog.containedDocs")}
-                  (${dialog.previewDocs.length})
+                  ${t("project.resources.export.dialog.docs")} (${docCount}/${props.projectDocs.length})
                 </label>
-                <div class="projects-docs-import__doc-list">
-                  ${dialog.previewDocs.map(
+                <div class="projects-resource-export__resource-list">
+                  ${props.projectDocs.map(
                     (doc) => html`
-                      <div class="projects-docs-import__doc-item ${doc.hasConflict ? "projects-docs-import__doc-item--conflict" : ""}">
-                        <span class="projects-docs-import__doc-icon">${icons.fileText}</span>
-                        <span class="projects-docs-import__doc-name">${doc.name}</span>
-                        ${
-                          doc.hasConflict
-                            ? html`<span class="projects-docs-import__conflict-badge">${t("project.docs.import.dialog.conflict")}</span>`
-                            : html`<span class="projects-docs-import__new-badge">${t("project.docs.import.dialog.newDoc")}</span>`
-                        }
-                      </div>
-                    `,
+                    <label class="form-checkbox projects-resource-export__resource-item">
+                      <input
+                        type="checkbox"
+                        .checked=${dialog.selectedDocIds.has(doc.id)}
+                        @change=${() => props.onToggleResourceExportDoc(doc.id)}
+                      />
+                      <span class="projects-resource-export__resource-icon">${icons.fileText}</span>
+                      <span class="projects-resource-export__resource-name">${doc.name}</span>
+                    </label>
+                  `,
+                  )}
+                </div>
+              </div>
+            `
+              : nothing
+          }
+
+          <!-- 规则列表 -->
+          ${
+            dialog.selectedTypes.has("rules") && props.projectRules.length > 0
+              ? html`
+              <div class="form-group">
+                <label class="form-label">
+                  ${t("project.resources.export.dialog.rules")} (${ruleCount}/${props.projectRules.length})
+                </label>
+                <div class="projects-resource-export__resource-list">
+                  ${props.projectRules.map(
+                    (rule) => html`
+                    <label class="form-checkbox projects-resource-export__resource-item">
+                      <input
+                        type="checkbox"
+                        .checked=${dialog.selectedRuleIds.has(rule.id)}
+                        @change=${() => props.onToggleResourceExportRule(rule.id)}
+                      />
+                      <span class="projects-resource-export__resource-icon">${icons.fileText}</span>
+                      <span class="projects-resource-export__resource-name">${rule.title}</span>
+                    </label>
+                  `,
+                  )}
+                </div>
+              </div>
+            `
+              : nothing
+          }
+
+          <!-- 技能列表 -->
+          ${
+            dialog.selectedTypes.has("skills") && props.projectSkills.length > 0
+              ? html`
+              <div class="form-group">
+                <label class="form-label">
+                  ${t("project.resources.export.dialog.skills")} (${skillCount}/${props.projectSkills.length})
+                </label>
+                <div class="projects-resource-export__resource-list">
+                  ${props.projectSkills.map(
+                    (skill) => html`
+                    <label class="form-checkbox projects-resource-export__resource-item">
+                      <input
+                        type="checkbox"
+                        .checked=${dialog.selectedSkillIds.has(skill.id)}
+                        @change=${() => props.onToggleResourceExportSkill(skill.id)}
+                      />
+                      <span class="projects-resource-export__resource-icon">${icons.fileText}</span>
+                      <span class="projects-resource-export__resource-name">${skill.name}</span>
+                    </label>
+                  `,
                   )}
                 </div>
               </div>
@@ -2039,37 +2186,205 @@ function renderDocImportDialog(props: ProjectsViewProps): TemplateResult | typeo
           }
 
           ${
-            conflictCount > 0
+            dialog.error
+              ? html`
+              <div class="modal-error">
+                <span class="modal-error__icon">${icons.alertCircle}</span>
+                <span>${dialog.error}</span>
+              </div>
+            `
+              : nothing
+          }
+        </div>
+        <div class="modal-actions">
+          <button
+            class="btn btn--secondary"
+            ?disabled=${dialog.isExporting}
+            @click=${() => props.onCloseResourceExportDialog()}
+          >
+            ${t("project.resources.export.dialog.cancel")}
+          </button>
+          <button
+            class="btn btn--primary"
+            ?disabled=${totalCount === 0 || dialog.isExporting}
+            @click=${() => props.onExportResources()}
+          >
+            ${
+              dialog.isExporting ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing
+            }
+            ${t("project.resources.export.dialog.confirm", { count: String(totalCount) })}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Resource Import Dialog ───
+
+function renderResourceImportDialog(props: ProjectsViewProps): TemplateResult | typeof nothing {
+  const dialog = props.projectResourceImportDialog;
+  if (!dialog) {
+    return nothing;
+  }
+
+  const stats = dialog.preview.stats;
+  const resources = dialog.preview.resources;
+
+  const totalCount = stats.docs.total + stats.rules.total + stats.skills.total;
+  const totalConflict = stats.docs.conflict + stats.rules.conflict + stats.skills.conflict;
+
+  return html`
+    <div class="modal-overlay modal-overlay--light" role="dialog" aria-modal="true"
+      @click=${(e: Event) => {
+        if ((e.target as HTMLElement).classList.contains("modal-overlay--light")) {
+          props.onCloseResourceImportDialog();
+        }
+      }}
+    >
+      <div class="modal-card projects-dialog projects-dialog--wide">
+        <div class="modal-header">
+          <h3 class="modal-title">${t("project.resources.import.dialog.title")}</h3>
+          <button class="modal-close" @click=${() => props.onCloseResourceImportDialog()}>
+            ${icons.x}
+          </button>
+        </div>
+        <div class="modal-body">
+          <!-- 文件名 -->
+          <div class="form-group">
+            <label class="form-label">${t("project.resources.import.dialog.file")}</label>
+            <div class="projects-resource-import__filename">${dialog.fileName}</div>
+          </div>
+
+          <div class="projects-resource-import__divider"></div>
+
+          <!-- 文档列表 -->
+          ${
+            resources.docs.length > 0
               ? html`
               <div class="form-group">
-                <label class="form-label">${t("project.docs.import.dialog.conflictStrategy")}</label>
-                <div class="projects-docs-import__strategy-options">
+                <label class="form-label">
+                  ${t("project.resources.import.dialog.docs")} (${stats.docs.total})
+                </label>
+                <div class="projects-resource-import__resource-list">
+                  ${resources.docs.map(
+                    (doc) => html`
+                    <div class="projects-resource-import__resource-item ${doc.hasConflict ? "projects-resource-import__resource-item--conflict" : ""}">
+                      <span class="projects-resource-import__resource-icon">${icons.fileText}</span>
+                      <span class="projects-resource-import__resource-name">${doc.name}</span>
+                      ${
+                        doc.hasConflict
+                          ? html`
+                          <span class="projects-resource-import__conflict-badge">${t("project.resources.import.dialog.conflict")}</span>
+                          <span class="projects-resource-import__exists-badge">${t("project.resources.import.dialog.exists")}</span>
+                        `
+                          : html`<span class="projects-resource-import__new-badge">${t("project.resources.import.dialog.newDoc")}</span>`
+                      }
+                    </div>
+                  `,
+                  )}
+                </div>
+              </div>
+            `
+              : nothing
+          }
+
+          <!-- 规则列表 -->
+          ${
+            resources.rules.length > 0
+              ? html`
+              <div class="form-group">
+                <label class="form-label">
+                  ${t("project.resources.import.dialog.rules")} (${stats.rules.total})
+                </label>
+                <div class="projects-resource-import__resource-list">
+                  ${resources.rules.map(
+                    (rule) => html`
+                    <div class="projects-resource-import__resource-item ${rule.hasConflict ? "projects-resource-import__resource-item--conflict" : ""}">
+                      <span class="projects-resource-import__resource-icon">${icons.fileText}</span>
+                      <span class="projects-resource-import__resource-name">${rule.name}</span>
+                      ${
+                        rule.hasConflict
+                          ? html`
+                          <span class="projects-resource-import__conflict-badge">${t("project.resources.import.dialog.conflict")}</span>
+                          <span class="projects-resource-import__exists-badge">${t("project.resources.import.dialog.exists")}</span>
+                        `
+                          : html`<span class="projects-resource-import__new-badge">${t("project.resources.import.dialog.newRule")}</span>`
+                      }
+                    </div>
+                  `,
+                  )}
+                </div>
+              </div>
+            `
+              : nothing
+          }
+
+          <!-- 技能列表 -->
+          ${
+            resources.skills.length > 0
+              ? html`
+              <div class="form-group">
+                <label class="form-label">
+                  ${t("project.resources.import.dialog.skills")} (${stats.skills.total})
+                </label>
+                <div class="projects-resource-import__resource-list">
+                  ${resources.skills.map(
+                    (skill) => html`
+                    <div class="projects-resource-import__resource-item ${skill.hasConflict ? "projects-resource-import__resource-item--conflict" : ""}">
+                      <span class="projects-resource-import__resource-icon">${icons.fileText}</span>
+                      <span class="projects-resource-import__resource-name">${skill.name}</span>
+                      ${
+                        skill.hasConflict
+                          ? html`
+                          <span class="projects-resource-import__conflict-badge">${t("project.resources.import.dialog.conflict")}</span>
+                          <span class="projects-resource-import__exists-badge">${t("project.resources.import.dialog.exists")}</span>
+                        `
+                          : html`<span class="projects-resource-import__new-badge">${t("project.resources.import.dialog.newSkill")}</span>`
+                      }
+                    </div>
+                  `,
+                  )}
+                </div>
+              </div>
+            `
+              : nothing
+          }
+
+          <!-- 冲突处理策略 -->
+          ${
+            totalConflict > 0
+              ? html`
+              <div class="projects-resource-import__divider"></div>
+              <div class="form-group">
+                <label class="form-label">${t("project.resources.import.dialog.conflictStrategy")}</label>
+                <div class="projects-resource-import__strategy-options">
                   <label class="form-radio">
                     <input
                       type="radio"
                       name="conflictStrategy"
                       .checked=${dialog.conflictStrategy === "rename"}
-                      @change=${() => props.onSetImportConflictStrategy("rename")}
+                      @change=${() => props.onSetResourceImportConflictStrategy("rename")}
                     />
-                    <span>${t("project.docs.import.dialog.strategy.rename")}</span>
+                    <span>${t("project.resources.import.dialog.strategy.rename")}</span>
                   </label>
                   <label class="form-radio">
                     <input
                       type="radio"
                       name="conflictStrategy"
                       .checked=${dialog.conflictStrategy === "overwrite"}
-                      @change=${() => props.onSetImportConflictStrategy("overwrite")}
+                      @change=${() => props.onSetResourceImportConflictStrategy("overwrite")}
                     />
-                    <span>${t("project.docs.import.dialog.strategy.overwrite")}</span>
+                    <span>${t("project.resources.import.dialog.strategy.overwrite")}</span>
                   </label>
                   <label class="form-radio">
                     <input
                       type="radio"
                       name="conflictStrategy"
                       .checked=${dialog.conflictStrategy === "skip"}
-                      @change=${() => props.onSetImportConflictStrategy("skip")}
+                      @change=${() => props.onSetResourceImportConflictStrategy("skip")}
                     />
-                    <span>${t("project.docs.import.dialog.strategy.skip")}</span>
+                    <span>${t("project.resources.import.dialog.strategy.skip")}</span>
                   </label>
                 </div>
               </div>
@@ -2092,19 +2407,19 @@ function renderDocImportDialog(props: ProjectsViewProps): TemplateResult | typeo
           <button
             class="btn btn--secondary"
             ?disabled=${dialog.isImporting}
-            @click=${() => props.onCloseDocImportDialog()}
+            @click=${() => props.onCloseResourceImportDialog()}
           >
-            ${t("project.docs.import.dialog.cancel")}
+            ${t("project.resources.import.dialog.cancel")}
           </button>
           <button
             class="btn btn--primary"
-            ?disabled=${dialog.isImporting || dialog.previewDocs.length === 0}
-            @click=${() => props.onImportDocs()}
+            ?disabled=${totalCount === 0 || dialog.isImporting}
+            @click=${() => props.onImportResources()}
           >
             ${
               dialog.isImporting ? html`<span class="btn__spinner">${icons.loader}</span>` : nothing
             }
-            ${t("project.docs.import.dialog.confirm")}
+            ${t("project.resources.import.dialog.confirm", { count: String(totalCount), conflict: String(totalConflict) })}
           </button>
         </div>
       </div>

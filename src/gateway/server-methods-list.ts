@@ -157,6 +157,10 @@ const BASE_METHODS = [
   "projects.docs.export",
   "projects.docs.import",
   "projects.docs.importPreview",
+  // Unified resource export/import
+  "projects.resources.export",
+  "projects.resources.importPreview",
+  "projects.resources.import",
   "projects.getLinkedGroups",
   "projects.linkGroup",
   "projects.unlinkGroup",

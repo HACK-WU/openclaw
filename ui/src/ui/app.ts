@@ -85,6 +85,8 @@ import type {
   ProjectDocEditDialogState,
   DocExportDialogState,
   DocImportDialogState,
+  ResourceExportDialogState,
+  ResourceImportDialogState,
 } from "./controllers/projects.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import type { SkillMessage } from "./controllers/skills.ts";
@@ -306,6 +308,9 @@ export class OpenClawApp extends LitElement {
   @state() projectDocDeleteDialog: ProjectDocDeleteDialogState | null = null;
   @state() projectDocExportDialog: DocExportDialogState | null = null;
   @state() projectDocImportDialog: DocImportDialogState | null = null;
+  // Unified resource export/import state
+  @state() projectResourceExportDialog: ResourceExportDialogState | null = null;
+  @state() projectResourceImportDialog: ResourceImportDialogState | null = null;
   // Project linked groups state
   @state() projectLinkedGroups: import("./controllers/projects.js").LinkedGroupEntry[] = [];
   @state() projectLinkedGroupsLoading = false;

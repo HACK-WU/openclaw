@@ -167,7 +167,25 @@ export type ProjectDocDeleteDialogState = {
   error: string | null;
 };
 
-// ─── Doc Export/Import Types ───
+// ─── Doc Export/Import Types (Legacy) ───
+
+export type DocExportDialogState = {
+  projectId: string;
+  selectedDocIds: Set<string>;
+  isExporting: boolean;
+  error: string | null;
+};
+
+export type DocImportDialogState = {
+  projectId: string;
+  fileName: string;
+  fileData: string; // base64
+  format: "zip" | "json";
+  preview: DocImportPreviewDoc[];
+  conflictStrategy: "rename" | "overwrite" | "skip";
+  isImporting: boolean;
+  error: string | null;
+};
 
 export type DocExportResult = {
   filename: string;
@@ -195,22 +213,92 @@ export type DocImportResult = {
   importedDocIds?: string[];
 };
 
-export type DocExportDialogState = {
+// ─── Unified Resource Export/Import Types ───
+
+export type ResourceExportDialogState = {
   projectId: string;
+  // 选中的资源类型
+  selectedTypes: Set<"docs" | "rules" | "skills">;
+  // 选中的具体资源 ID
   selectedDocIds: Set<string>;
+  selectedRuleIds: Set<string>;
+  selectedSkillIds: Set<string>;
   isExporting: boolean;
   error: string | null;
 };
 
-export type DocImportDialogState = {
+export type ImportPreviewItem = {
+  id: string;
+  name: string;
+  type: "doc" | "rule" | "skill";
+  hasConflict: boolean;
+  existingId?: string;
+};
+
+export type ResourceImportDialogState = {
   projectId: string;
   fileName: string;
   fileData: string; // base64
-  format: "zip" | "json";
-  previewDocs: DocImportPreviewDoc[];
+  // 预览结果
+  preview: {
+    stats: {
+      docs: { total: number; new: number; conflict: number };
+      rules: { total: number; new: number; conflict: number };
+      skills: { total: number; new: number; conflict: number };
+    };
+    resources: {
+      docs: ImportPreviewItem[];
+      rules: ImportPreviewItem[];
+      skills: ImportPreviewItem[];
+    };
+  };
   conflictStrategy: "rename" | "overwrite" | "skip";
   isImporting: boolean;
   error: string | null;
+};
+
+export type ResourceExportResult = {
+  filename: string;
+  contentType: string;
+  data: string; // base64
+  stats: {
+    docs: number;
+    rules: number;
+    skills: number;
+    total: number;
+  };
+  exportedAt: number;
+};
+
+export type ResourceImportPreviewResult = {
+  stats: {
+    docs: { total: number; new: number; conflict: number };
+    rules: { total: number; new: number; conflict: number };
+    skills: { total: number; new: number; conflict: number };
+  };
+  resources: {
+    docs: ImportPreviewItem[];
+    rules: ImportPreviewItem[];
+    skills: ImportPreviewItem[];
+  };
+};
+
+export type ResourceImportResult = {
+  imported: {
+    docs: number;
+    rules: number;
+    skills: number;
+  };
+  skipped: {
+    docs: number;
+    rules: number;
+    skills: number;
+  };
+  errors: Array<{
+    type: "doc" | "rule" | "skill";
+    name: string;
+    reason: string;
+  }>;
 };
 
 // 关联群聊条目（从后端 GroupIndexEntry 映射）
@@ -258,9 +346,12 @@ export type ProjectsState = {
   projectDocCreateDialog: ProjectDocCreateDialogState | null;
   projectDocEditDialog: ProjectDocEditDialogState | null;
   projectDocDeleteDialog: ProjectDocDeleteDialogState | null;
-  // 文档导出/导入状态
+  // 文档导出/导入状态（旧版）
   projectDocExportDialog: DocExportDialogState | null;
   projectDocImportDialog: DocImportDialogState | null;
+  // 统一资源导出/导入状态
+  projectResourceExportDialog: ResourceExportDialogState | null;
+  projectResourceImportDialog: ResourceImportDialogState | null;
   // 关联群聊
   projectLinkedGroups: LinkedGroupEntry[];
   projectLinkedGroupsLoading: boolean;
@@ -294,6 +385,8 @@ export const DEFAULT_PROJECTS_STATE: ProjectsState = {
   projectDocDeleteDialog: null,
   projectDocExportDialog: null,
   projectDocImportDialog: null,
+  projectResourceExportDialog: null,
+  projectResourceImportDialog: null,
 };
 
 export type ProjectsHost = {
@@ -748,7 +841,7 @@ export function setProjectManageTab(
   }
 }
 
-// ─── Doc Export/Import RPC Functions ───
+// ─── Doc Export/Import Functions (Legacy) ───
 
 export function openDocExportDialog(host: ProjectsHost): void {
   const dialog = host.projectManageDialog;
@@ -756,10 +849,9 @@ export function openDocExportDialog(host: ProjectsHost): void {
     return;
   }
   // Default: select all docs
-  const selectedDocIds = new Set(host.projectDocs.map((d) => d.id));
   host.projectDocExportDialog = {
     projectId: dialog.projectId,
-    selectedDocIds,
+    selectedDocIds: new Set(host.projectDocs.map((d) => d.id)),
     isExporting: false,
     error: null,
   };
@@ -774,13 +866,13 @@ export function toggleDocExportSelection(host: ProjectsHost, docId: string): voi
   if (!dialog) {
     return;
   }
-  const selected = new Set(dialog.selectedDocIds);
-  if (selected.has(docId)) {
-    selected.delete(docId);
+  const selectedDocIds = new Set(dialog.selectedDocIds);
+  if (selectedDocIds.has(docId)) {
+    selectedDocIds.delete(docId);
   } else {
-    selected.add(docId);
+    selectedDocIds.add(docId);
   }
-  host.projectDocExportDialog = { ...dialog, selectedDocIds: selected };
+  host.projectDocExportDialog = { ...dialog, selectedDocIds };
 }
 
 export function toggleDocExportSelectAll(host: ProjectsHost): void {
@@ -789,10 +881,19 @@ export function toggleDocExportSelectAll(host: ProjectsHost): void {
     return;
   }
   const allSelected = dialog.selectedDocIds.size === host.projectDocs.length;
-  const selectedDocIds = allSelected
-    ? new Set<string>()
-    : new Set(host.projectDocs.map((d) => d.id));
-  host.projectDocExportDialog = { ...dialog, selectedDocIds };
+  if (allSelected) {
+    // Unselect all
+    host.projectDocExportDialog = {
+      ...dialog,
+      selectedDocIds: new Set(),
+    };
+  } else {
+    // Select all
+    host.projectDocExportDialog = {
+      ...dialog,
+      selectedDocIds: new Set(host.projectDocs.map((d) => d.id)),
+    };
+  }
 }
 
 export async function exportProjectDocsFromDialog(host: ProjectsHost): Promise<void> {
@@ -800,18 +901,24 @@ export async function exportProjectDocsFromDialog(host: ProjectsHost): Promise<v
   if (!dialog || !host.client || !host.connected) {
     return;
   }
+
   if (dialog.selectedDocIds.size === 0) {
-    host.projectDocExportDialog = { ...dialog, error: "Please select at least one document" };
+    host.projectDocExportDialog = {
+      ...dialog,
+      error: "Please select at least one document",
+    };
     return;
   }
+
   host.projectDocExportDialog = { ...dialog, isExporting: true, error: null };
+
   try {
-    const docIds = Array.from(dialog.selectedDocIds);
     const result = await host.client.request<DocExportResult>("projects.docs.export", {
       projectId: dialog.projectId,
-      docIds,
+      docIds: Array.from(dialog.selectedDocIds),
       format: "zip",
     });
+
     // Trigger browser download
     const binaryStr = atob(result.data);
     const bytes = new Uint8Array(binaryStr.length);
@@ -827,18 +934,24 @@ export async function exportProjectDocsFromDialog(host: ProjectsHost): Promise<v
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+
     // Close dialog on success
     host.projectDocExportDialog = null;
   } catch (err) {
-    host.projectDocExportDialog = { ...dialog, isExporting: false, error: String(err) };
+    host.projectDocExportDialog = {
+      ...dialog,
+      isExporting: false,
+      error: String(err),
+    };
   }
 }
 
-export async function openDocImportDialog(host: ProjectsHost): Promise<void> {
+export function openDocImportDialog(host: ProjectsHost): void {
   const dialog = host.projectManageDialog;
   if (!dialog) {
     return;
   }
+
   // Open file picker
   const input = document.createElement("input");
   input.type = "file";
@@ -848,6 +961,7 @@ export async function openDocImportDialog(host: ProjectsHost): Promise<void> {
     if (!file) {
       return;
     }
+
     // Read file as base64
     const fileReader = new FileReader();
     fileReader.addEventListener("load", async () => {
@@ -858,12 +972,14 @@ export async function openDocImportDialog(host: ProjectsHost): Promise<void> {
         binary += String.fromCharCode(bytes[i]);
       }
       const base64 = btoa(binary);
+
+      // Determine format
       const format = file.name.endsWith(".json") ? "json" : "zip";
 
       // Get preview
       if (host.client && host.connected) {
         try {
-          const preview = await host.client.request<DocImportPreviewResult>(
+          const previewResult = await host.client.request<DocImportPreviewResult>(
             "projects.docs.importPreview",
             {
               projectId: dialog.projectId,
@@ -871,12 +987,13 @@ export async function openDocImportDialog(host: ProjectsHost): Promise<void> {
               format,
             },
           );
+
           host.projectDocImportDialog = {
             projectId: dialog.projectId,
             fileName: file.name,
             fileData: base64,
             format,
-            previewDocs: preview.preview,
+            preview: previewResult.preview,
             conflictStrategy: "rename",
             isImporting: false,
             error: null,
@@ -887,7 +1004,7 @@ export async function openDocImportDialog(host: ProjectsHost): Promise<void> {
             fileName: file.name,
             fileData: base64,
             format,
-            previewDocs: [],
+            preview: [],
             conflictStrategy: "rename",
             isImporting: false,
             error: String(err),
@@ -920,21 +1037,348 @@ export async function importProjectDocsFromDialog(host: ProjectsHost): Promise<b
   if (!dialog || !host.client || !host.connected) {
     return false;
   }
+
   host.projectDocImportDialog = { ...dialog, isImporting: true, error: null };
+
   try {
-    const _result = await host.client.request<DocImportResult>("projects.docs.import", {
+    await host.client.request<DocImportResult>("projects.docs.import", {
       projectId: dialog.projectId,
       data: dialog.fileData,
       format: dialog.format,
       conflictStrategy: dialog.conflictStrategy,
     });
+
     // Refresh docs list
     await loadProjectDocs(host, dialog.projectId);
+
     // Close dialog on success
     host.projectDocImportDialog = null;
     return true;
   } catch (err) {
-    host.projectDocImportDialog = { ...dialog, isImporting: false, error: String(err) };
+    host.projectDocImportDialog = {
+      ...dialog,
+      isImporting: false,
+      error: String(err),
+    };
+    return false;
+  }
+}
+
+// ─── Unified Resource Export/Import Functions ───
+
+export function openResourceExportDialog(host: ProjectsHost): void {
+  const dialog = host.projectManageDialog;
+  if (!dialog) {
+    return;
+  }
+  // Default: select all types and all resources
+  host.projectResourceExportDialog = {
+    projectId: dialog.projectId,
+    selectedTypes: new Set(["docs", "rules", "skills"]),
+    selectedDocIds: new Set(host.projectDocs.map((d) => d.id)),
+    selectedRuleIds: new Set(host.projectRules.map((r) => r.id)),
+    selectedSkillIds: new Set(host.projectSkills.map((s) => s.id)),
+    isExporting: false,
+    error: null,
+  };
+}
+
+export function closeResourceExportDialog(host: ProjectsHost): void {
+  host.projectResourceExportDialog = null;
+}
+
+export function toggleResourceExportType(
+  host: ProjectsHost,
+  type: "docs" | "rules" | "skills",
+): void {
+  const dialog = host.projectResourceExportDialog;
+  if (!dialog) {
+    return;
+  }
+  const selectedTypes = new Set(dialog.selectedTypes);
+  if (selectedTypes.has(type)) {
+    selectedTypes.delete(type);
+  } else {
+    selectedTypes.add(type);
+  }
+  host.projectResourceExportDialog = { ...dialog, selectedTypes };
+}
+
+export function toggleResourceExportDoc(host: ProjectsHost, docId: string): void {
+  const dialog = host.projectResourceExportDialog;
+  if (!dialog) {
+    return;
+  }
+  const selectedDocIds = new Set(dialog.selectedDocIds);
+  if (selectedDocIds.has(docId)) {
+    selectedDocIds.delete(docId);
+  } else {
+    selectedDocIds.add(docId);
+  }
+  host.projectResourceExportDialog = { ...dialog, selectedDocIds };
+}
+
+export function toggleResourceExportRule(host: ProjectsHost, ruleId: string): void {
+  const dialog = host.projectResourceExportDialog;
+  if (!dialog) {
+    return;
+  }
+  const selectedRuleIds = new Set(dialog.selectedRuleIds);
+  if (selectedRuleIds.has(ruleId)) {
+    selectedRuleIds.delete(ruleId);
+  } else {
+    selectedRuleIds.add(ruleId);
+  }
+  host.projectResourceExportDialog = { ...dialog, selectedRuleIds };
+}
+
+export function toggleResourceExportSkill(host: ProjectsHost, skillId: string): void {
+  const dialog = host.projectResourceExportDialog;
+  if (!dialog) {
+    return;
+  }
+  const selectedSkillIds = new Set(dialog.selectedSkillIds);
+  if (selectedSkillIds.has(skillId)) {
+    selectedSkillIds.delete(skillId);
+  } else {
+    selectedSkillIds.add(skillId);
+  }
+  host.projectResourceExportDialog = { ...dialog, selectedSkillIds };
+}
+
+export function toggleResourceExportSelectAll(host: ProjectsHost): void {
+  const dialog = host.projectResourceExportDialog;
+  if (!dialog) {
+    return;
+  }
+  // Check if all resources are selected
+  const allDocsSelected =
+    dialog.selectedTypes.has("docs") && dialog.selectedDocIds.size === host.projectDocs.length;
+  const allRulesSelected =
+    dialog.selectedTypes.has("rules") && dialog.selectedRuleIds.size === host.projectRules.length;
+  const allSkillsSelected =
+    dialog.selectedTypes.has("skills") &&
+    dialog.selectedSkillIds.size === host.projectSkills.length;
+
+  const allSelected = allDocsSelected && allRulesSelected && allSkillsSelected;
+
+  if (allSelected) {
+    // Unselect all
+    host.projectResourceExportDialog = {
+      ...dialog,
+      selectedTypes: new Set(),
+      selectedDocIds: new Set(),
+      selectedRuleIds: new Set(),
+      selectedSkillIds: new Set(),
+    };
+  } else {
+    // Select all
+    host.projectResourceExportDialog = {
+      ...dialog,
+      selectedTypes: new Set(["docs", "rules", "skills"]),
+      selectedDocIds: new Set(host.projectDocs.map((d) => d.id)),
+      selectedRuleIds: new Set(host.projectRules.map((r) => r.id)),
+      selectedSkillIds: new Set(host.projectSkills.map((s) => s.id)),
+    };
+  }
+}
+
+export async function exportProjectResourcesFromDialog(host: ProjectsHost): Promise<void> {
+  const dialog = host.projectResourceExportDialog;
+  if (!dialog || !host.client || !host.connected) {
+    return;
+  }
+
+  // Check if at least one type is selected
+  if (dialog.selectedTypes.size === 0) {
+    host.projectResourceExportDialog = {
+      ...dialog,
+      error: "Please select at least one resource type",
+    };
+    return;
+  }
+
+  // Check if at least one resource is selected
+  const hasSelection =
+    (dialog.selectedTypes.has("docs") && dialog.selectedDocIds.size > 0) ||
+    (dialog.selectedTypes.has("rules") && dialog.selectedRuleIds.size > 0) ||
+    (dialog.selectedTypes.has("skills") && dialog.selectedSkillIds.size > 0);
+
+  if (!hasSelection) {
+    host.projectResourceExportDialog = {
+      ...dialog,
+      error: "Please select at least one resource to export",
+    };
+    return;
+  }
+
+  host.projectResourceExportDialog = { ...dialog, isExporting: true, error: null };
+
+  try {
+    const resourceTypes = Array.from(dialog.selectedTypes);
+    const docIds = dialog.selectedTypes.has("docs") ? Array.from(dialog.selectedDocIds) : undefined;
+    const ruleIds = dialog.selectedTypes.has("rules")
+      ? Array.from(dialog.selectedRuleIds)
+      : undefined;
+    const skillIds = dialog.selectedTypes.has("skills")
+      ? Array.from(dialog.selectedSkillIds)
+      : undefined;
+
+    const result = await host.client.request<ResourceExportResult>("projects.resources.export", {
+      projectId: dialog.projectId,
+      resourceTypes,
+      docIds,
+      ruleIds,
+      skillIds,
+    });
+
+    // Trigger browser download
+    const binaryStr = atob(result.data);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: result.contentType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = result.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // Close dialog on success
+    host.projectResourceExportDialog = null;
+  } catch (err) {
+    host.projectResourceExportDialog = {
+      ...dialog,
+      isExporting: false,
+      error: String(err),
+    };
+  }
+}
+
+export async function openResourceImportDialog(host: ProjectsHost): Promise<void> {
+  const dialog = host.projectManageDialog;
+  if (!dialog) {
+    return;
+  }
+
+  // Open file picker
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".zip";
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    // Read file as base64
+    const fileReader = new FileReader();
+    fileReader.addEventListener("load", async () => {
+      const arrayBuffer = fileReader.result as ArrayBuffer;
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+
+      // Get preview
+      if (host.client && host.connected) {
+        try {
+          const preview = await host.client.request<ResourceImportPreviewResult>(
+            "projects.resources.importPreview",
+            {
+              projectId: dialog.projectId,
+              data: base64,
+            },
+          );
+
+          host.projectResourceImportDialog = {
+            projectId: dialog.projectId,
+            fileName: file.name,
+            fileData: base64,
+            preview,
+            conflictStrategy: "rename",
+            isImporting: false,
+            error: null,
+          };
+        } catch (err) {
+          host.projectResourceImportDialog = {
+            projectId: dialog.projectId,
+            fileName: file.name,
+            fileData: base64,
+            preview: {
+              stats: {
+                docs: { total: 0, new: 0, conflict: 0 },
+                rules: { total: 0, new: 0, conflict: 0 },
+                skills: { total: 0, new: 0, conflict: 0 },
+              },
+              resources: {
+                docs: [],
+                rules: [],
+                skills: [],
+              },
+            },
+            conflictStrategy: "rename",
+            isImporting: false,
+            error: String(err),
+          };
+        }
+      }
+    });
+    fileReader.readAsArrayBuffer(file);
+  });
+  input.click();
+}
+
+export function closeResourceImportDialog(host: ProjectsHost): void {
+  host.projectResourceImportDialog = null;
+}
+
+export function setResourceImportConflictStrategy(
+  host: ProjectsHost,
+  strategy: "rename" | "overwrite" | "skip",
+): void {
+  const dialog = host.projectResourceImportDialog;
+  if (!dialog) {
+    return;
+  }
+  host.projectResourceImportDialog = { ...dialog, conflictStrategy: strategy };
+}
+
+export async function importProjectResourcesFromDialog(host: ProjectsHost): Promise<boolean> {
+  const dialog = host.projectResourceImportDialog;
+  if (!dialog || !host.client || !host.connected) {
+    return false;
+  }
+
+  host.projectResourceImportDialog = { ...dialog, isImporting: true, error: null };
+
+  try {
+    const _result = await host.client.request<ResourceImportResult>("projects.resources.import", {
+      projectId: dialog.projectId,
+      data: dialog.fileData,
+      conflictStrategy: dialog.conflictStrategy,
+    });
+
+    // Refresh all resource lists
+    await loadProjectDocs(host, dialog.projectId);
+    await loadProjectRules(host, dialog.projectId);
+    await loadProjectSkills(host, dialog.projectId);
+
+    // Close dialog on success
+    host.projectResourceImportDialog = null;
+    return true;
+  } catch (err) {
+    host.projectResourceImportDialog = {
+      ...dialog,
+      isImporting: false,
+      error: String(err),
+    };
     return false;
   }
 }
