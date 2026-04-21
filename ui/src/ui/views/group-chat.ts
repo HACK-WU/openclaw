@@ -1422,7 +1422,7 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
           .map((m) => {
             const displayName = resolveAgentName(m.agentId, props.agentsList);
             const showId = displayName !== m.agentId;
-            const roleLabel = m.bridge ? "bridge" : m.role;
+            const roleLabel = m.bridge ? "cli" : m.role;
             const canRemove = m.role !== "assistant";
             // Check bridge agent online status
             const bridgeStatus = m.bridge

@@ -1336,6 +1336,11 @@
   color: var(--muted);
 }
 
+.badge--cli {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
 /* ─── Sidebar Group Chat Nav ─── */
 
 /* Group chats section - same structure as nav-group--chat */
