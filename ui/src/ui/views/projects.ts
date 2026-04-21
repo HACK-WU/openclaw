@@ -581,7 +581,9 @@ function renderManageDialog(props: ProjectsViewProps): TemplateResult | typeof n
                 ? renderManageRulesTab(props)
                 : dialog.activeTab === "skills"
                   ? renderManageSkillsTab(props)
-                  : renderManageDocsTab(props)
+                  : dialog.activeTab === "docs"
+                    ? renderManageDocsTab(props)
+                    : renderManageOverviewTab(props, project)
           }
         </div>
 
