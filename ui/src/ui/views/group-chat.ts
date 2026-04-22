@@ -330,6 +330,18 @@ export type GroupChatViewProps = {
   onTerminalStreamUpdate?: (groupId: string, agentId: string, text: string) => void;
   onTerminalStreamEnd?: (groupId: string, agentId: string, extractedText: string) => void;
   onTerminalCompleted?: (groupId: string, agentId: string, extractedText: string) => void;
+  // Bridge Agent control
+  onResetBridgeAgent?: (groupId: string, agentId: string) => void;
+  onAbortBridgeAgent?: (groupId: string, agentId: string) => void;
+  // Bridge Agent menu
+  bridgeAgentMenu?: { agentId: string; agentName: string; isBridge: boolean; y: number } | null;
+  onOpenBridgeAgentMenu?: (
+    agentId: string,
+    agentName: string,
+    isBridge: boolean,
+    y: number,
+  ) => void;
+  onCloseBridgeAgentMenu?: () => void;
   // Announcement editor
   announcementEditor: { open: boolean; draft: string; preview: boolean };
   onOpenAnnouncementEditor: () => void;
@@ -1006,6 +1018,9 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
       ${renderMemoryPreviewDialog(props)}
       ${renderProjectContentPreviewDialog(props)}
       ${renderAnnouncementEditDialog(meta, props)}
+
+      <!-- Bridge Agent Menu Dropdown (rendered at room level, not inside members panel) -->
+      ${renderBridgeAgentMenu(meta, props)}
     </div>
   `;
 }
@@ -1450,14 +1465,23 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
                 }
                 <span class="group-members-panel__role badge badge--${roleLabel}">${roleLabel}</span>
                 ${
-                  canRemove
+                  m.bridge || canRemove
                     ? html`
                         <button
-                          class="btn btn--sm btn--icon group-members-panel__remove-btn"
-                          @click=${() => props.onOpenRemoveMemberDialog(m.agentId, displayName)}
-                          title=${t("chat.group.removeMember")}
+                          class="btn btn--sm btn--icon group-members-panel__menu-btn"
+                          @click=${(e: Event) => {
+                            e.stopPropagation();
+                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            props.onOpenBridgeAgentMenu?.(
+                              m.agentId,
+                              displayName,
+                              m.bridge ?? false,
+                              Math.round(rect.bottom),
+                            );
+                          }}
+                          title=${t("chat.group.bridgeAgentMenu")}
                         >
-                          ${icons.x}
+                          ${icons.moreVertical}
                         </button>
                       `
                     : nothing
@@ -1481,6 +1505,89 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
         >
           ${icons.trash} ${t("chat.group.clearMessages")}
         </button>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Bridge Agent Menu Dropdown ───
+
+function renderBridgeAgentMenu(meta: GroupSessionMeta, props: GroupChatViewProps) {
+  const menu = props.bridgeAgentMenu;
+  if (!menu) {
+    return nothing;
+  }
+
+  // Check if bridge agent is actively responding (for stop button state)
+  const isActive =
+    menu.isBridge &&
+    (props.groupPendingAgents?.has(menu.agentId) ||
+      props.groupStreams?.has(menu.agentId) ||
+      props.bridgeTerminalStatuses?.get(menu.agentId) === "working");
+
+  // Use right-based positioning so menu stays within viewport with a gap
+  const rightGap = 12;
+
+  return html`
+    <div
+      class="bridge-agent-menu-overlay"
+      @click=${(e: Event) => {
+        if ((e.target as HTMLElement).classList.contains("bridge-agent-menu-overlay")) {
+          props.onCloseBridgeAgentMenu?.();
+        }
+      }}
+    >
+      <div class="bridge-agent-menu" style="top: ${menu.y}px; right: ${rightGap}px;">
+        <div class="bridge-agent-menu__header">
+          <span class="bridge-agent-menu__title">${menu.agentName}</span>
+          <button
+            class="btn btn--sm btn--icon bridge-agent-menu__close"
+            @click=${() => props.onCloseBridgeAgentMenu?.()}
+          >
+            ${icons.x}
+          </button>
+        </div>
+        <div class="bridge-agent-menu__items">
+          ${
+            menu.isBridge
+              ? html`
+                  <button
+                    class="bridge-agent-menu__item"
+                    @click=${() => {
+                      props.onResetBridgeAgent?.(meta.groupId, menu.agentId);
+                      props.onCloseBridgeAgentMenu?.();
+                    }}
+                  >
+                    ${icons.refresh}
+                    <span>${t("chat.group.resetBridgeAgent")}</span>
+                  </button>
+                  <button
+                    class="bridge-agent-menu__item ${isActive ? "" : "bridge-agent-menu__item--disabled"}"
+                    @click=${() => {
+                      if (isActive) {
+                        props.onAbortBridgeAgent?.(meta.groupId, menu.agentId);
+                        props.onCloseBridgeAgentMenu?.();
+                      }
+                    }}
+                    ?disabled=${!isActive}
+                  >
+                    ${icons.stop}
+                    <span>${t("chat.group.abortBridgeAgent")}</span>
+                  </button>
+                `
+              : nothing
+          }
+          <button
+            class="bridge-agent-menu__item bridge-agent-menu__item--danger"
+            @click=${() => {
+              props.onOpenRemoveMemberDialog(menu.agentId, menu.agentName);
+              props.onCloseBridgeAgentMenu?.();
+            }}
+          >
+            ${icons.x}
+            <span>${t("chat.group.removeMember")}</span>
+          </button>
+        </div>
       </div>
     </div>
   `;

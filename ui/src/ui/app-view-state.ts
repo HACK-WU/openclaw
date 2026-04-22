@@ -374,6 +374,7 @@ export type AppViewState = {
     groupProjectDocs: import("./controllers/group-chat.js").GroupChatState["groupProjectDocs"];
     groupProjectContentLoading: import("./controllers/group-chat.js").GroupChatState["groupProjectContentLoading"];
     projectContentPreviewDialog: import("./controllers/group-chat.js").GroupChatState["projectContentPreviewDialog"];
+    bridgeAgentMenu: import("./controllers/group-chat.js").BridgeAgentMenuState | null;
     // Project management state
     projectsList: ProjectIndexEntry[];
     projectsLoading: boolean;

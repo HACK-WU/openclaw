@@ -18,6 +18,7 @@ import {
   killBridgePty,
   recordFrontendExtractedText,
   resizePty,
+  waitForFrontendExtractedText,
 } from "../../group-chat/bridge-pty.js";
 import type { BridgeConfig, ContextConfig } from "../../group-chat/bridge-types.js";
 import {
@@ -49,10 +50,12 @@ import { resolveDispatchTargets } from "../../group-chat/message-dispatch.js";
 import {
   abortGroupRun,
   broadcastGroupMessage,
+  broadcastGroupStream,
   broadcastGroupSystem,
   registerGroupAbort,
   unregisterGroupAbort,
 } from "../../group-chat/parallel-stream.js";
+import { broadcastTerminalStatus } from "../../group-chat/terminal-events.js";
 import {
   appendGroupMessage,
   appendSystemMessage,
@@ -63,6 +66,7 @@ import {
 import type {
   ConversationChainState,
   GroupChatMessage,
+  GroupStreamPayload,
   MessageSender,
   GroupIndexEntry as RawGroupIndexEntry,
   PlanModeConfig,
@@ -1023,6 +1027,130 @@ const handleGroupAbort: GatewayRequestHandler = ({ params, respond }) => {
   respond(true, { ok: true });
 };
 
+// ─── Reset Bridge Agent ───
+
+/**
+ * Reset a single CLI Agent to its initial state.
+ * Kills the PTY process and clears all buffers/state.
+ * The PTY will be lazily recreated on the next @mention.
+ */
+const handleGroupResetBridgeAgent: GatewayRequestHandler = async ({ params, respond, context }) => {
+  const groupId = params.groupId as string;
+  const agentId = params.agentId as string;
+
+  if (!groupId || !agentId) {
+    respond(false, undefined, { message: "groupId and agentId are required", code: 400 });
+    return;
+  }
+
+  try {
+    // Kill the PTY process with "reset" reason
+    await killBridgePty(groupId, agentId, "reset");
+
+    // Broadcast terminal status as offline
+    broadcastTerminalStatus(context.broadcast, groupId, agentId, "offline", "CLI agent reset");
+
+    log.info("[RESET_BRIDGE_AGENT]", { groupId, agentId });
+
+    respond(true, { ok: true, agentId });
+  } catch (error) {
+    log.error("[RESET_BRIDGE_AGENT_ERROR]", { groupId, agentId, error });
+    respond(false, undefined, {
+      message: `Failed to reset bridge agent: ${error instanceof Error ? error.message : String(error)}`,
+      code: 500,
+    });
+  }
+};
+
+// ─── Abort Single Agent ───
+
+/**
+ * Abort a single CLI Agent's current response.
+ * Attempts to save any already-extracted text as a message.
+ */
+const handleGroupAbortAgent: GatewayRequestHandler = async ({ params, respond, context }) => {
+  const groupId = params.groupId as string;
+  const agentId = params.agentId as string;
+  const runId = params.runId as string | undefined;
+
+  if (!groupId || !agentId) {
+    respond(false, undefined, { message: "groupId and agentId are required", code: 400 });
+    return;
+  }
+
+  try {
+    // Try to get already-extracted text (2s timeout)
+    const extractedText = await waitForFrontendExtractedText(groupId, agentId, 2_000);
+
+    let savedContent: string | undefined;
+
+    if (extractedText && extractedText.trim().length > 0) {
+      // Save the extracted content as a message
+      const savedMsg = await appendGroupMessage(groupId, {
+        id: randomUUID(),
+        groupId,
+        role: "assistant",
+        sender: { agentId, type: "agent" },
+        content: extractedText.trim(),
+        timestamp: Date.now(),
+      });
+
+      savedContent = extractedText.trim();
+
+      // Broadcast the saved message
+      broadcastGroupMessage(context.broadcast, groupId, savedMsg);
+
+      // Broadcast stream state as final
+      const streamPayload: GroupStreamPayload = {
+        groupId,
+        runId: runId ?? randomUUID(),
+        agentId,
+        agentName: agentId,
+        state: "final",
+        message: savedMsg,
+      };
+      broadcastGroupStream(context.broadcast, streamPayload);
+
+      log.info("[ABORT_AGENT_SAVED]", { groupId, agentId, contentLength: savedContent.length });
+    } else {
+      // No content to save, broadcast aborted state
+      const streamPayload: GroupStreamPayload = {
+        groupId,
+        runId: runId ?? randomUUID(),
+        agentId,
+        agentName: agentId,
+        state: "aborted",
+      };
+      broadcastGroupStream(context.broadcast, streamPayload);
+
+      log.info("[ABORT_AGENT_NO_CONTENT]", { groupId, agentId });
+    }
+
+    // Kill the PTY process
+    await killBridgePty(groupId, agentId, "user_abort");
+
+    // Broadcast terminal status as offline
+    broadcastTerminalStatus(
+      context.broadcast,
+      groupId,
+      agentId,
+      "offline",
+      "CLI agent aborted by user",
+    );
+
+    // Decrement pending agents count
+    decrementPendingAgents(groupId);
+
+    respond(true, { ok: true, agentId, savedContent });
+  } catch (error) {
+    log.error("[ABORT_AGENT_ERROR]", { groupId, agentId, error });
+    respond(false, undefined, {
+      message: `Failed to abort agent: ${error instanceof Error ? error.message : String(error)}`,
+      code: 500,
+    });
+  }
+};
+
 // ─── Get Chain State ───
 
 /**
@@ -1877,6 +2005,8 @@ export const groupHandlers: GatewayRequestHandlers = {
   "group.send": handleGroupSend,
   "group.history": handleGroupHistory,
   "group.abort": handleGroupAbort,
+  "group.resetBridgeAgent": handleGroupResetBridgeAgent,
+  "group.abortAgent": handleGroupAbortAgent,
   "group.getChainState": handleGroupGetChainState,
   "group.exportTranscript": handleGroupExportTranscript,
   // Bridge Agent handlers

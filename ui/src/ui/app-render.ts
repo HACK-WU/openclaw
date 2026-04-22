@@ -86,9 +86,11 @@ import {
   updateExecApprovalsFormValue,
 } from "./controllers/exec-approvals.ts";
 import {
+  abortBridgeAgent,
   abortGroupChat,
   backToMemoryWarning,
   clearBridgeTerminalStream,
+  closeBridgeAgentMenu,
   closeClearMessagesDialog,
   closeDisbandGroupDialog,
   closeGroupChatView,
@@ -100,10 +102,12 @@ import {
   handleBridgeTerminalStreamUpdate,
   leaveGroupChat,
   loadGroupList,
+  openBridgeAgentMenu,
   openClearMessagesDialog,
   openDisbandGroupDialog,
   openForceConfirm,
   removeGroupMember,
+  resetBridgeAgent,
   sendGroupMessage,
   sendMemoryOrganizeCommand,
   sendTerminalResize,
@@ -2152,6 +2156,7 @@ export function renderApp(state: AppViewState) {
                 groupInfoPanelOpen: state.groupInfoPanelOpen,
                 bridgeTerminalStatuses: state.bridgeTerminalStatuses,
                 bridgeTerminalReplayBuffers: state.bridgeTerminalReplayBuffers,
+                bridgeAgentMenu: state.bridgeAgentMenu,
                 agentsList: [
                   ...(state.agentsList?.agents ?? []).map((a) => ({
                     id: a.id,
@@ -2345,6 +2350,35 @@ export function renderApp(state: AppViewState) {
                       );
                     })();
                   }
+                },
+                // Bridge Agent control buttons
+                onResetBridgeAgent: (groupId, agentId) => {
+                  void resetBridgeAgent(
+                    state as unknown as Parameters<typeof resetBridgeAgent>[0],
+                    groupId,
+                    agentId,
+                  );
+                },
+                onAbortBridgeAgent: (groupId, agentId) => {
+                  void abortBridgeAgent(
+                    state as unknown as Parameters<typeof abortBridgeAgent>[0],
+                    groupId,
+                    agentId,
+                  );
+                },
+                onOpenBridgeAgentMenu: (agentId, agentName, isBridge, y = 0) => {
+                  openBridgeAgentMenu(
+                    state as unknown as Parameters<typeof openBridgeAgentMenu>[0],
+                    agentId,
+                    agentName,
+                    isBridge,
+                    y,
+                  );
+                },
+                onCloseBridgeAgentMenu: () => {
+                  closeBridgeAgentMenu(
+                    state as unknown as Parameters<typeof closeBridgeAgentMenu>[0],
+                  );
                 },
                 // Group settings callbacks
                 onUpdateGroupName: (name) => {

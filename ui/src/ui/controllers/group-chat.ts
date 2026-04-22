@@ -243,6 +243,8 @@ export type GroupChatState = {
   bridgeTerminalStatuses?: Map<string, BridgeTerminalStatus>;
   /** Terminal replay buffers (Base64-encoded, for page refresh restoration) */
   bridgeTerminalReplayBuffers?: Map<string, string>;
+  /** Bridge Agent dropdown menu state */
+  bridgeAgentMenu?: BridgeAgentMenuState | null;
   // ─── Plan Mode state ───
   /** Current plan mode state (null when plan mode is disabled or not yet loaded) */
   planModeState?: PlanModeState | null;
@@ -337,6 +339,14 @@ export type GroupClearMessagesDialogState = {
   error: string | null;
 };
 
+export type BridgeAgentMenuState = {
+  agentId: string;
+  agentName: string;
+  isBridge: boolean;
+  /** Y coordinate of button bottom for menu placement */
+  y: number;
+};
+
 export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   activeGroupId: null,
   groupListOpen: false,
@@ -361,6 +371,7 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   groupClearMessagesDialog: null,
   groupInfoPanelOpen: false,
   bridgeTerminalStatuses: new Map(),
+  bridgeAgentMenu: null, // Bridge Agent dropdown menu state
   planModeState: null,
   planFilesStatus: null,
   memoryStatus: null,
@@ -1764,6 +1775,110 @@ export async function abortGroupChat(host: GroupHost, groupId: string): Promise<
   } catch {
     // best-effort
   }
+}
+
+/**
+ * Reset a single Bridge Agent (CLI agent) to its initial state.
+ * Kills the PTY process and clears all buffers/state.
+ * The PTY will be lazily recreated on the next @mention.
+ */
+export async function resetBridgeAgent(
+  host: GroupHost,
+  groupId: string,
+  agentId: string,
+): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  try {
+    await host.client.request<{ ok: boolean; agentId: string }>("group.resetBridgeAgent", {
+      groupId,
+      agentId,
+    });
+
+    // Clear terminal status for this agent
+    if (host.bridgeTerminalStatuses && host.activeGroupId === groupId) {
+      const nextStatuses = new Map(host.bridgeTerminalStatuses);
+      nextStatuses.delete(agentId);
+      host.bridgeTerminalStatuses = nextStatuses;
+    }
+
+    // Clear any pending/stream state for this agent
+    if (host.activeGroupId === groupId) {
+      host.groupPendingAgents.delete(agentId);
+      host.groupStreams.delete(agentId);
+      // Remove any bridge snapshot for this agent
+      for (const [key, snapshot] of host.groupBridgeSnapshots) {
+        if (snapshot.agentId === agentId) {
+          host.groupBridgeSnapshots.delete(key);
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[resetBridgeAgent] failed: groupId=${groupId}, agentId=${agentId}`, err);
+  }
+}
+
+/**
+ * Abort a single Bridge Agent's current response.
+ * Attempts to save any already-extracted text as a message.
+ */
+export async function abortBridgeAgent(
+  host: GroupHost,
+  groupId: string,
+  agentId: string,
+): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  try {
+    await host.client.request<{
+      ok: boolean;
+      agentId: string;
+      savedContent?: string;
+    }>("group.abortAgent", {
+      groupId,
+      agentId,
+    });
+
+    // Clear terminal status for this agent
+    if (host.bridgeTerminalStatuses && host.activeGroupId === groupId) {
+      const nextStatuses = new Map(host.bridgeTerminalStatuses);
+      nextStatuses.set(agentId, "disconnected");
+      host.bridgeTerminalStatuses = nextStatuses;
+    }
+
+    // Clear pending/stream state for this agent
+    if (host.activeGroupId === groupId) {
+      host.groupPendingAgents.delete(agentId);
+      host.groupStreams.delete(agentId);
+    }
+
+    // If content was saved, the backend already broadcasted it as a message
+    // No need to manually add to groupMessages — it will arrive via WebSocket event
+  } catch (err) {
+    console.error(`[abortBridgeAgent] failed: groupId=${groupId}, agentId=${agentId}`, err);
+  }
+}
+
+/**
+ * Open the Bridge Agent dropdown menu.
+ */
+export function openBridgeAgentMenu(
+  host: GroupChatState,
+  agentId: string,
+  agentName: string,
+  isBridge = false,
+  y = 0,
+): void {
+  host.bridgeAgentMenu = { agentId, agentName, isBridge, y };
+}
+
+/**
+ * Close the Bridge Agent dropdown menu.
+ */
+export function closeBridgeAgentMenu(host: GroupChatState): void {
+  host.bridgeAgentMenu = null;
 }
 
 /**

@@ -335,6 +335,18 @@ export const icons = {
       <line x1="12" x2="12" y1="3" y2="15" />
     </svg>
   `,
+  stop: html`
+    <svg viewBox="0 0 24 24">
+      <rect width="14" height="14" x="5" y="5" rx="2" />
+    </svg>
+  `,
+  moreVertical: html`
+    <svg viewBox="0 0 24 24">
+      <circle cx="12" cy="6" r="1.5" />
+      <circle cx="12" cy="12" r="1.5" />
+      <circle cx="12" cy="18" r="1.5" />
+    </svg>
+  `,
 } as const;
 
 export type IconName = keyof typeof icons;

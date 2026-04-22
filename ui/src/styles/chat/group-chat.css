@@ -770,6 +770,124 @@
   background: var(--muted, #6b7280);
 }
 
+/* Bridge agent control buttons */
+.group-members-panel__control-btn {
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition:
+    opacity var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+.group-members-panel__control-btn:hover:not(.btn--disabled) {
+  opacity: 1;
+  color: var(--primary);
+}
+
+.group-members-panel__control-btn.btn--disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  color: var(--muted);
+}
+
+/* Bridge Agent Menu Dropdown — positioned at click location */
+.bridge-agent-menu-overlay {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  pointer-events: auto;
+}
+
+.bridge-agent-menu {
+  position: fixed;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 180px;
+  animation: bridge-menu-in 0.08s var(--ease-out);
+}
+
+@keyframes bridge-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.bridge-agent-menu__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bridge-agent-menu__title {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.bridge-agent-menu__close {
+  opacity: 0.5;
+}
+
+.bridge-agent-menu__close:hover {
+  opacity: 1;
+}
+
+.bridge-agent-menu__items {
+  padding: 4px;
+}
+
+.bridge-agent-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--duration-fast) ease;
+}
+
+.bridge-agent-menu__item:hover {
+  background: var(--hover);
+}
+
+.bridge-agent-menu__item svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.bridge-agent-menu__item--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bridge-agent-menu__item--disabled:hover {
+  background: transparent;
+}
+
+.bridge-agent-menu__item--danger {
+  color: var(--danger, #ef4444);
+}
+
+.bridge-agent-menu__item--danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
 /* ─── Info Panel (slide-in side panel, mobile/extra details) ─── */
 
 .group-info-panel {

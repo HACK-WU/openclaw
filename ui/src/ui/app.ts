@@ -278,6 +278,8 @@ export class OpenClawApp extends LitElement {
   @state()
   projectContentPreviewDialog: import("./controllers/group-chat.js").GroupChatState["projectContentPreviewDialog"] =
     null;
+  @state()
+  bridgeAgentMenu: import("./controllers/group-chat.js").BridgeAgentMenuState | null = null;
 
   // Project management state
   @state() projectsList: ProjectIndexEntry[] = [];
