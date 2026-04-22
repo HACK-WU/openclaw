@@ -2770,6 +2770,21 @@ n5. 完成后回复合并结果摘要，包括：向 MEMORY.md 添加了 X 条�
                     }
                   }
                 },
+                onUpdateMemory: () => {
+                  if (state.activeGroupId) {
+                    const prompt = `@all 请基于最近的群聊内容，更新各 Agent 的专属记忆：
+
+1. 回顾最近群聊，识别有价值的信息
+2. 将相关知识写入对应 Agent 的专属记忆文件（{agentId}.md）
+3. 完成后回复：更新了哪些记忆，新增/修改了多少条目`;
+                    void sendGroupMessage(
+                      state as unknown as Parameters<typeof sendGroupMessage>[0],
+                      state.activeGroupId,
+                      prompt,
+                      ["all"],
+                    );
+                  }
+                },
                 onUpdateMemoryConfig: (config) => {
                   if (state.activeGroupId) {
                     void (async () => {

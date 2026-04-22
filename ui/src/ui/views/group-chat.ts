@@ -393,6 +393,7 @@ export type GroupChatViewProps = {
   onMemoryPreviewSave?: () => void;
   onMergeMemory?: () => void;
   onCompactMemory?: () => void;
+  onUpdateMemory?: () => void;
   onUpdateMemoryConfig?: (config: {
     maxSize?: number;
     contentInterval?: number;
@@ -2382,6 +2383,11 @@ function renderMemoryManagementSection(meta: GroupSessionMeta, props: GroupChatV
                       ? html`<button class="btn btn--secondary btn--sm" @click=${() => props.onCompactMemory?.()}>${t("chat.group.memory.compact")}</button>`
                       : nothing
                   }
+                  ${
+                    props.onUpdateMemory
+                      ? html`<button class="btn btn--secondary btn--sm" @click=${() => props.onUpdateMemory?.()}>${t("chat.group.memory.update")}</button>`
+                      : nothing
+                  }
                 </div>
               `
                 : nothing
@@ -2645,6 +2651,13 @@ function renderMembersPanelMemorySection(meta: GroupSessionMeta, props: GroupCha
                         props.onCompactMemory
                           ? html`<button class="btn btn--secondary btn--sm" @click=${() => props.onCompactMemory?.()}>
                             ${t("chat.group.memory.compact")}
+                          </button>`
+                          : nothing
+                      }
+                      ${
+                        props.onUpdateMemory
+                          ? html`<button class="btn btn--secondary btn--sm" @click=${() => props.onUpdateMemory?.()}>
+                            ${t("chat.group.memory.update")}
                           </button>`
                           : nothing
                       }
