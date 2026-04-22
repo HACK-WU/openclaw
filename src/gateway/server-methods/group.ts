@@ -1186,9 +1186,9 @@ const handleGroupSetAntiLoopConfig: GatewayRequestHandler = async ({
     });
     return;
   }
-  if (cliTimeout !== undefined && (cliTimeout < 30000 || cliTimeout > 600000)) {
+  if (cliTimeout !== undefined && (cliTimeout < 30000 || cliTimeout > 1800000)) {
     respond(false, undefined, {
-      message: "cliTimeout must be between 30000 and 600000",
+      message: "cliTimeout must be between 30000 and 1800000",
       code: 400,
     });
     return;
