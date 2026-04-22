@@ -1796,6 +1796,8 @@ export async function resetBridgeAgent(
       agentId,
     });
 
+    appendSystemMessageToUI(host, groupId, `♻️ ${agentId} 已重置`);
+
     // Clear terminal status for this agent
     if (host.bridgeTerminalStatuses && host.activeGroupId === groupId) {
       const nextStatuses = new Map(host.bridgeTerminalStatuses);
@@ -1840,6 +1842,8 @@ export async function abortBridgeAgent(
       groupId,
       agentId,
     });
+
+    appendSystemMessageToUI(host, groupId, `⏹️ ${agentId} 已停止`);
 
     // Clear terminal status for this agent
     if (host.bridgeTerminalStatuses && host.activeGroupId === groupId) {

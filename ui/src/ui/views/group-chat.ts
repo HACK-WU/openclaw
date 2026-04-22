@@ -1552,7 +1552,7 @@ function renderBridgeAgentMenu(meta: GroupSessionMeta, props: GroupChatViewProps
             menu.isBridge
               ? html`
                   <button
-                    class="bridge-agent-menu__item"
+                    class="bridge-agent-menu__item bridge-agent-menu__item--accent"
                     @click=${() => {
                       props.onResetBridgeAgent?.(meta.groupId, menu.agentId);
                       props.onCloseBridgeAgentMenu?.();
@@ -1562,7 +1562,7 @@ function renderBridgeAgentMenu(meta: GroupSessionMeta, props: GroupChatViewProps
                     <span>${t("chat.group.resetBridgeAgent")}</span>
                   </button>
                   <button
-                    class="bridge-agent-menu__item ${isActive ? "" : "bridge-agent-menu__item--disabled"}"
+                    class="bridge-agent-menu__item bridge-agent-menu__item--accent ${isActive ? "" : "bridge-agent-menu__item--disabled"}"
                     @click=${() => {
                       if (isActive) {
                         props.onAbortBridgeAgent?.(meta.groupId, menu.agentId);

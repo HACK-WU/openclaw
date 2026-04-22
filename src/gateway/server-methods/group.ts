@@ -1100,17 +1100,6 @@ const handleGroupAbortAgent: GatewayRequestHandler = async ({ params, respond, c
       // Broadcast the saved message
       broadcastGroupMessage(context.broadcast, groupId, savedMsg);
 
-      // Broadcast stream state as final
-      const streamPayload: GroupStreamPayload = {
-        groupId,
-        runId: runId ?? randomUUID(),
-        agentId,
-        agentName: agentId,
-        state: "final",
-        message: savedMsg,
-      };
-      broadcastGroupStream(context.broadcast, streamPayload);
-
       log.info("[ABORT_AGENT_SAVED]", { groupId, agentId, contentLength: savedContent.length });
     } else {
       // No content to save, broadcast aborted state
