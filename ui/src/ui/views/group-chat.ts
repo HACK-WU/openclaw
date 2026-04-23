@@ -59,6 +59,62 @@ function getDisplayItems(
   return [allOption, ...members];
 }
 
+// ─── Scroll to Bottom Button State ───
+let scrollToBottomVisible = false;
+let scrollToBottomRafId: number | null = null;
+
+/**
+ * Check if scroll to bottom button should be shown
+ * Returns true if user has scrolled up more than threshold from bottom
+ */
+function shouldShowScrollToBottom(container: Element): boolean {
+  const threshold = 100; // px from bottom
+  const { scrollHeight, scrollTop, clientHeight } = container as HTMLElement;
+  return scrollHeight - scrollTop - clientHeight > threshold;
+}
+
+/**
+ * Update scroll to bottom button visibility based on scroll position
+ */
+function updateScrollToBottomVisibility() {
+  const container = document.querySelector(".group-chat-room__messages");
+  const button = document.querySelector(".scroll-to-bottom-btn");
+  if (!container || !button) {
+    return;
+  }
+
+  const shouldShow = shouldShowScrollToBottom(container);
+  if (shouldShow !== scrollToBottomVisible) {
+    scrollToBottomVisible = shouldShow;
+    button.classList.toggle("is-visible", shouldShow);
+  }
+}
+
+/**
+ * Setup scroll listener for scroll to bottom button
+ */
+function setupScrollToBottomListener() {
+  const container = document.querySelector(".group-chat-room__messages");
+  if (!container) {
+    return;
+  }
+
+  // Use RAF throttling for performance
+  const handleScroll = () => {
+    if (scrollToBottomRafId) {
+      return;
+    }
+    scrollToBottomRafId = requestAnimationFrame(() => {
+      updateScrollToBottomVisibility();
+      scrollToBottomRafId = null;
+    });
+  };
+
+  container.addEventListener("scroll", handleScroll, { passive: true });
+  // Initial check
+  updateScrollToBottomVisibility();
+}
+
 // ─── Scroll Helpers ───
 
 /**
@@ -653,6 +709,11 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
   // Sidebar state — overlay mode for group chat (covers members panel, does not push content)
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
 
+  // Setup scroll listener after render
+  setTimeout(() => {
+    setupScrollToBottomListener();
+  }, 0);
+
   return html`
     <div
       class="group-chat-room"
@@ -812,6 +873,8 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
             ${pendingOnly.map((agentId) =>
               renderPendingAgentIndicator(agentId, meta, props.agentsList),
             )}
+
+            ${renderScrollToBottomButton()}
           </div>
 
           <div class="chat-compose group-chat-room__compose">
@@ -1023,6 +1086,28 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
       <!-- Bridge Agent Menu Dropdown (rendered at room level, not inside members panel) -->
       ${renderBridgeAgentMenu(meta, props)}
     </div>
+  `;
+}
+
+// ─── Scroll to Bottom Button ───
+
+function renderScrollToBottomButton() {
+  return html`
+    <button
+      class="scroll-to-bottom-btn"
+      aria-label="滚动到底部"
+      @click=${() => {
+        scrollGroupChatToBottom(true);
+        // Update visibility immediately
+        scrollToBottomVisible = false;
+        const button = document.querySelector(".scroll-to-bottom-btn");
+        if (button) {
+          button.classList.remove("is-visible");
+        }
+      }}
+    >
+      ${icons.arrowDown}
+    </button>
   `;
 }
 

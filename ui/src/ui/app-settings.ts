@@ -233,6 +233,9 @@ export async function refreshActiveTab(host: SettingsHost) {
   if (host.tab === "agents") {
     await loadAgents(host as unknown as OpenClawApp);
     await loadToolsCatalog(host as unknown as OpenClawApp);
+    // Reset configFormDirty to ensure configForm is updated with the latest snapshot.
+    // This prevents stale config data from being displayed when switching to the agents tab.
+    host.configFormDirty = false;
     await loadConfig(host as unknown as OpenClawApp);
     void loadCliAgents(host as unknown as OpenClawApp);
     const agentIds = host.agentsList?.agents?.map((entry) => entry.id) ?? [];

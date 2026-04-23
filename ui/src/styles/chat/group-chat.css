@@ -201,6 +201,7 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .group-chat-room__members-panel {
@@ -2133,4 +2134,68 @@
   padding: 12px 16px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+/* ─── Scroll to Bottom Button ─── */
+
+.scroll-to-bottom-btn {
+  position: sticky;
+  bottom: 16px;
+  margin-left: auto;
+  margin-bottom: 16px;
+  margin-right: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent-muted, #e86a6a);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow:
+    0 4px 16px rgba(232, 106, 106, 0.3),
+    0 2px 6px rgba(0, 0, 0, 0.12);
+  opacity: 0;
+  transform: scale(0.8) translateY(10px);
+  pointer-events: none;
+  transition:
+    opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+  z-index: 5;
+  flex-shrink: 0;
+}
+
+.scroll-to-bottom-btn.is-visible {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+  pointer-events: auto;
+}
+
+.scroll-to-bottom-btn:hover {
+  background: var(--accent-hover, #f08080);
+  transform: scale(1.08) translateY(-2px);
+  box-shadow:
+    0 6px 20px rgba(232, 106, 106, 0.4),
+    0 4px 10px rgba(0, 0, 0, 0.18);
+}
+
+.scroll-to-bottom-btn:active {
+  transform: scale(0.96) translateY(0);
+  box-shadow:
+    0 2px 8px rgba(232, 106, 106, 0.25),
+    0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.scroll-to-bottom-btn svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
