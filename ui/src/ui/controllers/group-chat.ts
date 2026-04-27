@@ -280,6 +280,42 @@ export type GroupChatState = {
     title: string;
     content: string;
   } | null;
+  // ─── Group Docs (shared documents created by agents) ───
+  /** Group document list */
+  groupDocsList: Array<{
+    id: string;
+    name: string;
+    createdBy: string;
+    createdAt: number;
+    updatedAt: number;
+    size: number;
+  }>;
+  /** Whether docs are loading */
+  groupDocsLoading: boolean;
+  /** Document preview/edit dialog state */
+  groupDocDialog: {
+    mode: "preview" | "edit" | "create";
+    docId?: string;
+    name: string;
+    content: string;
+    saving: boolean;
+    error: string | null;
+  } | null;
+  /** Document delete confirm dialog */
+  groupDocDeleteDialog: {
+    docId: string;
+    docName: string;
+    isDeleting: boolean;
+    error: string | null;
+  } | null;
+  /** Document rename dialog */
+  groupDocRenameDialog: {
+    docId: string;
+    docName: string;
+    newName: string;
+    isRenaming: boolean;
+    error: string | null;
+  } | null;
 };
 
 export type GroupCreateDialogState = {
@@ -381,6 +417,11 @@ export const DEFAULT_GROUP_CHAT_STATE: GroupChatState = {
   groupProjectDocs: [],
   groupProjectContentLoading: false,
   projectContentPreviewDialog: null,
+  groupDocsList: [],
+  groupDocsLoading: false,
+  groupDocDialog: null,
+  groupDocDeleteDialog: null,
+  groupDocRenameDialog: null,
 };
 
 // ─── Helpers ───
@@ -610,6 +651,11 @@ function resetGroupRoomState(host: GroupChatState): void {
   host.groupProjectDocs = [];
   host.groupProjectContentLoading = false;
   host.projectContentPreviewDialog = null;
+  host.groupDocsList = [];
+  host.groupDocsLoading = false;
+  host.groupDocDialog = null;
+  host.groupDocDeleteDialog = null;
+  host.groupDocRenameDialog = null;
 }
 
 export function openGroupList(host: GroupChatState): void {
@@ -3606,5 +3652,282 @@ export async function updateMemoryConfig(
     await loadMemoryStatus(host, groupId);
   } catch (err) {
     console.warn("[group-chat] failed to update memory config:", err);
+  }
+}
+
+// ─── Group Docs ───
+
+export async function loadGroupDocs(host: GroupHost, groupId: string): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  host.groupDocsLoading = true;
+  try {
+    const result = await host.client.request<{
+      docs: Array<{
+        id: string;
+        name: string;
+        createdBy: string;
+        createdAt: number;
+        updatedAt: number;
+        size: number;
+      }>;
+    }>("group.docs.list", { groupId });
+    host.groupDocsList = result.docs ?? [];
+  } catch (err) {
+    console.warn("[group-chat] failed to load group docs:", err);
+  } finally {
+    host.groupDocsLoading = false;
+  }
+}
+
+export async function refreshGroupDocs(host: GroupHost, groupId: string): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  host.groupDocsLoading = true;
+  try {
+    const result = await host.client.request<{
+      docs: Array<{
+        id: string;
+        name: string;
+        createdBy: string;
+        createdAt: number;
+        updatedAt: number;
+        size: number;
+      }>;
+    }>("group.docs.refresh", { groupId });
+    host.groupDocsList = result.docs ?? [];
+  } catch (err) {
+    console.warn("[group-chat] failed to refresh group docs:", err);
+  } finally {
+    host.groupDocsLoading = false;
+  }
+}
+
+export async function openGroupDocPreview(
+  host: GroupHost,
+  groupId: string,
+  docId: string,
+): Promise<void> {
+  if (!host.client || !host.connected) {
+    return;
+  }
+  try {
+    const result = await host.client.request<{
+      doc: {
+        id: string;
+        name: string;
+        content: string;
+        createdBy: string;
+        createdAt: number;
+        updatedAt: number;
+      };
+    }>("group.docs.get", { groupId, docId });
+    host.groupDocDialog = {
+      mode: "preview",
+      docId: result.doc.id,
+      name: result.doc.name,
+      content: result.doc.content,
+      saving: false,
+      error: null,
+    };
+  } catch (err) {
+    console.warn("[group-chat] failed to load group doc:", err);
+  }
+}
+
+export function openGroupDocCreateDialog(host: GroupChatState): void {
+  host.groupDocDialog = {
+    mode: "create",
+    name: "",
+    content: "",
+    saving: false,
+    error: null,
+  };
+}
+
+export function openGroupDocEditMode(host: GroupChatState): void {
+  if (!host.groupDocDialog) {
+    return;
+  }
+  host.groupDocDialog = {
+    ...host.groupDocDialog,
+    mode: "edit",
+  };
+}
+
+export function updateGroupDocDialogDraft(
+  host: GroupChatState,
+  field: "name" | "content",
+  value: string,
+): void {
+  if (!host.groupDocDialog) {
+    return;
+  }
+  host.groupDocDialog = {
+    ...host.groupDocDialog,
+    [field]: value,
+  };
+}
+
+export function closeGroupDocDialog(host: GroupChatState): void {
+  host.groupDocDialog = null;
+}
+
+export async function saveGroupDoc(host: GroupHost, groupId: string): Promise<void> {
+  const dialog = host.groupDocDialog;
+  if (!dialog || !host.client || !host.connected) {
+    return;
+  }
+
+  if (!dialog.name.trim()) {
+    host.groupDocDialog = { ...dialog, error: "Document name is required" };
+    return;
+  }
+
+  host.groupDocDialog = { ...dialog, saving: true, error: null };
+  try {
+    if (dialog.mode === "create") {
+      const result = await host.client.request<{
+        doc: {
+          id: string;
+          name: string;
+          content: string;
+          createdBy: string;
+          createdAt: number;
+          updatedAt: number;
+        };
+      }>("group.docs.create", {
+        groupId,
+        name: dialog.name.trim(),
+        content: dialog.content,
+        createdBy: "owner",
+      });
+      host.groupDocDialog = {
+        ...dialog,
+        mode: "preview",
+        docId: result.doc.id,
+        saving: false,
+      };
+    } else if (dialog.mode === "edit" && dialog.docId) {
+      await host.client.request("group.docs.update", {
+        groupId,
+        docId: dialog.docId,
+        content: dialog.content,
+      });
+      host.groupDocDialog = {
+        ...dialog,
+        mode: "preview",
+        saving: false,
+      };
+    }
+    // Refresh docs list
+    await loadGroupDocs(host, groupId);
+  } catch (err) {
+    host.groupDocDialog = { ...host.groupDocDialog, saving: false, error: String(err) };
+  }
+}
+
+export function openGroupDocDeleteDialog(
+  host: GroupChatState,
+  docId: string,
+  docName: string,
+): void {
+  host.groupDocDeleteDialog = {
+    docId,
+    docName,
+    isDeleting: false,
+    error: null,
+  };
+}
+
+export function closeGroupDocDeleteDialog(host: GroupChatState): void {
+  host.groupDocDeleteDialog = null;
+}
+
+export async function confirmDeleteGroupDoc(host: GroupHost, groupId: string): Promise<void> {
+  const dialog = host.groupDocDeleteDialog;
+  if (!dialog || !host.client || !host.connected) {
+    return;
+  }
+
+  host.groupDocDeleteDialog = { ...dialog, isDeleting: true, error: null };
+  try {
+    await host.client.request("group.docs.delete", {
+      groupId,
+      docId: dialog.docId,
+    });
+    host.groupDocDeleteDialog = null;
+    // Refresh docs list
+    await loadGroupDocs(host, groupId);
+  } catch (err) {
+    host.groupDocDeleteDialog = {
+      ...host.groupDocDeleteDialog!,
+      isDeleting: false,
+      error: String(err),
+    };
+  }
+}
+
+// ─── Group Doc Rename ───
+
+export function openGroupDocRenameDialog(
+  host: GroupChatState,
+  docId: string,
+  docName: string,
+): void {
+  host.groupDocRenameDialog = {
+    docId,
+    docName,
+    newName: docName,
+    isRenaming: false,
+    error: null,
+  };
+}
+
+export function closeGroupDocRenameDialog(host: GroupChatState): void {
+  host.groupDocRenameDialog = null;
+}
+
+export function updateGroupDocRenameName(host: GroupChatState, value: string): void {
+  if (!host.groupDocRenameDialog) {
+    return;
+  }
+  host.groupDocRenameDialog = { ...host.groupDocRenameDialog, newName: value, error: null };
+}
+
+export async function confirmRenameGroupDoc(host: GroupHost, groupId: string): Promise<void> {
+  const dialog = host.groupDocRenameDialog;
+  if (!dialog || !host.client || !host.connected) {
+    return;
+  }
+
+  if (!dialog.newName.trim()) {
+    host.groupDocRenameDialog = { ...dialog, error: "Name is required" };
+    return;
+  }
+
+  if (dialog.newName.trim() === dialog.docName) {
+    host.groupDocRenameDialog = null;
+    return;
+  }
+
+  host.groupDocRenameDialog = { ...dialog, isRenaming: true, error: null };
+  try {
+    await host.client.request("group.docs.rename", {
+      groupId,
+      docId: dialog.docId,
+      name: dialog.newName.trim(),
+    });
+    host.groupDocRenameDialog = null;
+    // Refresh docs list
+    await loadGroupDocs(host, groupId);
+  } catch (err) {
+    host.groupDocRenameDialog = {
+      ...host.groupDocRenameDialog!,
+      isRenaming: false,
+      error: String(err),
+    };
   }
 }

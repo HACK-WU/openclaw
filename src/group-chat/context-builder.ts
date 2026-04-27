@@ -39,6 +39,7 @@ import {
   DEFAULT_ANNOUNCEMENT_INTERVAL,
   DEFAULT_ROLE_REMINDER_INTERVAL,
 } from "./bridge-types.js";
+import { getGroupDocsPath } from "./group-doc-store.js";
 import { buildPlanModeAssistantPrompt, buildPlanModeExecutorPrompt } from "./plan-mode-context.js";
 import { resolveRolePrompt } from "./role-prompt.js";
 import type { GroupSessionEntry } from "./types.js";
@@ -314,6 +315,9 @@ Use \`@agentId\` on its **own line** to route your message to another agent.
     contextConfig,
   });
 
+  // 7.5. Group docs directory — injected every interaction
+  await injectGroupDocsContext(sections, { groupId });
+
   // 8. Core files — first interaction: content + paths; subsequent: paths only
   await injectCoreFiles(sections, { agentId, isFirstInteraction });
 
@@ -537,4 +541,33 @@ These files are available for reference:`,
   }
 
   return lines.join("\n");
+}
+
+// ─── Group Docs Context Injection ───
+
+async function injectGroupDocsContext(
+  sections: string[],
+  params: { groupId: string },
+): Promise<void> {
+  const { groupId } = params;
+  const docsPath = getGroupDocsPath(groupId);
+
+  sections.push(`### Group Documents
+
+This group has a shared document directory for storing documents created during collaboration.
+- **Document directory**: \`${docsPath}\`
+
+When creating documents (unless a specific location is requested), store them in this directory:
+- Use meaningful filenames, e.g. \`api-design.md\`
+- Use Markdown format, with a first-level heading as the document title
+
+Example:
+\`\`\`
+write_file({
+  path: "${docsPath}/api-design.md",
+  content: "# API Design\\n\\n## Overview\\n..."
+})
+\`\`\`
+
+Users can view, preview, and edit documents in the group info panel's "Documents" section.`);
 }

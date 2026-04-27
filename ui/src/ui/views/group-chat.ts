@@ -464,6 +464,52 @@ export type GroupChatViewProps = {
   projectContentPreviewDialog?: { title: string; content: string } | null;
   onOpenProjectContentPreview?: (title: string, content: string) => void;
   onCloseProjectContentPreview?: () => void;
+  // Group docs
+  groupDocsList?: Array<{
+    id: string;
+    name: string;
+    createdBy: string;
+    createdAt: number;
+    updatedAt: number;
+    size: number;
+  }>;
+  groupDocsLoading?: boolean;
+  groupDocDialog?: {
+    mode: "preview" | "edit" | "create";
+    docId?: string;
+    name: string;
+    content: string;
+    saving: boolean;
+    error: string | null;
+  } | null;
+  groupDocDeleteDialog?: {
+    docId: string;
+    docName: string;
+    isDeleting: boolean;
+    error: string | null;
+  } | null;
+  groupDocRenameDialog?: {
+    docId: string;
+    docName: string;
+    newName: string;
+    isRenaming: boolean;
+    error: string | null;
+  } | null;
+  onLoadGroupDocs?: () => void;
+  onRefreshGroupDocs?: () => void;
+  onOpenGroupDocPreview?: (docId: string) => void;
+  onOpenGroupDocCreate?: () => void;
+  onOpenGroupDocEditMode?: () => void;
+  onCloseGroupDocDialog?: () => void;
+  onGroupDocDialogDraftChange?: (field: "name" | "content", value: string) => void;
+  onSaveGroupDoc?: () => void;
+  onOpenGroupDocDeleteDialog?: (docId: string, docName: string) => void;
+  onCloseGroupDocDeleteDialog?: () => void;
+  onConfirmDeleteGroupDoc?: () => void;
+  onOpenGroupDocRenameDialog?: (docId: string, docName: string) => void;
+  onCloseGroupDocRenameDialog?: () => void;
+  onGroupDocRenameNameChange?: (value: string) => void;
+  onConfirmRenameGroupDoc?: () => void;
   // Image lightbox
   onOpenImageLightbox?: (url: string) => void;
 };
@@ -1081,6 +1127,9 @@ function renderGroupChatRoom(props: GroupChatViewProps) {
       ${renderClearMessagesDialog(props)}
       ${renderMemoryPreviewDialog(props)}
       ${renderProjectContentPreviewDialog(props)}
+      ${renderGroupDocDialog(props)}
+      ${renderGroupDocDeleteDialog(props)}
+      ${renderGroupDocRenameDialog(props)}
       ${renderAnnouncementEditDialog(meta, props)}
 
       <!-- Bridge Agent Menu Dropdown (rendered at room level, not inside members panel) -->
@@ -1845,6 +1894,9 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
             )}
           </ul>
         </div>
+
+        <!-- Group Documents -->
+        ${renderGroupDocsSection(meta, props)}
 
         <!-- Settings -->
         <div class="group-info-panel__section">
@@ -3855,4 +3907,328 @@ function highlightMentionsInHtml(
 /** Escape special regex characters */
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// ─── Group Documents Section (Info Panel) ───
+
+function renderGroupDocsSection(meta: GroupSessionMeta, props: GroupChatViewProps) {
+  const docs = props.groupDocsList ?? [];
+  const loading = props.groupDocsLoading ?? false;
+
+  return html`
+    <div class="group-info-panel__section">
+      <label>
+        ${t("chat.group.docs.title")}
+        ${!loading && docs.length > 0 ? html`<span style="font-weight: 400; color: var(--muted);"> (${docs.length})</span>` : nothing}
+      </label>
+      <div class="group-docs-section">
+        <div class="group-docs-header">
+          <div class="group-docs-actions">
+            <button
+              class="btn btn--secondary btn--sm"
+              @click=${() => props.onRefreshGroupDocs?.()}
+              ?disabled=${loading}
+            >
+              ${icons.refresh} ${loading ? t("chat.group.docs.loading") : t("action.refresh")}
+            </button>
+            <button
+              class="btn btn--primary btn--sm"
+              @click=${() => props.onOpenGroupDocCreate?.()}
+            >
+              + ${t("chat.group.docs.create")}
+            </button>
+          </div>
+        </div>
+
+        ${
+          docs.length === 0
+            ? html`
+            <div class="group-docs-empty">
+              <p>${t("chat.group.docs.empty")}</p>
+              <p class="group-docs-empty-hint">${t("chat.group.docs.emptyHint")}</p>
+            </div>
+          `
+            : html`
+            <div class="group-docs-list">
+              ${docs.map(
+                (doc) => html`
+                  <div class="group-docs-item">
+                    <div class="group-docs-item__header">
+                      <span class="group-docs-item__icon">${icons.fileText}</span>
+                      <span class="group-docs-item__name">${doc.name}</span>
+                    </div>
+                    <div class="group-docs-item__meta">
+                      <span>${formatDocTime(doc.createdAt)}</span>
+                      <span>·</span>
+                      <span>${doc.createdBy === "owner" ? t("chat.group.docs.author.owner") : doc.createdBy}</span>
+                      <span>·</span>
+                      <span>${formatFileSize(doc.size)}</span>
+                    </div>
+                    <div class="group-docs-item__actions">
+                      <button
+                        class="btn btn--sm btn--secondary"
+                        @click=${() => props.onOpenGroupDocPreview?.(doc.id)}
+                      >
+                        ${t("chat.group.docs.preview")}
+                      </button>
+                      <button
+                        class="btn btn--sm btn--secondary"
+                        @click=${() => props.onOpenGroupDocRenameDialog?.(doc.id, doc.name)}
+                      >
+                        ${t("chat.group.docs.rename")}
+                      </button>
+                      <button
+                        class="btn btn--sm btn--danger"
+                        @click=${() => props.onOpenGroupDocDeleteDialog?.(doc.id, doc.name)}
+                      >
+                        ${t("action.delete")}
+                      </button>
+                    </div>
+                  </div>
+                `,
+              )}
+            </div>
+          `
+        }
+      </div>
+    </div>
+  `;
+}
+
+function formatDocTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  return (
+    date.toLocaleDateString() +
+    " " +
+    date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  );
+}
+
+// ─── Group Doc Preview/Edit Dialog ───
+
+export function renderGroupDocDialog(props: GroupChatViewProps) {
+  const dialog = props.groupDocDialog;
+  if (!dialog) {
+    return nothing;
+  }
+
+  const isPreview = dialog.mode === "preview";
+  const isEdit = dialog.mode === "edit";
+  const isCreate = dialog.mode === "create";
+
+  return html`
+    <div class="modal-overlay" @click=${() => props.onCloseGroupDocDialog?.()}>
+      <div class="modal-card group-doc-dialog" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="modal-header">
+          <h3 class="modal-title">
+            ${
+              isPreview
+                ? t("chat.group.docs.modal.preview", { name: dialog.name })
+                : isEdit
+                  ? t("chat.group.docs.modal.edit", { name: dialog.name })
+                  : t("chat.group.docs.modal.create")
+            }
+          </h3>
+          <button class="btn btn--sm btn--icon" @click=${() => props.onCloseGroupDocDialog?.()}>
+            ${icons.x}
+          </button>
+        </div>
+
+        <div class="group-doc-dialog__body">
+          ${
+            isPreview
+              ? html`
+              <div class="group-doc-dialog__preview chat-text">
+                ${unsafeHTML(toSanitizedMarkdownHtml(dialog.content))}
+              </div>
+            `
+              : html`
+              <div class="group-doc-dialog__editor">
+                ${
+                  isCreate
+                    ? html`
+                  <div class="form-group">
+                    <label class="form-label">${t("chat.group.docs.label.name")}</label>
+                    <input
+                      type="text"
+                      class="field form-input"
+                      .value=${dialog.name}
+                      @input=${(e: InputEvent) => {
+                        props.onGroupDocDialogDraftChange?.(
+                          "name",
+                          (e.target as HTMLInputElement).value,
+                        );
+                      }}
+                      placeholder=${t("chat.group.docs.namePlaceholder")}
+                    />
+                  </div>
+                `
+                    : nothing
+                }
+                <div class="form-group">
+                  <label class="form-label">${t("chat.group.docs.label.content")}</label>
+                  <textarea
+                    class="field group-doc-dialog__textarea"
+                    .value=${dialog.content}
+                    @input=${(e: InputEvent) => {
+                      props.onGroupDocDialogDraftChange?.(
+                        "content",
+                        (e.target as HTMLTextAreaElement).value,
+                      );
+                    }}
+                    rows="20"
+                    placeholder=${t("chat.group.docs.contentPlaceholder")}
+                  ></textarea>
+                  <span class="form-hint">${t("chat.group.docs.markdownHint")}</span>
+                </div>
+              </div>
+            `
+          }
+        </div>
+
+        ${dialog.error ? html`<div class="group-doc-dialog__error">${dialog.error}</div>` : nothing}
+
+        <div class="group-doc-dialog__footer">
+          ${
+            isPreview
+              ? html`
+              <button
+                class="btn btn--secondary"
+                @click=${() => props.onOpenGroupDocEditMode?.()}
+              >
+                ${icons.edit} ${t("action.edit")}
+              </button>
+              <button
+                class="btn btn--secondary"
+                @click=${async (e: Event) => {
+                  const btn = e.currentTarget as HTMLButtonElement;
+                  if (btn.dataset.copied === "1") {
+                    return;
+                  }
+
+                  try {
+                    await navigator.clipboard.writeText(dialog.content);
+                    btn.dataset.copied = "1";
+                    const originalHTML = btn.innerHTML;
+                    // Use checkmark symbol directly instead of icons.check (TemplateResult)
+                    btn.innerHTML = `✓ ${t("chat.group.docs.copied")}`;
+
+                    setTimeout(() => {
+                      if (btn.isConnected) {
+                        delete btn.dataset.copied;
+                        btn.innerHTML = originalHTML;
+                      }
+                    }, 1500);
+                  } catch {
+                    // Clipboard write failed - best effort
+                  }
+                }}
+              >
+                ${icons.copy} ${t("chat.group.docs.copy")}
+              </button>
+              <button class="btn btn--secondary" @click=${() => props.onCloseGroupDocDialog?.()}>
+                ${t("action.close")}
+              </button>
+            `
+              : html`
+              <button class="btn btn--secondary" @click=${() => props.onCloseGroupDocDialog?.()}>
+                ${t("action.cancel")}
+              </button>
+              <button
+                class="btn btn--primary"
+                @click=${() => props.onSaveGroupDoc?.()}
+                ?disabled=${dialog.saving || (isCreate && !dialog.name.trim())}
+              >
+                ${dialog.saving ? t("chat.group.docs.saving") : t("action.save")}
+              </button>
+            `
+          }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Group Doc Delete Dialog ───
+
+export function renderGroupDocDeleteDialog(props: GroupChatViewProps) {
+  const dialog = props.groupDocDeleteDialog;
+  if (!dialog) {
+    return nothing;
+  }
+
+  return html`
+    <div class="modal-overlay" @click=${() => props.onCloseGroupDocDeleteDialog?.()}>
+      <div class="modal-card" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="modal-header">
+          <h3 class="modal-title">${t("chat.group.docs.delete.title")}</h3>
+        </div>
+        <div class="modal-body">
+          <p>${t("chat.group.docs.delete.confirm", { name: dialog.docName })}</p>
+          ${dialog.error ? html`<p class="error-text">${dialog.error}</p>` : nothing}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn--secondary" @click=${() => props.onCloseGroupDocDeleteDialog?.()} ?disabled=${dialog.isDeleting}>
+            ${t("action.cancel")}
+          </button>
+          <button
+            class="btn btn--danger"
+            @click=${() => props.onConfirmDeleteGroupDoc?.()}
+            ?disabled=${dialog.isDeleting}
+          >
+            ${dialog.isDeleting ? t("chat.group.docs.deleting") : t("action.delete")}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Group Doc Rename Dialog ───
+
+function renderGroupDocRenameDialog(props: GroupChatViewProps) {
+  const dialog = props.groupDocRenameDialog;
+  if (!dialog) {
+    return nothing;
+  }
+
+  return html`
+    <div class="modal-overlay" @click=${() => props.onCloseGroupDocRenameDialog?.()}>
+      <div class="modal-card" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="modal-header">
+          <h3 class="modal-title">${t("chat.group.docs.rename.title")}</h3>
+          <button class="btn btn--sm btn--icon" @click=${() => props.onCloseGroupDocRenameDialog?.()}>
+            ${icons.x}
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">${t("chat.group.docs.rename.newName")}</label>
+            <input
+              type="text"
+              class="field form-input"
+              .value=${dialog.newName}
+              @input=${(e: InputEvent) => {
+                props.onGroupDocRenameNameChange?.((e.target as HTMLInputElement).value);
+              }}
+              placeholder=${t("chat.group.docs.rename.placeholder")}
+            />
+          </div>
+          ${dialog.error ? html`<p class="error-text">${dialog.error}</p>` : nothing}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn--secondary" @click=${() => props.onCloseGroupDocRenameDialog?.()} ?disabled=${dialog.isRenaming}>
+            ${t("action.cancel")}
+          </button>
+          <button
+            class="btn btn--primary"
+            @click=${() => props.onConfirmRenameGroupDoc?.()}
+            ?disabled=${dialog.isRenaming || !dialog.newName.trim()}
+          >
+            ${dialog.isRenaming ? t("chat.group.docs.renaming") : t("action.save")}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
 }

@@ -21,3 +21,4 @@ export * from "./bridge-trigger.js";
 export * from "./bridge-assistant.js";
 export * from "./terminal-events.js";
 export * from "./audit-logger.js";
+export * from "./group-doc-store.js";

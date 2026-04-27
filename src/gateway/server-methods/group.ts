@@ -36,6 +36,16 @@ import {
   setChainMonitor,
   startChainMonitor,
 } from "../../group-chat/chain-state-store.js";
+import {
+  createGroupDoc,
+  deleteGroupDoc,
+  loadGroupDoc,
+  loadGroupDocsIndex,
+  refreshGroupDocsIndex,
+  renameGroupDoc,
+  updateGroupDoc,
+  cleanupGroupDocs,
+} from "../../group-chat/group-doc-store.js";
 import { buildGroupSessionKey } from "../../group-chat/group-session-key.js";
 import {
   createGroup,
@@ -260,6 +270,8 @@ const handleGroupDelete: GatewayRequestHandler = async ({ params, respond, conte
       groupId,
       groupName: groupDirName,
     });
+    // Clean up group docs cache (docs directory is removed by deleteGroup)
+    await cleanupGroupDocs(groupId);
   }
 
   // Actually delete the group directory (including transcript.jsonl)
@@ -1976,6 +1988,124 @@ const handleGroupCheckMemoryBeforeDissolve: GatewayRequestHandler = async ({ par
   respond(true, result);
 };
 
+// ─── Group Docs ───
+
+const handleGroupDocsList: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  const docs = loadGroupDocsIndex(groupId);
+  respond(true, { docs });
+};
+
+const handleGroupDocsGet: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  const docId = params.docId as string;
+  if (!groupId || !docId) {
+    respond(false, undefined, { message: "groupId and docId are required", code: 400 });
+    return;
+  }
+
+  const doc = loadGroupDoc(groupId, docId);
+  if (!doc) {
+    respond(false, undefined, { message: "Document not found", code: 404 });
+    return;
+  }
+
+  respond(true, { doc });
+};
+
+const handleGroupDocsCreate: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  const name = (params.name as string)?.trim();
+  const content = params.content as string;
+  const createdBy = params.createdBy as string;
+
+  if (!groupId || !name || !content) {
+    respond(false, undefined, { message: "groupId, name, and content are required", code: 400 });
+    return;
+  }
+
+  try {
+    const doc = await createGroupDoc({ groupId, name, content, createdBy: createdBy || "owner" });
+    log.info(`Group doc created via RPC: ${doc.id} (${name}) in group ${groupId}`);
+    respond(true, { doc });
+  } catch (err) {
+    log.error(`Failed to create group doc: ${String(err)}`);
+    respond(false, undefined, { message: "Failed to create document", code: 500 });
+  }
+};
+
+const handleGroupDocsUpdate: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  const docId = params.docId as string;
+  const content = params.content as string;
+
+  if (!groupId || !docId || content === undefined) {
+    respond(false, undefined, { message: "groupId, docId, and content are required", code: 400 });
+    return;
+  }
+
+  const doc = await updateGroupDoc(groupId, docId, content);
+  if (!doc) {
+    respond(false, undefined, { message: "Document not found", code: 404 });
+    return;
+  }
+
+  respond(true, { doc });
+};
+
+const handleGroupDocsRename: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  const docId = params.docId as string;
+  const name = (params.name as string)?.trim();
+
+  if (!groupId || !docId || !name) {
+    respond(false, undefined, { message: "groupId, docId, and name are required", code: 400 });
+    return;
+  }
+
+  const doc = await renameGroupDoc(groupId, docId, name);
+  if (!doc) {
+    respond(false, undefined, { message: "Document not found", code: 404 });
+    return;
+  }
+
+  respond(true, { doc });
+};
+
+const handleGroupDocsDelete: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  const docId = params.docId as string;
+
+  if (!groupId || !docId) {
+    respond(false, undefined, { message: "groupId and docId are required", code: 400 });
+    return;
+  }
+
+  const success = await deleteGroupDoc(groupId, docId);
+  if (!success) {
+    respond(false, undefined, { message: "Document not found", code: 404 });
+    return;
+  }
+
+  respond(true, { deleted: true });
+};
+
+const handleGroupDocsRefresh: GatewayRequestHandler = async ({ params, respond }) => {
+  const groupId = params.groupId as string;
+  if (!groupId) {
+    respond(false, undefined, { message: "groupId is required", code: 400 });
+    return;
+  }
+
+  const docs = await refreshGroupDocsIndex(groupId);
+  respond(true, { docs });
+};
+
 // ─── Export handler map ───
 
 export const groupHandlers: GatewayRequestHandlers = {
@@ -2019,4 +2149,12 @@ export const groupHandlers: GatewayRequestHandlers = {
   "group.memoryRead": handleGroupMemoryRead,
   "group.memoryWrite": handleGroupMemoryWrite,
   "group.checkMemoryBeforeDissolve": handleGroupCheckMemoryBeforeDissolve,
+  // Group Docs
+  "group.docs.list": handleGroupDocsList,
+  "group.docs.get": handleGroupDocsGet,
+  "group.docs.create": handleGroupDocsCreate,
+  "group.docs.update": handleGroupDocsUpdate,
+  "group.docs.rename": handleGroupDocsRename,
+  "group.docs.delete": handleGroupDocsDelete,
+  "group.docs.refresh": handleGroupDocsRefresh,
 };

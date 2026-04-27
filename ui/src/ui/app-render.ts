@@ -2266,7 +2266,23 @@ export function renderApp(state: AppViewState) {
                     );
                   }
                 },
-                onToggleInfoPanel: () => (state.groupInfoPanelOpen = !state.groupInfoPanelOpen),
+                onToggleInfoPanel: () => {
+                  state.groupInfoPanelOpen = !state.groupInfoPanelOpen;
+                  // Load docs list when panel is opened
+                  if (
+                    state.groupInfoPanelOpen &&
+                    state.activeGroupId &&
+                    state.groupDocsList.length === 0
+                  ) {
+                    void (async () => {
+                      const { loadGroupDocs } = await import("./controllers/group-chat.ts");
+                      await loadGroupDocs(
+                        state as unknown as Parameters<typeof loadGroupDocs>[0],
+                        state.activeGroupId!,
+                      );
+                    })();
+                  }
+                },
                 onExportTranscript: () => {
                   if (state.activeGroupId) {
                     void (async () => {
@@ -2793,6 +2809,164 @@ n5. 完成后回复合并结果摘要，包括：向 MEMORY.md 添加了 X 条�
                         state as unknown as Parameters<typeof updateMemoryConfig>[0],
                         state.activeGroupId!,
                         config,
+                      );
+                    })();
+                  }
+                },
+                // Group Docs
+                groupDocsList: state.groupDocsList,
+                groupDocsLoading: state.groupDocsLoading,
+                groupDocDialog: state.groupDocDialog,
+                groupDocDeleteDialog: state.groupDocDeleteDialog,
+                onLoadGroupDocs: () => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { loadGroupDocs } = await import("./controllers/group-chat.ts");
+                      await loadGroupDocs(
+                        state as unknown as Parameters<typeof loadGroupDocs>[0],
+                        state.activeGroupId!,
+                      );
+                    })();
+                  }
+                },
+                onRefreshGroupDocs: () => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { refreshGroupDocs } = await import("./controllers/group-chat.ts");
+                      await refreshGroupDocs(
+                        state as unknown as Parameters<typeof refreshGroupDocs>[0],
+                        state.activeGroupId!,
+                      );
+                    })();
+                  }
+                },
+                onOpenGroupDocPreview: (docId: string) => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { openGroupDocPreview } = await import("./controllers/group-chat.ts");
+                      await openGroupDocPreview(
+                        state as unknown as Parameters<typeof openGroupDocPreview>[0],
+                        state.activeGroupId!,
+                        docId,
+                      );
+                    })();
+                  }
+                },
+                onOpenGroupDocCreate: () => {
+                  void (async () => {
+                    const { openGroupDocCreateDialog } =
+                      await import("./controllers/group-chat.ts");
+                    openGroupDocCreateDialog(
+                      state as unknown as Parameters<typeof openGroupDocCreateDialog>[0],
+                    );
+                  })();
+                },
+                onOpenGroupDocEditMode: () => {
+                  void (async () => {
+                    const { openGroupDocEditMode } = await import("./controllers/group-chat.ts");
+                    openGroupDocEditMode(
+                      state as unknown as Parameters<typeof openGroupDocEditMode>[0],
+                    );
+                  })();
+                },
+                onCloseGroupDocDialog: () => {
+                  void (async () => {
+                    const { closeGroupDocDialog } = await import("./controllers/group-chat.ts");
+                    closeGroupDocDialog(
+                      state as unknown as Parameters<typeof closeGroupDocDialog>[0],
+                    );
+                  })();
+                },
+                onGroupDocDialogDraftChange: (field: "name" | "content", value: string) => {
+                  void (async () => {
+                    const { updateGroupDocDialogDraft } =
+                      await import("./controllers/group-chat.ts");
+                    updateGroupDocDialogDraft(
+                      state as unknown as Parameters<typeof updateGroupDocDialogDraft>[0],
+                      field,
+                      value,
+                    );
+                  })();
+                },
+                onSaveGroupDoc: () => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { saveGroupDoc } = await import("./controllers/group-chat.ts");
+                      await saveGroupDoc(
+                        state as unknown as Parameters<typeof saveGroupDoc>[0],
+                        state.activeGroupId!,
+                      );
+                    })();
+                  }
+                },
+                onOpenGroupDocDeleteDialog: (docId: string, docName: string) => {
+                  void (async () => {
+                    const { openGroupDocDeleteDialog } =
+                      await import("./controllers/group-chat.ts");
+                    openGroupDocDeleteDialog(
+                      state as unknown as Parameters<typeof openGroupDocDeleteDialog>[0],
+                      docId,
+                      docName,
+                    );
+                  })();
+                },
+                onCloseGroupDocDeleteDialog: () => {
+                  void (async () => {
+                    const { closeGroupDocDeleteDialog } =
+                      await import("./controllers/group-chat.ts");
+                    closeGroupDocDeleteDialog(
+                      state as unknown as Parameters<typeof closeGroupDocDeleteDialog>[0],
+                    );
+                  })();
+                },
+                onConfirmDeleteGroupDoc: () => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { confirmDeleteGroupDoc } = await import("./controllers/group-chat.ts");
+                      await confirmDeleteGroupDoc(
+                        state as unknown as Parameters<typeof confirmDeleteGroupDoc>[0],
+                        state.activeGroupId!,
+                      );
+                    })();
+                  }
+                },
+                onOpenGroupDocRenameDialog: (docId: string, docName: string) => {
+                  void (async () => {
+                    const { openGroupDocRenameDialog } =
+                      await import("./controllers/group-chat.ts");
+                    openGroupDocRenameDialog(
+                      state as unknown as Parameters<typeof openGroupDocRenameDialog>[0],
+                      docId,
+                      docName,
+                    );
+                  })();
+                },
+                onCloseGroupDocRenameDialog: () => {
+                  void (async () => {
+                    const { closeGroupDocRenameDialog } =
+                      await import("./controllers/group-chat.ts");
+                    closeGroupDocRenameDialog(
+                      state as unknown as Parameters<typeof closeGroupDocRenameDialog>[0],
+                    );
+                  })();
+                },
+                onGroupDocRenameNameChange: (value: string) => {
+                  void (async () => {
+                    const { updateGroupDocRenameName } =
+                      await import("./controllers/group-chat.ts");
+                    updateGroupDocRenameName(
+                      state as unknown as Parameters<typeof updateGroupDocRenameName>[0],
+                      value,
+                    );
+                  })();
+                },
+                onConfirmRenameGroupDoc: () => {
+                  if (state.activeGroupId) {
+                    void (async () => {
+                      const { confirmRenameGroupDoc } = await import("./controllers/group-chat.ts");
+                      await confirmRenameGroupDoc(
+                        state as unknown as Parameters<typeof confirmRenameGroupDoc>[0],
+                        state.activeGroupId!,
                       );
                     })();
                   }

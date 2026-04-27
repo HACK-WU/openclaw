@@ -227,3 +227,39 @@ export type GroupReplyArgs = {
   message: string;
   mentions?: string[];
 };
+
+// ─── Group Docs ───
+
+/** Full group document (includes content). */
+export type GroupDoc = {
+  /** Document unique ID (UUID) */
+  id: string;
+  /** Owning group ID */
+  groupId: string;
+  /** Document name (display name, without .md extension) */
+  name: string;
+  /** Document content (Markdown format) */
+  content: string;
+  /** Creator: 'owner' or agentId */
+  createdBy: string;
+  /** Creation timestamp (epoch ms) */
+  createdAt: number;
+  /** Last update timestamp (epoch ms) */
+  updatedAt: number;
+};
+
+/** Lightweight index entry for document listing. */
+export type GroupDocIndexEntry = {
+  /** Document ID */
+  id: string;
+  /** Document name */
+  name: string;
+  /** Creator: 'owner' or agentId */
+  createdBy: string;
+  /** Creation timestamp (epoch ms) */
+  createdAt: number;
+  /** Last update timestamp (epoch ms) */
+  updatedAt: number;
+  /** File size in bytes */
+  size: number;
+};

@@ -375,6 +375,12 @@ export type AppViewState = {
     groupProjectContentLoading: import("./controllers/group-chat.js").GroupChatState["groupProjectContentLoading"];
     projectContentPreviewDialog: import("./controllers/group-chat.js").GroupChatState["projectContentPreviewDialog"];
     bridgeAgentMenu: import("./controllers/group-chat.js").BridgeAgentMenuState | null;
+    // Group docs state
+    groupDocsList: import("./controllers/group-chat.js").GroupChatState["groupDocsList"];
+    groupDocsLoading: import("./controllers/group-chat.js").GroupChatState["groupDocsLoading"];
+    groupDocDialog: import("./controllers/group-chat.js").GroupChatState["groupDocDialog"];
+    groupDocDeleteDialog: import("./controllers/group-chat.js").GroupChatState["groupDocDeleteDialog"];
+    groupDocRenameDialog: import("./controllers/group-chat.js").GroupChatState["groupDocRenameDialog"];
     // Project management state
     projectsList: ProjectIndexEntry[];
     projectsLoading: boolean;
