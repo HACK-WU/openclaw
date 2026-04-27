@@ -1629,6 +1629,9 @@ function renderGroupMembersPanel(meta: GroupSessionMeta, props: GroupChatViewPro
       <!-- Plan Mode Section -->
       ${renderPlanModeSection(meta, props)}
 
+      <!-- Group Documents -->
+      ${renderGroupDocsSection(meta, props)}
+
       <!-- Memory Management Section (in members panel) -->
       ${renderMembersPanelMemorySection(meta, props)}
 
@@ -1894,9 +1897,6 @@ function renderGroupInfoPanel(meta: GroupSessionMeta, props: GroupChatViewProps)
             )}
           </ul>
         </div>
-
-        <!-- Group Documents -->
-        ${renderGroupDocsSection(meta, props)}
 
         <!-- Settings -->
         <div class="group-info-panel__section">
