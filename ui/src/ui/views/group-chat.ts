@@ -3995,6 +3995,16 @@ function renderGroupDocsSection(meta: GroupSessionMeta, props: GroupChatViewProp
               </div>
             `
         }
+        ${
+          meta.groupId
+            ? html`
+          <div class="group-members-panel__docs-path">
+            <span class="group-members-panel__docs-path__label">${t("chat.group.docs.path")}</span>
+            <code class="group-members-panel__docs-path__value">~/.openclaw/group-chats/${meta.groupId}/docs/</code>
+          </div>
+        `
+            : nothing
+        }
       </div>
     </div>
   `;

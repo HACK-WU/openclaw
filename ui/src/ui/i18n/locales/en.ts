@@ -390,6 +390,7 @@ export const en: Record<string, string> = {
   "chat.group.docs.create": "New",
   "chat.group.docs.empty": "No documents yet",
   "chat.group.docs.emptyHint": "Documents created by agents will appear here",
+  "chat.group.docs.path": "Location: ",
   "chat.group.docs.preview": "Preview",
   "chat.group.docs.copy": "Copy",
   "chat.group.docs.copied": "Copied",

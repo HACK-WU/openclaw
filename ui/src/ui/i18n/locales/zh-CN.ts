@@ -353,6 +353,7 @@ export const zhCN: Record<string, string> = {
   "chat.group.docs.create": "新建",
   "chat.group.docs.empty": "暂无文档",
   "chat.group.docs.emptyHint": "Agent 创建的文档将自动显示在这里",
+  "chat.group.docs.path": "存储位置：",
   "chat.group.docs.preview": "预览",
   "chat.group.docs.copy": "复制",
   "chat.group.docs.copied": "已复制",

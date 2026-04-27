@@ -2226,6 +2226,31 @@
   font-size: 11px;
 }
 
+.group-members-panel__docs-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.group-members-panel__docs-path__label {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.group-members-panel__docs-path__value {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  padding: 2px 6px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
 .group-members-panel__memory-actions {
   display: flex;
   flex-direction: row;
