@@ -500,7 +500,6 @@ export type GroupChatViewProps = {
   onOpenGroupDocPreview?: (docId: string) => void;
   onOpenGroupDocCreate?: () => void;
   onOpenGroupDocEditMode?: () => void;
-  onOpenGroupDocPreviewMode?: () => void;
   onCloseGroupDocDialog?: () => void;
   onGroupDocDialogDraftChange?: (field: "name" | "content", value: string) => void;
   onSaveGroupDoc?: () => void;
@@ -4101,7 +4100,7 @@ export function renderGroupDocDialog(props: GroupChatViewProps) {
           }
         </div>
 
-          ${dialog.error ? html`<div class="group-doc-dialog__error">${dialog.error}</div>` : nothing}
+        ${dialog.error ? html`<div class="group-doc-dialog__error">${dialog.error}</div>` : nothing}
 
         <div class="group-doc-dialog__footer">
           ${
@@ -4148,12 +4147,6 @@ export function renderGroupDocDialog(props: GroupChatViewProps) {
               : html`
               <button class="btn btn--secondary" @click=${() => props.onCloseGroupDocDialog?.()}>
                 ${t("action.cancel")}
-              </button>
-              <button
-                class="btn btn--secondary"
-                @click=${() => props.onOpenGroupDocPreviewMode?.()}
-              >
-                ${t("chat.group.docs.preview")}
               </button>
               <button
                 class="btn btn--primary"
