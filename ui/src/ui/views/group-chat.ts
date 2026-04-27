@@ -3909,86 +3909,90 @@ function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// ─── Group Documents Section (Info Panel) ───
+// ─── Group Documents Section (Members Panel) ───
 
 function renderGroupDocsSection(meta: GroupSessionMeta, props: GroupChatViewProps) {
   const docs = props.groupDocsList ?? [];
   const loading = props.groupDocsLoading ?? false;
 
   return html`
-    <div class="group-info-panel__section">
-      <label>
-        ${t("chat.group.docs.title")}
-        ${!loading && docs.length > 0 ? html`<span style="font-weight: 400; color: var(--muted);"> (${docs.length})</span>` : nothing}
-      </label>
-      <div class="group-docs-section">
-        <div class="group-docs-header">
-          <div class="group-docs-actions">
-            <button
-              class="btn btn--secondary btn--sm"
-              @click=${() => props.onRefreshGroupDocs?.()}
-              ?disabled=${loading}
-            >
-              ${icons.refresh} ${loading ? t("chat.group.docs.loading") : t("action.refresh")}
-            </button>
-            <button
-              class="btn btn--primary btn--sm"
-              @click=${() => props.onOpenGroupDocCreate?.()}
-            >
-              + ${t("chat.group.docs.create")}
-            </button>
-          </div>
+    <div class="group-members-panel__docs">
+      <div class="group-members-panel__docs-header">
+        <h3>
+          ${t("chat.group.docs.title")}
+          ${
+            !loading && docs.length > 0
+              ? html`<span class="group-members-panel__docs-count">(${docs.length})</span>`
+              : nothing
+          }
+        </h3>
+        <div class="group-members-panel__docs-actions">
+          <button
+            class="btn btn--sm btn--icon"
+            title=${loading ? t("chat.group.docs.loading") : t("action.refresh")}
+            @click=${() => props.onRefreshGroupDocs?.()}
+            ?disabled=${loading}
+          >
+            ${icons.refresh}
+          </button>
+          <button
+            class="btn btn--sm btn--icon"
+            title=${t("chat.group.docs.create")}
+            @click=${() => props.onOpenGroupDocCreate?.()}
+          >
+            ${icons.plus}
+          </button>
         </div>
+      </div>
 
+      <div class="group-members-panel__docs-content">
         ${
           docs.length === 0
             ? html`
-            <div class="group-docs-empty">
-              <p>${t("chat.group.docs.empty")}</p>
-              <p class="group-docs-empty-hint">${t("chat.group.docs.emptyHint")}</p>
-            </div>
-          `
+              <div class="group-members-panel__docs-empty">
+                <p>${t("chat.group.docs.empty")}</p>
+                <p class="group-members-panel__docs-empty-hint">${t("chat.group.docs.emptyHint")}</p>
+              </div>
+            `
             : html`
-            <div class="group-docs-list">
-              ${docs.map(
-                (doc) => html`
-                  <div class="group-docs-item">
-                    <div class="group-docs-item__header">
-                      <span class="group-docs-item__icon">${icons.fileText}</span>
-                      <span class="group-docs-item__name">${doc.name}</span>
+              <div class="group-members-panel__docs-list">
+                ${docs.map(
+                  (doc) => html`
+                    <div class="group-members-panel__docs-item">
+                      <div class="group-members-panel__docs-item__name">
+                        <span class="group-members-panel__docs-item__icon">${icons.fileText}</span>
+                        <span>${doc.name}</span>
+                      </div>
+                      <div class="group-members-panel__docs-item__meta">
+                        <span>${formatDocTime(doc.createdAt)}</span>
+                        <span>·</span>
+                        <span>${doc.createdBy === "owner" ? t("chat.group.docs.author.owner") : doc.createdBy}</span>
+                      </div>
+                      <div class="group-members-panel__docs-item__actions">
+                        <button
+                          class="btn btn--sm btn--secondary"
+                          @click=${() => props.onOpenGroupDocPreview?.(doc.id)}
+                        >
+                          ${t("chat.group.docs.preview")}
+                        </button>
+                        <button
+                          class="btn btn--sm btn--secondary"
+                          @click=${() => props.onOpenGroupDocRenameDialog?.(doc.id, doc.name)}
+                        >
+                          ${t("chat.group.docs.rename")}
+                        </button>
+                        <button
+                          class="btn btn--sm btn--danger"
+                          @click=${() => props.onOpenGroupDocDeleteDialog?.(doc.id, doc.name)}
+                        >
+                          ${t("action.delete")}
+                        </button>
+                      </div>
                     </div>
-                    <div class="group-docs-item__meta">
-                      <span>${formatDocTime(doc.createdAt)}</span>
-                      <span>·</span>
-                      <span>${doc.createdBy === "owner" ? t("chat.group.docs.author.owner") : doc.createdBy}</span>
-                      <span>·</span>
-                      <span>${formatFileSize(doc.size)}</span>
-                    </div>
-                    <div class="group-docs-item__actions">
-                      <button
-                        class="btn btn--sm btn--secondary"
-                        @click=${() => props.onOpenGroupDocPreview?.(doc.id)}
-                      >
-                        ${t("chat.group.docs.preview")}
-                      </button>
-                      <button
-                        class="btn btn--sm btn--secondary"
-                        @click=${() => props.onOpenGroupDocRenameDialog?.(doc.id, doc.name)}
-                      >
-                        ${t("chat.group.docs.rename")}
-                      </button>
-                      <button
-                        class="btn btn--sm btn--danger"
-                        @click=${() => props.onOpenGroupDocDeleteDialog?.(doc.id, doc.name)}
-                      >
-                        ${t("action.delete")}
-                      </button>
-                    </div>
-                  </div>
-                `,
-              )}
-            </div>
-          `
+                  `,
+                )}
+              </div>
+            `
         }
       </div>
     </div>
