@@ -2869,6 +2869,14 @@ n5. 完成后回复合并结果摘要，包括：向 MEMORY.md 添加了 X 条�
                     );
                   })();
                 },
+                onOpenGroupDocPreviewMode: () => {
+                  void (async () => {
+                    const { openGroupDocPreviewMode } = await import("./controllers/group-chat.ts");
+                    openGroupDocPreviewMode(
+                      state as unknown as Parameters<typeof openGroupDocPreviewMode>[0],
+                    );
+                  })();
+                },
                 onCloseGroupDocDialog: () => {
                   void (async () => {
                     const { closeGroupDocDialog } = await import("./controllers/group-chat.ts");

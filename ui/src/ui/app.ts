@@ -281,6 +281,19 @@ export class OpenClawApp extends LitElement {
   @state()
   bridgeAgentMenu: import("./controllers/group-chat.js").BridgeAgentMenuState | null = null;
 
+  // Group docs state (shared documents created by agents)
+  @state()
+  groupDocsList: import("./controllers/group-chat.js").GroupChatState["groupDocsList"] = [];
+  @state() groupDocsLoading = false;
+  @state()
+  groupDocDialog: import("./controllers/group-chat.js").GroupChatState["groupDocDialog"] = null;
+  @state()
+  groupDocDeleteDialog: import("./controllers/group-chat.js").GroupChatState["groupDocDeleteDialog"] =
+    null;
+  @state()
+  groupDocRenameDialog: import("./controllers/group-chat.js").GroupChatState["groupDocRenameDialog"] =
+    null;
+
   // Project management state
   @state() projectsList: ProjectIndexEntry[] = [];
   @state() projectsLoading = false;

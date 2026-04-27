@@ -3757,6 +3757,16 @@ export function openGroupDocEditMode(host: GroupChatState): void {
   };
 }
 
+export function openGroupDocPreviewMode(host: GroupChatState): void {
+  if (!host.groupDocDialog) {
+    return;
+  }
+  host.groupDocDialog = {
+    ...host.groupDocDialog,
+    mode: "preview",
+  };
+}
+
 export function updateGroupDocDialogDraft(
   host: GroupChatState,
   field: "name" | "content",
