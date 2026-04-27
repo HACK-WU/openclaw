@@ -2926,9 +2926,19 @@ export async function enterGroupChat(host: GroupHost, groupId: string): Promise<
   host.groupDraft = "";
   host.groupAttachments = [];
   host.bridgeTerminalStatuses = new Map();
+  // Clear docs state from previous group to avoid showing wrong documents
+  host.groupDocsList = [];
+  host.groupDocsLoading = false;
+  host.groupDocDialog = null;
+  host.groupDocDeleteDialog = null;
+  host.groupDocRenameDialog = null;
   // Clear stale stream buffers from the previous group to avoid ghost bubbles
   streamBuffers.clear();
-  await Promise.all([loadGroupInfo(host, groupId), loadGroupHistory(host, groupId)]);
+  await Promise.all([
+    loadGroupInfo(host, groupId),
+    loadGroupHistory(host, groupId),
+    loadGroupDocs(host, groupId),
+  ]);
   // Sync URL with group parameter after successfully entering
   if (host.activeGroupId === groupId && !host.groupNotFound) {
     syncUrlWithGroup(groupId);
